@@ -7,7 +7,7 @@ module mod_usr
   double precision :: ca, mach, chi, rc, a_int, eps_rho
   double precision :: x1c, x2c, x3c
 
-  !$acc declare create(ca, mach, chi, rc, a_int, x1c, x2c, x3c, eps_rho)
+  !$acc declare create(ca, mach)
 
 contains
 
@@ -54,7 +54,7 @@ contains
 
     eps_rho = 0.05d0  ! 5% density gradient across cloud
 
-    !$acc update device(ca, mach, chi, rc, a_int, x1c, x2c, x3c, eps_rho)
+    !$acc update device(ca, mach)
 
     if (mype == 0) call print_timescales()
 

@@ -1,6 +1,6 @@
 
  &filelist
-   base_filename    = 'output/asymm/cloud_crushing'
+   base_filename    = 'output/no_turb_hires/cloud_crushing'
    autoconvert      = T
    convert_type     = 'vtuBCCmpi'
    saveprim         = T
@@ -9,8 +9,8 @@
  &savelist
    itsave(1,1)      = 0
    itsave(1,2)      = 0
-   dtsave_log      = 0.1
-   dtsave_dat      = 1
+   ditsave_log      = 100
+   dtsave_dat       = 1
 
  /
 
@@ -36,14 +36,14 @@
  /
 
  &meshlist
-   max_blocks       = 2048
+   max_blocks       = 2560
    refine_max_level = 1
-   block_nx1        = 16
-   block_nx2        = 16
-   block_nx3        = 16
-   domain_nx1       = 512
-   domain_nx2       = 128
-   domain_nx3       = 128
+   block_nx1        = 32
+   block_nx2        = 32
+   block_nx3        = 32
+   domain_nx1       = 1280
+   domain_nx2       = 256
+   domain_nx3       = 256
    xprobmin1 = 0.0d0
    xprobmax1 = 20.0d0
    xprobmin2 = -2.0d0
