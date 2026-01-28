@@ -6,8 +6,14 @@ module mod_usr
   ! --- User parameters (code units) ---
   double precision :: ca, mach, chi, rc, a_int, eps_rho
   double precision :: x1c, x2c, x3c
-
   !$acc declare create(ca, mach)
+
+  ! --- Turbulence ---
+  integer, parameter :: nmodes = 4096
+  double precision :: vturb_rms
+  double precision, allocatable, save :: kvec(:,:), phase(:,:), amp(:)
+  logical, save :: turb_initialised = .false.
+  double precision, parameter :: pi = 3.1415926535897932384626433832795d0
 
 contains
 
@@ -40,9 +46,9 @@ contains
     use mod_physics, only: hd_gamma
 
     ! ---- Geometry ----
-    rc   = 1.0d0           ! cloud radius
-    chi  = 140.0d0         ! cloud/wind density contrast
-    a_int = 3 * 20 / 1280  ! cloud boundary width = (cell_span * 20 / Nx)
+    rc   = 1.0d0                    ! cloud radius
+    chi  = 140.0d0                  ! cloud/wind density contrast
+    a_int = 3.d0 * 20.d0 / 1280.d0  ! cloud boundary width
 
     ca = sqrt(hd_gamma)
     mach = (100.d0 * 1.d5 / unit_velocity) / ca    ! so that vwind = mach*ca = 100 km s^-1
@@ -56,6 +62,8 @@ contains
 
     !$acc update device(ca, mach)
 
+    call init_turbulence_modes()
+
     if (mype == 0) call print_timescales()
 
   end subroutine initglobaldata_usr
@@ -64,51 +72,84 @@ contains
   subroutine initonegrid_usr(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
                              ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, w, x)
     use mod_global_parameters
+    use mod_physics, only: hd_gamma
+    implicit none
+
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3
     integer, intent(in)             :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     double precision, intent(in)    :: x(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:ndim)
     double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:nw)
 
+    integer :: i1, i2, i3
     double precision :: rho_w, p0, vwind
-    double precision :: r2(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3)
-    double precision :: r (ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3)
-    double precision :: S (ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3)
+    double precision :: dx1, dx2, dx3
+    double precision :: r2, r, S
+    double precision :: sdiag, clamp_sdiag
+    double precision :: rho_loc
     double precision, parameter :: inv_sqrt2 = 0.7071067811865475244d0
+    integer :: n
+    double precision :: dvx, dvy, dvz, arg
 
     rho_w = 1.0d0
     vwind = mach * ca
     p0    = rho_w * ca**2 / hd_gamma   ! so that ambient cs = ca
 
-    ! Distance to cloud centre
-    r2(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3) = &
-         (x(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1) - x1c)**2 + &
-         (x(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,2) - x2c)**2 + &
-         (x(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,3) - x3c)**2
+    do i3 = ixOmin3, ixOmax3
+      do i2 = ixOmin2, ixOmax2
+        do i1 = ixOmin1, ixOmax1
 
-    r(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3) = sqrt(r2(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3))
+          ! distance to cloud centre
+          dx1 = x(i1,i2,i3,1) - x1c
+          dx2 = x(i1,i2,i3,2) - x2c
+          dx3 = x(i1,i2,i3,3) - x3c
 
-    ! Smooth indicator: ~1 inside, 0 outside
-    S(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3) = &
-      0.5d0 * (1.0d0 - tanh((r(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3) - rc)/a_int))
+          r2 = dx1*dx1 + dx2*dx2 + dx3*dx3
+          r  = sqrt(r2)
 
-    ! Density: ambient + cloud excess * (1 + eps * sdiag)
-    w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3, rho_) = rho_w + &
-      (rho_w * (chi - 1.d0) * S(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3)) * &
-      (1.d0 + eps_rho * max(-1.d0, min(1.d0, &
-        (((x(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1) - x1c) + &
-          (x(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,2) - x2c)) * inv_sqrt2) / rc )) )
+          ! smooth indicator (inside ~1, outside ~0)
+          S = 0.5d0 * (1.0d0 - tanh((r - rc)/a_int))
 
-    ! Velocity: wind outside, cloud initially at rest
-    w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3, mom(1)) = & 
-     vwind * (1.0d0 - S(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3))
-    w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3, mom(2)) = 0.0d0
-    w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3, mom(3)) = 0.0d0
+          ! diagonal stratification
+          sdiag = (( (x(i1,i2,i3,1) - x1c) + (x(i1,i2,i3,2) - x2c) ) * inv_sqrt2) / rc
 
-    ! Pressure (primitive slot e_ before conversion)
-    w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3, e_) = p0
+          ! clamp to [-1, 1]
+          if (sdiag < -1.0d0) then
+            clamp_sdiag = -1.0d0
+          else if (sdiag > 1.0d0) then
+            clamp_sdiag =  1.0d0
+          else
+            clamp_sdiag = sdiag
+          end if
+
+          ! density: ambient + cloud * (1 + eps*sdiag)
+          rho_loc = rho_w + (rho_w*(chi - 1.0d0)*S) * (1.0d0 + eps_rho*clamp_sdiag)
+          w(i1,i2,i3, rho_) = rho_loc
+
+          ! --- turbulent velocity
+          dvx = 0.0d0; dvy = 0.0d0; dvz = 0.0d0
+          if (S > 1.0d-12 .and. turb_initialised) then
+            do n = 1, nmodes
+              arg = kvec(1,n)*x(i1,i2,i3,1) + kvec(2,n)*x(i1,i2,i3,2) + kvec(3,n)*x(i1,i2,i3,3)
+              dvx = dvx + amp(n) * sin(arg + phase(1,n))
+              dvy = dvy + amp(n) * sin(arg + phase(2,n))
+              dvz = dvz + amp(n) * sin(arg + phase(3,n))
+            end do
+          end if
+
+          ! velocity: wind outside, cloud gets turbulence
+          w(i1,i2,i3, mom(1)) = vwind * (1.0d0 - S) + S * dvx
+          w(i1,i2,i3, mom(2)) = S * dvy
+          w(i1,i2,i3, mom(3)) = S * dvz
+
+          ! pressure (primitive slot e_ before conversion)
+          w(i1,i2,i3, e_) = p0
+
+        end do
+      end do
+    end do
 
     call phys_to_conserved(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
-                           ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, w, x)
+                          ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, w, x)
 
   end subroutine initonegrid_usr
 
@@ -165,6 +206,73 @@ contains
     end select
 
   end subroutine specialbound_usr
+
+
+  subroutine init_turbulence_modes()
+    use mod_global_parameters, only: xprobmin1,xprobmax1,xprobmin2,xprobmax2,xprobmin3,xprobmax3, unit_velocity
+    integer :: n, i, seedsize, m
+    integer, allocatable :: seed(:)
+    double precision :: u1,u2,u3, phi
+    double precision :: kmag, k0
+    double precision :: khx,khy,khz, norm
+    integer, parameter :: mmin = 4
+    integer            :: mmax
+
+    if (turb_initialised) return
+
+    if (.not. allocated(kvec))  allocate(kvec(3,nmodes))
+    if (.not. allocated(phase)) allocate(phase(3,nmodes))
+    if (.not. allocated(amp))   allocate(amp(nmodes))
+
+    ! 1 km/s in code units
+    vturb_rms = (1.0d5) / unit_velocity
+    mmax = 64
+
+    ! Fixed seed
+    call random_seed(size=seedsize)
+    allocate(seed(seedsize))
+    do i = 1, seedsize
+      seed(i) = 123456 + 37*i
+    end do
+    call random_seed(put=seed)
+    deallocate(seed)
+
+    k0 = dble(mmin) * pi / rc   ! reference for scaling
+
+    do n = 1, nmodes
+      ! pick integer m in [mmin, mmax]
+      call random_number(u1)
+      m = mmin + int( (mmax - mmin + 1) * u1 )
+      kmag = dble(m) * pi / rc
+
+      ! random direction for k-hat
+      call random_number(u1); call random_number(u2)
+      ! u1 -> cos(theta) uniform in [-1,1], u2 -> phi uniform in [0,2pi)
+      khz = 2.0d0*u1 - 1.0d0
+      phi = 2.0d0*pi*u2
+      norm = sqrt(max(1.0d-300, 1.0d0 - khz*khz))
+      khx = norm*cos(phi)
+      khy = norm*sin(phi)
+
+      kvec(1,n) = kmag * khx
+      kvec(2,n) = kmag * khy
+      kvec(3,n) = kmag * khz
+
+      ! random phases in [0,2pi)
+      call random_number(u1); phase(1,n) = 2.0d0*pi*u1
+      call random_number(u2); phase(2,n) = 2.0d0*pi*u2
+      call random_number(u3); phase(3,n) = 2.0d0*pi*u3
+
+      ! Burgers: P(k) ~ k^-4  =>  amp ~ k^-2
+      amp(n) = (kmag/k0)**(-2.0d0)
+    end do
+
+    ! Normalise amplitudes
+    amp(:) = amp(:) * (vturb_rms / sqrt(1.5d0*sum(amp(:)**2)))
+
+    turb_initialised = .true.
+  end subroutine init_turbulence_modes
+
 
   subroutine print_timescales()
     use mod_global_parameters, only: unit_length, unit_time, xprobmin1, xprobmax1
