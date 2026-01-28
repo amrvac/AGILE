@@ -40,9 +40,9 @@ contains
     use mod_physics, only: hd_gamma
 
     ! ---- Geometry ----
-    rc   = 1.0d0         ! cloud radius
-    chi  = 140.0d0       ! cloud/wind density contrast
-    a_int = 0.05d0 * rc  ! cloud boundary width
+    rc   = 1.0d0           ! cloud radius
+    chi  = 140.0d0         ! cloud/wind density contrast
+    a_int = 3 * 20 / 1280  ! cloud boundary width = (cell_span * 20 / Nx)
 
     ca = sqrt(hd_gamma)
     mach = (100.d0 * 1.d5 / unit_velocity) / ca    ! so that vwind = mach*ca = 100 km s^-1
@@ -52,7 +52,7 @@ contains
     x2c = 0.5d0*(xprobmin2 + xprobmax2)
     x3c = 0.5d0*(xprobmin3 + xprobmax3)
 
-    eps_rho = 0.05d0  ! 5% density gradient across cloud
+    eps_rho = 0.20d0  ! density gradient across cloud
 
     !$acc update device(ca, mach)
 
@@ -91,12 +91,12 @@ contains
     S(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3) = &
       0.5d0 * (1.0d0 - tanh((r(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3) - rc)/a_int))
 
-    ! Density: ambient + cloud excess * (1 + eps * clamp(sdiag))
+    ! Density: ambient + cloud excess * (1 + eps * sdiag)
     w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3, rho_) = rho_w + &
       (rho_w * (chi - 1.d0) * S(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3)) * &
       (1.d0 + eps_rho * max(-1.d0, min(1.d0, &
         (((x(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1) - x1c) + &
-            (x(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,3) - x3c)) * inv_sqrt2) / rc )) )
+          (x(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,2) - x2c)) * inv_sqrt2) / rc )) )
 
     ! Velocity: wind outside, cloud initially at rest
     w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3, mom(1)) = & 
