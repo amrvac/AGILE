@@ -31,7 +31,8 @@ contains
        iib1,iib2,iib3
     logical  :: isphysbound
 
-    associate(x=>s%x,w=>s%w,ws=>s%ws)
+    
+    associate(x=>s%x,w=>s%w)
     select case (idims)
     case (1)
        if (iside==2) then

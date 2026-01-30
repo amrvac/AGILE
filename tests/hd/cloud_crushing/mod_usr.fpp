@@ -9,7 +9,7 @@ module mod_usr
   !$acc declare create(ca, mach)
 
   ! --- Turbulence ---
-  integer, parameter :: nmodes = 4096
+  integer, parameter :: nmodes = 64
   double precision :: vturb_rms
   double precision, allocatable, save :: kvec(:,:), phase(:,:), amp(:)
   logical, save :: turb_initialised = .false.
