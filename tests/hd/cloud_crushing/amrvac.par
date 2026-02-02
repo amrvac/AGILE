@@ -1,6 +1,6 @@
 
  &filelist
-   base_filename    = 'output/no_turb_hires/cloud_crushing'
+   base_filename    = 'output/amr/cloud_crushing'
    autoconvert      = F
    convert_type     = 'vtuBCCmpi'
    saveprim         = T
@@ -26,24 +26,25 @@
  /
 
  &boundlist
-   typeboundary_min1 = 5*'cont'
+   typeboundary_min1 = 5*'special'
    typeboundary_max1 = 5*'cont'
    typeboundary_min2 = 5*'noinflow'
    typeboundary_max2 = 5*'noinflow'
    typeboundary_min3 = 5*'noinflow'
    typeboundary_max3 = 5*'noinflow'
-   specialboundary   = .false.
+   specialboundary   = .true.
  /
 
  &meshlist
-   max_blocks       = 2560
-   refine_max_level = 1
+   max_blocks       = 4096
+   refine_max_level = 3
+   refine_criterion = 3
    block_nx1        = 32
    block_nx2        = 32
    block_nx3        = 32
-   domain_nx1       = 1280
-   domain_nx2       = 256
-   domain_nx3       = 256
+   domain_nx1       = 320
+   domain_nx2       = 64
+   domain_nx3       = 64
    xprobmin1 = 0.0d0
    xprobmax1 = 20.0d0
    xprobmin2 = -2.0d0
@@ -53,7 +54,7 @@
  /
 
  &hd_list
-   hd_radiative_cooling  = .false.
+   hd_radiative_cooling  = .true.
  /
 
  &rc_list        ! radiative-cooling options (used if cooling = .true.)

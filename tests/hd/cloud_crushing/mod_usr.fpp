@@ -9,10 +9,10 @@ module mod_usr
   !$acc declare create(ca, mach)
 
   ! --- Turbulence ---
-  integer, parameter :: nmodes = 64
+  integer, parameter :: nmodes = 4096
   double precision :: vturb_rms
-  double precision, allocatable, save :: kvec(:,:), phase(:,:), amp(:)
-  logical, save :: turb_initialised = .false.
+  double precision, allocatable :: kvec(:,:), phase(:,:), amp(:)
+  logical :: turb_initialised = .false.
   double precision, parameter :: pi = 3.1415926535897932384626433832795d0
 
 contains
@@ -154,6 +154,72 @@ contains
   end subroutine initonegrid_usr
 
 
+  subroutine init_turbulence_modes()
+    use mod_global_parameters, only: unit_velocity
+    integer :: n, i, seedsize, m
+    integer, allocatable :: seed(:)
+    double precision :: u1,u2,u3, phi
+    double precision :: kmag, k0
+    double precision :: khx,khy,khz, norm
+    integer, parameter :: mmin = 4
+    integer            :: mmax
+
+    if (turb_initialised) return
+
+    if (.not. allocated(kvec))  allocate(kvec(3,nmodes))
+    if (.not. allocated(phase)) allocate(phase(3,nmodes))
+    if (.not. allocated(amp))   allocate(amp(nmodes))
+
+    ! 1 km/s in code units
+    vturb_rms = (1.0d5) / unit_velocity
+    mmax = 64
+
+    ! Fixed deterministic seed
+    call random_seed(size=seedsize)
+    allocate(seed(seedsize))
+    do i = 1, seedsize
+      seed(i) = 123456 + 37*i
+    end do
+    call random_seed(put=seed)
+    deallocate(seed)
+
+    k0 = dble(mmin) * pi / rc   ! reference for scaling
+
+    do n = 1, nmodes
+      ! pick integer m in [mmin, mmax]
+      call random_number(u1)
+      m = mmin + int( (mmax - mmin + 1) * u1 )
+      kmag = dble(m) * pi / rc
+
+      ! random direction for k-hat
+      call random_number(u1); call random_number(u2)
+      ! u1 -> cos(theta) uniform in [-1,1], u2 -> phi uniform in [0,2pi)
+      khz = 2.0d0*u1 - 1.0d0
+      phi = 2.0d0*pi*u2
+      norm = sqrt(max(1.0d-300, 1.0d0 - khz*khz))
+      khx = norm*cos(phi)
+      khy = norm*sin(phi)
+
+      kvec(1,n) = kmag * khx
+      kvec(2,n) = kmag * khy
+      kvec(3,n) = kmag * khz
+
+      ! random phases in [0,2pi)
+      call random_number(u1); phase(1,n) = 2.0d0*pi*u1
+      call random_number(u2); phase(2,n) = 2.0d0*pi*u2
+      call random_number(u3); phase(3,n) = 2.0d0*pi*u3
+
+      ! Burgers: P(k) ~ k^-4  =>  amp ~ k^-2
+      amp(n) = (kmag/k0)**(-2.0d0)
+    end do
+
+    ! Normalise amplitudes
+    amp(:) = amp(:) * (vturb_rms / sqrt(1.5d0*sum(amp(:)**2)))
+
+    turb_initialised = .true.
+  end subroutine init_turbulence_modes
+
+
   subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
                               ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
     !$acc routine vector
@@ -206,72 +272,6 @@ contains
     end select
 
   end subroutine specialbound_usr
-
-
-  subroutine init_turbulence_modes()
-    use mod_global_parameters, only: xprobmin1,xprobmax1,xprobmin2,xprobmax2,xprobmin3,xprobmax3, unit_velocity
-    integer :: n, i, seedsize, m
-    integer, allocatable :: seed(:)
-    double precision :: u1,u2,u3, phi
-    double precision :: kmag, k0
-    double precision :: khx,khy,khz, norm
-    integer, parameter :: mmin = 4
-    integer            :: mmax
-
-    if (turb_initialised) return
-
-    if (.not. allocated(kvec))  allocate(kvec(3,nmodes))
-    if (.not. allocated(phase)) allocate(phase(3,nmodes))
-    if (.not. allocated(amp))   allocate(amp(nmodes))
-
-    ! 1 km/s in code units
-    vturb_rms = (1.0d5) / unit_velocity
-    mmax = 64
-
-    ! Fixed seed
-    call random_seed(size=seedsize)
-    allocate(seed(seedsize))
-    do i = 1, seedsize
-      seed(i) = 123456 + 37*i
-    end do
-    call random_seed(put=seed)
-    deallocate(seed)
-
-    k0 = dble(mmin) * pi / rc   ! reference for scaling
-
-    do n = 1, nmodes
-      ! pick integer m in [mmin, mmax]
-      call random_number(u1)
-      m = mmin + int( (mmax - mmin + 1) * u1 )
-      kmag = dble(m) * pi / rc
-
-      ! random direction for k-hat
-      call random_number(u1); call random_number(u2)
-      ! u1 -> cos(theta) uniform in [-1,1], u2 -> phi uniform in [0,2pi)
-      khz = 2.0d0*u1 - 1.0d0
-      phi = 2.0d0*pi*u2
-      norm = sqrt(max(1.0d-300, 1.0d0 - khz*khz))
-      khx = norm*cos(phi)
-      khy = norm*sin(phi)
-
-      kvec(1,n) = kmag * khx
-      kvec(2,n) = kmag * khy
-      kvec(3,n) = kmag * khz
-
-      ! random phases in [0,2pi)
-      call random_number(u1); phase(1,n) = 2.0d0*pi*u1
-      call random_number(u2); phase(2,n) = 2.0d0*pi*u2
-      call random_number(u3); phase(3,n) = 2.0d0*pi*u3
-
-      ! Burgers: P(k) ~ k^-4  =>  amp ~ k^-2
-      amp(n) = (kmag/k0)**(-2.0d0)
-    end do
-
-    ! Normalise amplitudes
-    amp(:) = amp(:) * (vturb_rms / sqrt(1.5d0*sum(amp(:)**2)))
-
-    turb_initialised = .true.
-  end subroutine init_turbulence_modes
 
 
   subroutine print_timescales()
