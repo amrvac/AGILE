@@ -1,6 +1,6 @@
 
  &filelist
-   base_filename    = 'output/amr/cloud_crushing'
+   base_filename    = 'output/cloud_crushing'
    autoconvert      = F
    convert_type     = 'vtuBCCmpi'
    saveprim         = T
@@ -39,6 +39,7 @@
    max_blocks       = 4096
    refine_max_level = 3
    refine_criterion = 3
+   refine_usr = .true.
    block_nx1        = 32
    block_nx2        = 32
    block_nx3        = 32
