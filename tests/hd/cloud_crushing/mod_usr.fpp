@@ -4,12 +4,12 @@ module mod_usr
   implicit none
 
   ! --- User parameters (code units) ---
-  double precision :: ca, mach, chi, rc, a_int, eps_rho
+  double precision :: ca, mach, chi, rc, eps_rho
   double precision :: x1c, x2c, x3c
   !$acc declare create(ca, mach)
 
   ! --- Turbulence ---
-  integer, parameter :: nmodes = 4096
+  integer, parameter :: nmodes = 2048
   double precision :: vturb_rms
   double precision, allocatable :: kvec(:,:), phase(:,:), amp(:)
   logical :: turb_initialised = .false.
@@ -48,7 +48,6 @@ contains
     ! ---- Geometry ----
     rc   = 1.0d0                    ! cloud radius
     chi  = 140.0d0                  ! cloud/wind density contrast
-    a_int = 3.d0 * 20.d0 / 1280.d0  ! cloud boundary width
 
     ca = sqrt(hd_gamma)
     mach = (100.d0 * 1.d5 / unit_velocity) / ca    ! so that vwind = mach*ca = 100 km s^-1
@@ -106,8 +105,8 @@ contains
           r2 = dx1*dx1 + dx2*dx2 + dx3*dx3
           r  = sqrt(r2)
 
-          ! smooth indicator (inside ~1, outside ~0)
-          S = 0.5d0 * (1.0d0 - tanh((r - rc)/a_int))
+          ! indicator (inside 1, outside 0)
+          S = merge(1.0d0, 0.0d0, r <= rc)
 
           ! diagonal stratification
           sdiag = (( (x(i1,i2,i3,1) - x1c) + (x(i1,i2,i3,2) - x2c) ) * inv_sqrt2) / rc

@@ -1,6 +1,6 @@
 
  &filelist
-   base_filename    = 'output/cloud_crushing'
+   base_filename    = 'output/1x_res/cloud_crushing'
    autoconvert      = F
    convert_type     = 'vtuBCCmpi'
    saveprim         = T
