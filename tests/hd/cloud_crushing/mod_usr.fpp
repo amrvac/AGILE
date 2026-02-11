@@ -306,13 +306,23 @@ contains
          ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:nw)
     integer, intent(inout) :: refine, coarsen
 
-    if (all(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1) < 1.5)) then
-       coarsen = 1
-       refine  = -1
-    else
-       coarsen = 0
-       refine  = 0
-    end if
+    integer          :: ix1, ix2, ix3
+
+    !$acc loop collapse(3) vector
+    do ix3 = ixGmin3, ixGmax3
+      do ix2 = ixGmin2, ixGmax2
+        do ix1 = ixGmin1, ixGmax1
+          if (x(ix1,ix2,ix3,1) < 2) then  ! within 100 pc of left bdry
+            coarsen = 1
+            refine  = -1
+          else
+            coarsen = 0
+            refine  = 0
+          end if
+        end do
+      end do
+    end do
+
 
   end subroutine usr_refine_grid
 
