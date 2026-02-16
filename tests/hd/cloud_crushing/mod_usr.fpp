@@ -308,7 +308,6 @@ contains
 
     integer          :: ix1, ix2, ix3
 
-    !$acc loop collapse(3) vector
     do ix3 = ixGmin3, ixGmax3
       do ix2 = ixGmin2, ixGmax2
         do ix1 = ixGmin1, ixGmax1

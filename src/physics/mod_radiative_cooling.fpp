@@ -17,7 +17,7 @@ module mod_radiative_cooling
 
   use mod_global_parameters
   use mod_physics_vars
-  use mod_comm_lib, only: mpistop
+  use mod_comm_lib, only: mpistop, mpistop_gpu
 
   implicit none
 
