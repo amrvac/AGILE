@@ -84,24 +84,21 @@ module mod_connectivity
       ! SRL (neighbor is at same level)
       integer                              :: nbprocs_srl=0        ! number of neighboring processes at srl
       integer                              :: imaxigrids_srl=0     ! max number of igrids over all neighbor processors (for loop collasing)
-      integer, allocatable                 :: nbprocs_srl_list(:)  ! list of neighboring ipe at srl
+      integer, pointer                     :: nbprocs_srl_list(:)  ! list of neighboring ipe at srl
       integer, allocatable                 :: ipe_to_inbpe_srl(:)  ! inverse to nbprocs_srl_list
       ! F (neighbor is finer)
       integer                              :: nbprocs_f=0          ! number of neighboring processes with finer grids
       integer                              :: imaxigrids_f=0       ! max number of igrids over all neighbor processors (for loop collasing)
-      integer, allocatable                 :: nbprocs_f_list(:)    ! list of neighboring ipe at f
+      integer, pointer                     :: nbprocs_f_list(:)    ! list of neighboring ipe at f
       integer, allocatable                 :: ipe_to_inbpe_f(:)    ! inverse to nbprocs_f_list
       ! C (neighbor is coarser)
       integer                              :: nbprocs_c=0          ! number of neighboring processes with coarser grids
       integer                              :: imaxigrids_c=0       ! max number of igrids over all neighbor processors (for loop collasing)
-      integer, allocatable                 :: nbprocs_c_list(:)    ! list of neighboring ipe at f
+      integer, pointer                     :: nbprocs_c_list(:)    ! list of neighboring ipe at f
       integer, allocatable                 :: ipe_to_inbpe_c(:)    ! inverse to nbprocs_f_list
-      type(cf_nb_t), allocatable           :: course_nb(:)         ! Info about course neighbours
-      type(cf_nb_t), allocatable           :: fine_nb(:)           ! Info about fine neighbours
-      type(srl_nb_t), allocatable          :: srl_nb(:)            ! Info about same refinment level neighbours
-      integer                              :: max_size = -1        ! maximum buffer size (initialized in init)
-      integer                              :: max_nbprocs = 2     ! maximum nr of neighbor procs
-      integer                              :: max_igrids = 2    ! maximum nr of igrids per neighbor proc
+      type(cf_nb_t), pointer               :: course_nb(:)         ! Info about course neighbours
+      type(cf_nb_t), pointer               :: fine_nb(:)           ! Info about fine neighbours
+      type(srl_nb_t), pointer              :: srl_nb(:)            ! Info about same refinment level neighbours
     contains
       procedure, non_overridable :: init, reset
       procedure, non_overridable :: add_igrid_to_srl, add_igrid_to_c, add_igrid_to_f
@@ -121,14 +118,10 @@ module mod_connectivity
 
  contains
 
-   subroutine init_srl_nb(self, nigrids, bufsize)
+   subroutine init_srl_nb(self, nigrids)
       class(srl_nb_t) :: self
-      integer :: nigrids, bufsize
+      integer :: nigrids
       call init_srl_info(self%info, nigrids)
-      allocate(self%info_send%buffer( 3 * bufsize ))
-      allocate(self%info_rcv%buffer( 3 *bufsize ))
-      allocate(self%send%buffer(bufsize))
-      allocate(self%rcv%buffer(bufsize))
    end subroutine
 
    subroutine init_srl_info(self, nigrids)
@@ -158,14 +151,10 @@ module mod_connectivity
       end if
    end subroutine
 
-   subroutine init_cf_nb(self, nigrids, bufsize)
+   subroutine init_cf_nb(self, nigrids)
       class(cf_nb_t) :: self
-      integer :: nigrids, bufsize
+      integer :: nigrids
       call self%info%init(nigrids)
-      allocate(self%info_send%buffer( 5 * bufsize ))
-      allocate(self%info_rcv%buffer( 5 * bufsize ))
-      allocate(self%send%buffer(bufsize))
-      allocate(self%rcv%buffer(bufsize))
    end subroutine
 
    subroutine init_cf_info(self, nigrids)
@@ -245,22 +234,20 @@ module mod_connectivity
 
    end subroutine reset
 
-   subroutine init(self, npe, max_size)
+   subroutine init(self, npe)
      class(nbprocs_info_t)  :: self
-     integer, intent(in)   :: npe, max_size
+     integer, intent(in)   :: npe
      ! .. local ..
      integer               :: i
 
-     self%max_size    = max_size
+     allocate(self%nbprocs_srl_list(0), &
+          self%srl_nb(0))
 
-     allocate(self%nbprocs_srl_list(self%max_nbprocs), &
-          self%srl_nb(self%max_nbprocs))
+     allocate(self%nbprocs_f_list(0), &
+          self%fine_nb(0))
 
-     allocate(self%nbprocs_f_list(self%max_nbprocs), &
-          self%fine_nb(self%max_nbprocs))
-
-     allocate(self%nbprocs_c_list(self%max_nbprocs), &
-          self%course_nb(self%max_nbprocs))
+     allocate(self%nbprocs_c_list(0), &
+          self%course_nb(0))
 
      allocate(self%ipe_to_inbpe_srl(0:npe-1))
      self%ipe_to_inbpe_srl(:) = -1
@@ -271,16 +258,18 @@ module mod_connectivity
      allocate(self%ipe_to_inbpe_c(0:npe-1))
      self%ipe_to_inbpe_c(:) = -1
 
-     do i = 1, self%max_nbprocs
-        call self%srl_nb(i)%init(self%max_igrids, self%max_size)
-        call self%fine_nb(i)%init(self%max_igrids, self%max_size)
-        call self%course_nb(i)%init(self%max_igrids, self%max_size)
+     do i = 1, 0
+        call self%srl_nb(i)%init(0)
+        call self%fine_nb(i)%init(0)
+        call self%course_nb(i)%init(0)
      end do
    end subroutine init
 
    subroutine add_to_srl(self, ipe, igrid, i1, i2, i3)
      class(nbprocs_info_t) :: self
      integer, intent(in)   :: ipe, igrid, i1, i2, i3
+     integer, dimension(:), pointer :: temp_list
+     type(srl_nb_t), dimension(:), pointer :: srl_nb_temp
 
      ! add the procesor id if not already present:
      if (self%ipe_to_inbpe_srl(ipe) == -1) then
@@ -288,10 +277,16 @@ module mod_connectivity
         ! enlarge counter
         self%nbprocs_srl = self%nbprocs_srl + 1
 
-        if (self%nbprocs_srl > self%max_nbprocs) then
-           print *, 'add_ipe_to_srl_list: nbprocs_srl exceeding max_nbprocs', self%nbprocs_srl, self%max_nbprocs
-           error stop
+        if (self%nbprocs_srl > size(self%nbprocs_srl_list)) then
+           allocate(temp_list(self%nbprocs_srl))
+           temp_list(:size(self%nbprocs_srl_list)) = self%nbprocs_srl_list
+           deallocate(self%nbprocs_srl_list)
+           self%nbprocs_srl_list => temp_list
 
+           allocate(srl_nb_temp(self%nbprocs_srl))
+           srl_nb_temp(:size(self%srl_nb)) = self%srl_nb
+           deallocate(self%srl_nb)
+           self%srl_nb => srl_nb_temp
         end if
 
         ! add the process
@@ -308,6 +303,8 @@ module mod_connectivity
    subroutine add_to_c(self, ipe, igrid, i1, i2, i3, inc1, inc2, inc3)
      class(nbprocs_info_t) :: self
      integer, intent(in)   :: ipe, igrid, i1, i2, i3, inc1, inc2, inc3
+     integer, dimension(:), pointer :: temp_list
+     type(cf_nb_t), dimension(:), pointer :: course_nb_temp
 
      ! add the procesor id if not already present:
      if (self%ipe_to_inbpe_c(ipe) == -1) then
@@ -315,9 +312,17 @@ module mod_connectivity
         ! enlarge counter
         self%nbprocs_c = self%nbprocs_c + 1
 
-        if (self%nbprocs_c > self%max_nbprocs) then
-           print *, 'add_ipe_to_c_list: nbprocs_c exceeding max_nbprocs', self%nbprocs_c, self%max_nbprocs
-           error stop
+
+        if (self%nbprocs_c > size(self%nbprocs_c_list)) then
+           allocate(temp_list(self%nbprocs_c))
+           temp_list(:size(self%nbprocs_c_list)) = self%nbprocs_c_list
+           deallocate(self%nbprocs_c_list)
+           self%nbprocs_c_list => temp_list
+
+           allocate(course_nb_temp(self%nbprocs_c))
+           course_nb_temp(:size(self%course_nb)) = self%course_nb
+           deallocate(self%course_nb)
+           self%course_nb => course_nb_temp
         end if
 
         ! add the process
@@ -334,6 +339,8 @@ module mod_connectivity
    subroutine add_to_f(self, ipe, igrid, inc1, inc2, inc3)
      class(nbprocs_info_t) :: self
      integer, intent(in)   :: ipe, igrid, inc1, inc2, inc3
+     integer, dimension(:), pointer :: temp_list
+     type(cf_nb_t), dimension(:), pointer :: fine_nb_temp
 
      ! add the procesor id if not already present:
      if (self%ipe_to_inbpe_f(ipe) == -1) then
@@ -341,9 +348,16 @@ module mod_connectivity
         ! enlarge counter
         self%nbprocs_f = self%nbprocs_f + 1
 
-        if (self%nbprocs_f > self%max_nbprocs) then
-           print *, 'add_ipe_to_f_list: nbprocs_c exceeding max_nbprocs', self%nbprocs_c, self%max_nbprocs
-           error stop
+        if (self%nbprocs_f > size(self%nbprocs_f_list)) then
+           allocate(temp_list(self%nbprocs_f))
+           temp_list(:size(self%nbprocs_f_list)) = self%nbprocs_f_list
+           deallocate(self%nbprocs_f_list)
+           self%nbprocs_f_list => temp_list
+
+           allocate(fine_nb_temp(self%nbprocs_f))
+           fine_nb_temp(:size(self%fine_nb)) = self%fine_nb
+           deallocate(self%fine_nb)
+           self%fine_nb => fine_nb_temp
         end if
 
         ! add the process
@@ -395,7 +409,7 @@ module mod_connectivity
      self%course_nb(inbpe)%info%nigrids = self%course_nb(inbpe)%info%nigrids + 1
 
      ! need to enlarge storage
-     if ( self%course_nb(inbpe)%info%nigrids > self%max_igrids ) then
+     if ( self%course_nb(inbpe)%info%nigrids > size(self%course_nb(inbpe)%info%igrid)) then
         call init_cf_info(self%course_nb(inbpe)%info, self%course_nb(inbpe)%info%nigrids)
      end if
 
@@ -423,7 +437,7 @@ module mod_connectivity
      self%fine_nb(inbpe)%info%nigrids = self%fine_nb(inbpe)%info%nigrids + 1
 
      ! need to enlarge storage
-     if ( self%fine_nb(inbpe)%info%nigrids > self%max_igrids ) then
+     if ( self%fine_nb(inbpe)%info%nigrids > size(self%fine_nb(inbpe)%info%igrid)) then
         call init_cf_info(self%fine_nb(inbpe)%info, self%fine_nb(inbpe)%info%nigrids)
      end if
 
@@ -491,16 +505,14 @@ module mod_connectivity
 
         end do
 
-        if (isize_S*nwgc > self%max_size .or. isize_R*nwgc > self%max_size) then
-           print *, 'alloc_buffers_srl: exceeding max_size for ghost-cell buffer', isize_S*nwgc, isize_R*nwgc, self%max_size
-           stop
-        end if
-
         self%srl_nb(inb)%rcv%size       = isize_R * nwgc
         self%srl_nb(inb)%send%size      = isize_S * nwgc
         self%srl_nb(inb)%info_send%size = 3 * self%srl_nb(inb)%info%nigrids
         self%srl_nb(inb)%info_rcv%size  = 3 * self%srl_nb(inb)%info%nigrids
-
+        allocate(self%srl_nb(inb)%rcv%buffer(isize_R * nwgc))
+        allocate(self%srl_nb(inb)%send%buffer(isize_S * nwgc))
+        allocate(self%srl_nb(inb)%info_rcv%buffer(3 * self%srl_nb(inb)%info%nigrids))
+        allocate(self%srl_nb(inb)%info_send%buffer(3 * self%srl_nb(inb)%info%nigrids))
      end do
 
    end subroutine alloc_buffers_srl
@@ -566,15 +578,15 @@ module mod_connectivity
 
         end do
 
-        if (isize_S*nwgc > self%max_size .or. isize_R*nwgc > self%max_size) then
-           print *, 'alloc_buffers_f: exceeding max_size for ghost-cell buffer', isize_S*nwgc, isize_R*nwgc, self%max_size
-           stop
-        end if
-
         self%fine_nb(inb)%rcv%size       = isize_R*nwgc
         self%fine_nb(inb)%send%size      = isize_S*nwgc
         self%fine_nb(inb)%info_send%size = 5 * self%fine_nb(inb)%info%nigrids
         self%fine_nb(inb)%info_rcv%size  = 5 * self%fine_nb(inb)%info%nigrids
+
+        allocate(self%fine_nb(inb)%rcv%buffer(isize_R * nwgc))
+        allocate(self%fine_nb(inb)%send%buffer(isize_S * nwgc))
+        allocate(self%fine_nb(inb)%info_rcv%buffer(5 * self%fine_nb(inb)%info%nigrids))
+        allocate(self%fine_nb(inb)%info_send%buffer(5 * self%fine_nb(inb)%info%nigrids))
 
      end do
 
@@ -647,15 +659,15 @@ module mod_connectivity
 
         end do
 
-        if (isize_S*nwgc > self%max_size .or. isize_R*nwgc > self%max_size) then
-           print *, 'alloc_buffers_c: exceeding max_size for ghost-cell buffer', isize_S*nwgc, isize_R*nwgc, self%max_size
-           stop
-        end if
-
         self%course_nb(inb)%rcv%size       = isize_R*nwgc
         self%course_nb(inb)%send%size      = isize_S*nwgc
         self%course_nb(inb)%info_send%size = 5 * self%course_nb(inb)%info%nigrids
         self%course_nb(inb)%info_rcv%size  = 5 * self%course_nb(inb)%info%nigrids
+
+        allocate(self%course_nb(inb)%rcv%buffer(isize_R * nwgc))
+        allocate(self%course_nb(inb)%send%buffer(isize_S * nwgc))
+        allocate(self%course_nb(inb)%info_rcv%buffer(5 * self%course_nb(inb)%info%nigrids))
+        allocate(self%course_nb(inb)%info_send%buffer(5 * self%course_nb(inb)%info%nigrids))
 
      end do
 
