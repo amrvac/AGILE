@@ -130,7 +130,7 @@ module mod_connectivity
       integer, pointer, dimension(:) :: igrid, iencode, isize, ibuf_start
       logical :: realloc
 
-      if (allocated(self%igrid)) then
+      if (associated(self%igrid)) then
         allocate(igrid(nigrids), iencode(nigrids), ibuf_start(nigrids), isize(nigrids))
 
         igrid(:size(self%igrid)) = self%igrid
@@ -162,7 +162,7 @@ module mod_connectivity
       integer, intent(in)  :: nigrids
       integer, pointer, dimension(:) :: igrid, inc1, inc2, inc3, ibuf_start, isize, i1, i2, i3
 
-      if (allocated(self%igrid)) then
+      if (associated(self%igrid)) then
         allocate(igrid(nigrids), inc1(nigrids), inc2(nigrids), &
                  inc3(nigrids),  ibuf_start(nigrids), isize(nigrids), &
                  i1(nigrids), i2(nigrids), i3(nigrids))
@@ -258,11 +258,6 @@ module mod_connectivity
      allocate(self%ipe_to_inbpe_c(0:npe-1))
      self%ipe_to_inbpe_c(:) = -1
 
-     do i = 1, 0
-        call self%srl_nb(i)%init(0)
-        call self%fine_nb(i)%init(0)
-        call self%course_nb(i)%init(0)
-     end do
    end subroutine init
 
    subroutine add_to_srl(self, ipe, igrid, i1, i2, i3)
@@ -509,6 +504,14 @@ module mod_connectivity
         self%srl_nb(inb)%send%size      = isize_S * nwgc
         self%srl_nb(inb)%info_send%size = 3 * self%srl_nb(inb)%info%nigrids
         self%srl_nb(inb)%info_rcv%size  = 3 * self%srl_nb(inb)%info%nigrids
+
+        if(allocated(self%srl_nb(inb)%rcv%buffer)) then
+          deallocate(self%srl_nb(inb)%rcv%buffer)
+          deallocate(self%srl_nb(inb)%send%buffer)
+          deallocate(self%srl_nb(inb)%info_rcv%buffer)
+          deallocate(self%srl_nb(inb)%info_send%buffer)
+        endif
+
         allocate(self%srl_nb(inb)%rcv%buffer(isize_R * nwgc))
         allocate(self%srl_nb(inb)%send%buffer(isize_S * nwgc))
         allocate(self%srl_nb(inb)%info_rcv%buffer(3 * self%srl_nb(inb)%info%nigrids))
@@ -582,6 +585,13 @@ module mod_connectivity
         self%fine_nb(inb)%send%size      = isize_S*nwgc
         self%fine_nb(inb)%info_send%size = 5 * self%fine_nb(inb)%info%nigrids
         self%fine_nb(inb)%info_rcv%size  = 5 * self%fine_nb(inb)%info%nigrids
+
+        if(allocated(self%fine_nb(inb)%rcv%buffer)) then
+          deallocate(self%fine_nb(inb)%rcv%buffer)
+          deallocate(self%fine_nb(inb)%send%buffer)
+          deallocate(self%fine_nb(inb)%info_rcv%buffer)
+          deallocate(self%fine_nb(inb)%info_send%buffer)
+        endif
 
         allocate(self%fine_nb(inb)%rcv%buffer(isize_R * nwgc))
         allocate(self%fine_nb(inb)%send%buffer(isize_S * nwgc))
@@ -663,6 +673,13 @@ module mod_connectivity
         self%course_nb(inb)%send%size      = isize_S*nwgc
         self%course_nb(inb)%info_send%size = 5 * self%course_nb(inb)%info%nigrids
         self%course_nb(inb)%info_rcv%size  = 5 * self%course_nb(inb)%info%nigrids
+
+        if(allocated(self%course_nb(inb)%rcv%buffer)) then
+          deallocate(self%course_nb(inb)%rcv%buffer)
+          deallocate(self%course_nb(inb)%send%buffer)
+          deallocate(self%course_nb(inb)%info_rcv%buffer)
+          deallocate(self%course_nb(inb)%info_send%buffer)
+        endif
 
         allocate(self%course_nb(inb)%rcv%buffer(isize_R * nwgc))
         allocate(self%course_nb(inb)%send%buffer(isize_S * nwgc))
