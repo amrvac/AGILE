@@ -599,8 +599,8 @@ module mod_functions_connectivity
 
     
     !update the neighbor information on the device
-    !$acc update device(neighbor, neighbor_type, neighbor_pole, neighbor_child, idphyb)
-    call nbprocs_update_device
+    !$acc update device(neighbor, neighbor_type, neighbor_pole, neighbor_child)
+    !call nbprocs_update_device
 
 
   end subroutine build_connectivity

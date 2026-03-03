@@ -44,9 +44,9 @@ module mod_connectivity
    ! c and f neighbor info
    type nbinfo_cf_t
       integer                            :: nigrids=0
-      integer, allocatable, dimension(:) :: igrid, inc1, inc2, inc3, isize, ibuf_start, i1, i2, i3
+      integer, pointer, dimension(:) :: igrid, inc1, inc2, inc3, isize, ibuf_start, i1, i2, i3
     contains
-      procedure, non_overridable         :: init => init_cf
+      procedure, non_overridable         :: init => init_cf_info
    end type nbinfo_cf_t
 
    ! buffer
@@ -60,15 +60,15 @@ module mod_connectivity
       integer                            :: size = -1
    end type nbinfo_buffer_i_t
 
-   type course_nb_t
+   type cf_nb_t
       type(nbinfo_cf_t)                    :: info            ! info for each nbproc
       type(nbinfo_buffer_t)                :: send            ! double precision send data. One for each nb proc
       type(nbinfo_buffer_t)                :: rcv             ! double precision receive data
       type(nbinfo_buffer_i_t)              :: info_send       ! info package send
       type(nbinfo_buffer_i_t)              :: info_rcv        ! info package receive
    contains
-      procedure, non_overridable           :: init => init_course_nb
-   end type course_nb_t
+      procedure, non_overridable           :: init => init_cf_nb
+   end type cf_nb_t
    type srl_nb_t
       type(nbinfo_srl_t)                   :: info            ! list of the ipelist for each nbproc
       type(nbinfo_buffer_t)                :: send            ! double precision send data. One for each nb proc
@@ -91,17 +91,13 @@ module mod_connectivity
       integer                              :: imaxigrids_f=0       ! max number of igrids over all neighbor processors (for loop collasing)
       integer, allocatable                 :: nbprocs_f_list(:)    ! list of neighboring ipe at f
       integer, allocatable                 :: ipe_to_inbpe_f(:)    ! inverse to nbprocs_f_list
-      type(nbinfo_cf_t), allocatable       :: f(:)                 ! list of the ipelist for each nbproc
-      type(nbinfo_buffer_t), allocatable   :: f_send(:)            ! double precision send data. One for each nb proc
-      type(nbinfo_buffer_t), allocatable   :: f_rcv(:)             ! double precision receive data
-      type(nbinfo_buffer_i_t), allocatable :: f_info_send(:)       ! info package send
-      type(nbinfo_buffer_i_t), allocatable :: f_info_rcv(:)        ! info package receive
       ! C (neighbor is coarser)
       integer                              :: nbprocs_c=0          ! number of neighboring processes with coarser grids
       integer                              :: imaxigrids_c=0       ! max number of igrids over all neighbor processors (for loop collasing)
-      integer, pointer                     :: nbprocs_c_list(:) => null()    ! list of neighboring ipe at f
+      integer, allocatable                 :: nbprocs_c_list(:)    ! list of neighboring ipe at f
       integer, allocatable                 :: ipe_to_inbpe_c(:)    ! inverse to nbprocs_f_list
-      type(course_nb_t), allocatable       :: course_nb(:)         ! Info about course neighbours
+      type(cf_nb_t), allocatable           :: course_nb(:)         ! Info about course neighbours
+      type(cf_nb_t), allocatable           :: fine_nb(:)           ! Info about fine neighbours
       type(srl_nb_t), allocatable          :: srl_nb(:)            ! Info about same refinment level neighbours
       integer                              :: max_size = -1        ! maximum buffer size (initialized in init)
       integer                              :: max_nbprocs = 2     ! maximum nr of neighbor procs
@@ -115,41 +111,15 @@ module mod_connectivity
    end type nbprocs_info_t
 
    type(nbprocs_info_t) :: nbprocs_info
-   !$acc declare create(nbprocs_info)
 
-   public  :: nbprocs_info_t, nbprocs_info, nbprocs_update_device
+   public  :: nbprocs_info_t, nbprocs_info
    private :: reset, init, add_to_srl, add_to_f, add_to_c
-   private :: init_course_nb
+   private :: init_cf_nb
    private :: add_igrid_to_srl, alloc_buffers_srl, iencode, idecode
    private :: add_igrid_to_c, add_igrid_to_f
 
 
  contains
-   subroutine init_srl_info(self, nigrids)
-      class(nbinfo_srl_t) :: self
-      integer :: nigrids
-      integer, pointer, dimension(:) :: igrid, iencode, isize, ibuf_start
-      logical :: realloc
-      realloc =  allocated(self%igrid)
-
-      if (realloc) then
-        allocate(igrid(nigrids), iencode(nigrids), ibuf_start(nigrids), isize(nigrids))
-
-        igrid(:size(self%igrid)) = self%igrid
-        iencode(:size(self%iencode)) = self%iencode
-        ibuf_start(:size(self%ibuf_start)) = self%ibuf_start
-        isize(:size(self%isize)) = self%isize
-
-        deallocate(self%igrid, self%iencode, self%ibuf_start, self%isize)
-
-        self%igrid => igrid
-        self%iencode => iencode
-        self%ibuf_start => ibuf_start
-        self%isize => isize
-      else
-        allocate(self%igrid(nigrids), self%iencode(nigrids), self%ibuf_start(nigrids), self%isize(nigrids))
-      end if
-   end subroutine
 
    subroutine init_srl_nb(self, nigrids, bufsize)
       class(srl_nb_t) :: self
@@ -161,8 +131,35 @@ module mod_connectivity
       allocate(self%rcv%buffer(bufsize))
    end subroutine
 
-   subroutine init_course_nb(self, nigrids, bufsize)
-      class(course_nb_t) :: self
+   subroutine init_srl_info(self, nigrids)
+      class(nbinfo_srl_t) :: self
+      integer :: nigrids
+      integer, pointer, dimension(:) :: igrid, iencode, isize, ibuf_start
+      logical :: realloc
+
+      if (allocated(self%igrid)) then
+        allocate(igrid(nigrids), iencode(nigrids), ibuf_start(nigrids), isize(nigrids))
+
+        igrid(:size(self%igrid)) = self%igrid
+        iencode(:size(self%iencode)) = self%iencode
+        ibuf_start(:size(self%ibuf_start)) = self%ibuf_start
+        isize(:size(self%isize)) = self%isize
+
+        deallocate(self%igrid, self%iencode, self%ibuf_start, self%isize)
+        allocate(self%igrid(nigrids), self%iencode(nigrids), self%ibuf_start(nigrids), self%isize(nigrids))
+
+        self%igrid = igrid
+        self%iencode = iencode
+        self%ibuf_start = ibuf_start
+        self%isize = isize
+        deallocate(igrid, iencode, ibuf_start, isize)
+      else
+        allocate(self%igrid(nigrids), self%iencode(nigrids), self%ibuf_start(nigrids), self%isize(nigrids))
+      end if
+   end subroutine
+
+   subroutine init_cf_nb(self, nigrids, bufsize)
+      class(cf_nb_t) :: self
       integer :: nigrids, bufsize
       call self%info%init(nigrids)
       allocate(self%info_send%buffer( 5 * bufsize ))
@@ -171,15 +168,51 @@ module mod_connectivity
       allocate(self%rcv%buffer(bufsize))
    end subroutine
 
-   subroutine init_cf(self, nigrids)
-     class(nbinfo_cf_t)   :: self
-     integer, intent(in)  :: nigrids
+   subroutine init_cf_info(self, nigrids)
+      class(nbinfo_cf_t)   :: self
+      integer, intent(in)  :: nigrids
+      integer, pointer, dimension(:) :: igrid, inc1, inc2, inc3, ibuf_start, isize, i1, i2, i3
 
-     allocate(self%igrid(nigrids), self%inc1(nigrids), self%inc2(nigrids), &
-          self%inc3(nigrids), self%ibuf_start(nigrids), self%isize(nigrids), &
-          self%i1(nigrids), self%i2(nigrids), self%i3(nigrids))
+      if (allocated(self%igrid)) then
+        allocate(igrid(nigrids), inc1(nigrids), inc2(nigrids), &
+                 inc3(nigrids),  ibuf_start(nigrids), isize(nigrids), &
+                 i1(nigrids), i2(nigrids), i3(nigrids))
 
-   end subroutine init_cf
+        igrid(:size(self%igrid)) = self%igrid
+        inc1(:size(self%inc1)) = self%inc1
+        inc2(:size(self%inc2)) = self%inc2
+        inc3(:size(self%inc3)) = self%inc3
+        ibuf_start(:size(self%ibuf_start)) = self%ibuf_start
+        isize(:size(self%isize)) = self%isize
+        i1(:size(self%i1)) = self%i1
+        i2(:size(self%i2)) = self%i2
+        i3(:size(self%i3)) = self%i3
+
+        deallocate(self%igrid, self%inc1, self%inc2, self%inc3, self%ibuf_start, self%isize, self%i1, self%i2, self%i3)
+        allocate(self%igrid(nigrids), self%inc1(nigrids), self%inc2(nigrids), &
+                 self%inc3(nigrids), self%ibuf_start(nigrids), self%isize(nigrids), &
+                 self%i1(nigrids), self%i2(nigrids), self%i3(nigrids))
+
+        self%igrid = igrid
+        self%inc1 = inc1
+        self%inc2 = inc2
+        self%inc3 = inc3
+        self%ibuf_start = ibuf_start
+        self%isize = isize
+        self%i1 = i1
+        self%i2 = i2
+        self%i3 = i3
+
+        deallocate(igrid, inc1, inc2, &
+                 inc3,  ibuf_start, isize, &
+                 i1, i2, i3)
+      else
+        allocate(self%igrid(nigrids), self%inc1(nigrids), self%inc2(nigrids), &
+                 self%inc3(nigrids), self%ibuf_start(nigrids), self%isize(nigrids), &
+                 self%i1(nigrids), self%i2(nigrids), self%i3(nigrids))
+
+      end if
+   end subroutine init_cf_info
 
    subroutine reset(self)
      class(nbprocs_info_t) :: self
@@ -195,7 +228,7 @@ module mod_connectivity
      end do
 
      do i=1, self%nbprocs_f
-        self%f(i)%nigrids=0
+        self%fine_nb(i)%info%nigrids=0
      end do
 
      self%nbprocs_srl         = 0
@@ -224,7 +257,7 @@ module mod_connectivity
           self%srl_nb(self%max_nbprocs))
 
      allocate(self%nbprocs_f_list(self%max_nbprocs), &
-          self%f(self%max_nbprocs))
+          self%fine_nb(self%max_nbprocs))
 
      allocate(self%nbprocs_c_list(self%max_nbprocs), &
           self%course_nb(self%max_nbprocs))
@@ -240,27 +273,9 @@ module mod_connectivity
 
      do i = 1, self%max_nbprocs
         call self%srl_nb(i)%init(self%max_igrids, self%max_size)
-        call self%f(i)%init(self%max_igrids)
+        call self%fine_nb(i)%init(self%max_igrids, self%max_size)
         call self%course_nb(i)%init(self%max_igrids, self%max_size)
      end do
-
-     ! pre-allocate buffers
-     allocate( &
-          self%f_send(1:self%max_nbprocs), &
-          self%f_rcv(1:self%max_nbprocs), &
-          self%f_info_send(1:self%max_nbprocs), &
-          self%f_info_rcv(1:self%max_nbprocs) &
-          )
-
-     do i = 1, self%max_nbprocs
-        allocate( &
-             self%f_info_send(i)%buffer( 5 * self%max_igrids ), &
-             self%f_info_rcv(i)%buffer( 5 * self%max_igrids ), &
-             self%f_send(i)%buffer(self%max_size), &
-             self%f_rcv(i)%buffer(self%max_size) &
-        )
-     end do
-
    end subroutine init
 
    subroutine add_to_srl(self, ipe, igrid, i1, i2, i3)
@@ -301,10 +316,8 @@ module mod_connectivity
         self%nbprocs_c = self%nbprocs_c + 1
 
         if (self%nbprocs_c > self%max_nbprocs) then
-
-           !allocate(self%nbprocs_c_list(self%max_nbprocs), &
-           !     self%course_nb%info(self%max_nbprocs))
            print *, 'add_ipe_to_c_list: nbprocs_c exceeding max_nbprocs', self%nbprocs_c, self%max_nbprocs
+           error stop
         end if
 
         ! add the process
@@ -329,8 +342,8 @@ module mod_connectivity
         self%nbprocs_f = self%nbprocs_f + 1
 
         if (self%nbprocs_f > self%max_nbprocs) then
-           print *, 'add_ipe_to_c_list: nbprocs_f exceeding max_nbprocs', self%nbprocs_f, self%max_nbprocs
-           stop
+           print *, 'add_ipe_to_f_list: nbprocs_c exceeding max_nbprocs', self%nbprocs_c, self%max_nbprocs
+           error stop
         end if
 
         ! add the process
@@ -348,15 +361,13 @@ module mod_connectivity
      class(nbprocs_info_t) :: self
      integer, intent(in)   :: ipe, igrid, i1, i2, i3
      ! .. local ..
-     integer               :: inbpe, i, nigrids
-     integer, allocatable, dimension(:) :: oldigrid, oldiencode
+     integer               :: inbpe, i
 
      ! translate to neighbor processor index for srl
      inbpe = self%ipe_to_inbpe_srl(ipe)
 
      ! enlarge counter
      self%srl_nb(inbpe)%info%nigrids = self%srl_nb(inbpe)%info%nigrids + 1
-     nigrids = self%srl_nb(inbpe)%info%nigrids   
 
      ! need to enlarge storage
      if ( self%srl_nb(inbpe)%info%nigrids > size(self%srl_nb(inbpe)%info%igrid) ) then
@@ -385,7 +396,7 @@ module mod_connectivity
 
      ! need to enlarge storage
      if ( self%course_nb(inbpe)%info%nigrids > self%max_igrids ) then
-        error stop 'add_igrid_to_c: nigrids exceeding max_igrids'
+        call init_cf_info(self%course_nb(inbpe)%info, self%course_nb(inbpe)%info%nigrids)
      end if
 
      ! add the data at the counter
@@ -409,19 +420,18 @@ module mod_connectivity
      inbpe = self%ipe_to_inbpe_f(ipe)
 
      ! enlarge counter
-     self%f(inbpe)%nigrids = self%f(inbpe)%nigrids + 1
+     self%fine_nb(inbpe)%info%nigrids = self%fine_nb(inbpe)%info%nigrids + 1
 
      ! need to enlarge storage
-     if ( self%f(inbpe)%nigrids > self%max_igrids ) then
-        print *, 'add_igrid_to_f: nigrids exceeding max_igrids'
-        stop
+     if ( self%fine_nb(inbpe)%info%nigrids > self%max_igrids ) then
+        call init_cf_info(self%fine_nb(inbpe)%info, self%fine_nb(inbpe)%info%nigrids)
      end if
 
      ! add the data at the counter
-     self%f(inbpe)%igrid( self%f(inbpe)%nigrids )    = igrid
-     self%f(inbpe)%inc1( self%f(inbpe)%nigrids )     = inc1
-     self%f(inbpe)%inc2( self%f(inbpe)%nigrids )     = inc2
-     self%f(inbpe)%inc3( self%f(inbpe)%nigrids )     = inc3
+     self%fine_nb(inbpe)%info%igrid( self%fine_nb(inbpe)%info%nigrids )    = igrid
+     self%fine_nb(inbpe)%info%inc1( self%fine_nb(inbpe)%info%nigrids )     = inc1
+     self%fine_nb(inbpe)%info%inc2( self%fine_nb(inbpe)%info%nigrids )     = inc2
+     self%fine_nb(inbpe)%info%inc3( self%fine_nb(inbpe)%info%nigrids )     = inc3
 
    end subroutine add_igrid_to_f
 
@@ -527,16 +537,16 @@ module mod_connectivity
 
      self%imaxigrids_f = 0
      do inb = 1, self%nbprocs_f
-        self%imaxigrids_f = max(self%f(inb)%nigrids, self%imaxigrids_f)
+        self%imaxigrids_f = max(self%fine_nb(inb)%info%nigrids, self%imaxigrids_f)
 
         isize_S = 0; isize_R = 0; ibuf_start = 1
-        do igrid = 1, self%f(inb)%nigrids
-           iib1 = idphyb(1,self%f(inb)%igrid(igrid))
-           iib2 = idphyb(2,self%f(inb)%igrid(igrid))
-           iib3 = idphyb(3,self%f(inb)%igrid(igrid))
-           inc1 = self%f(inb)%inc1(igrid)
-           inc2 = self%f(inb)%inc2(igrid)
-           inc3 = self%f(inb)%inc3(igrid)
+        do igrid = 1, self%fine_nb(inb)%info%nigrids
+           iib1 = idphyb(1,self%fine_nb(inb)%info%igrid(igrid))
+           iib2 = idphyb(2,self%fine_nb(inb)%info%igrid(igrid))
+           iib3 = idphyb(3,self%fine_nb(inb)%info%igrid(igrid))
+           inc1 = self%fine_nb(inb)%info%inc1(igrid)
+           inc2 = self%fine_nb(inb)%info%inc2(igrid)
+           inc3 = self%fine_nb(inb)%info%inc3(igrid)
 
            ixSmin1=ixS_p_min1(iib1,inc1);ixSmin2=ixS_p_min2(iib2,inc2)
            ixSmin3=ixS_p_min3(iib3,inc3);ixSmax1=ixS_p_max1(iib1,inc1)
@@ -549,10 +559,10 @@ module mod_connectivity
            isize_S = isize_S + (ixSmax1-ixSmin1+1) * (ixSmax2-ixSmin2+1) * (ixSmax3-ixSmin3+1)
            isize_R = isize_R + (ixRmax1-ixRmin1+1) * (ixRmax2-ixRmin2+1) * (ixRmax3-ixRmin3+1)
 
-           self%f(inb)%ibuf_start(igrid) = ibuf_start
-           self%f(inb)%isize(igrid) = (ixSmax1-ixSmin1+1) * (ixSmax2-ixSmin2+1) * (ixSmax3-ixSmin3+1) * nwgc
+           self%fine_nb(inb)%info%ibuf_start(igrid) = ibuf_start
+           self%fine_nb(inb)%info%isize(igrid) = (ixSmax1-ixSmin1+1) * (ixSmax2-ixSmin2+1) * (ixSmax3-ixSmin3+1) * nwgc
 
-           ibuf_start = ibuf_start + self%f(inb)%isize(igrid)
+           ibuf_start = ibuf_start + self%fine_nb(inb)%info%isize(igrid)
 
         end do
 
@@ -561,10 +571,10 @@ module mod_connectivity
            stop
         end if
 
-        self%f_rcv(inb)%size       = isize_R*nwgc
-        self%f_send(inb)%size      = isize_S*nwgc
-        self%f_info_send(inb)%size = 5 * self%f(inb)%nigrids
-        self%f_info_rcv(inb)%size  = 5 * self%f(inb)%nigrids
+        self%fine_nb(inb)%rcv%size       = isize_R*nwgc
+        self%fine_nb(inb)%send%size      = isize_S*nwgc
+        self%fine_nb(inb)%info_send%size = 5 * self%fine_nb(inb)%info%nigrids
+        self%fine_nb(inb)%info_rcv%size  = 5 * self%fine_nb(inb)%info%nigrids
 
      end do
 
@@ -678,113 +688,5 @@ module mod_connectivity
 
    end subroutine idecode
 
-   subroutine nbprocs_update_device
-     ! .. local ..
-     logical               :: first = .true.
-     integer               :: ipe_neighbor
-
-    if (first) then
-       !$acc update device(nbprocs_info)
-       !$acc enter data copyin(nbprocs_info%nbprocs_srl_list, nbprocs_info%ipe_to_inbpe_srl)
-       !$acc enter data copyin(nbprocs_info%nbprocs_f_list, nbprocs_info%ipe_to_inbpe_f)
-       !$acc enter data copyin(nbprocs_info%nbprocs_c_list, nbprocs_info%ipe_to_inbpe_c)
-       !$acc enter data copyin(nbprocs_info%course_nb)
-       !$acc enter data copyin(nbprocs_info%srl_nb)
-       !$acc enter data copyin(nbprocs_info%f_rcv, nbprocs_info%f_send, nbprocs_info%f, nbprocs_info%f_info_rcv, nbprocs_info%f_info_send)
-       do ipe_neighbor = 1, nbprocs_info%max_nbprocs
-          !$acc enter data copyin(nbprocs_info%srl_nb(ipe_neighbor)%rcv%buffer, nbprocs_info%srl_nb(ipe_neighbor)%send%buffer)
-          !$acc enter data copyin( nbprocs_info%srl_nb(ipe_neighbor)%info_rcv%buffer, nbprocs_info%srl_nb(ipe_neighbor)%info_send%buffer)
-          !$acc enter data copyin(nbprocs_info%srl_nb(ipe_neighbor)%info%igrid)
-          !$acc enter data copyin(nbprocs_info%srl_nb(ipe_neighbor)%info%iencode)
-          !$acc enter data copyin(nbprocs_info%srl_nb(ipe_neighbor)%info%isize)
-          !$acc enter data copyin(nbprocs_info%srl_nb(ipe_neighbor)%info%ibuf_start)
-          !$acc enter data copyin(nbprocs_info%srl_nb(ipe_neighbor)%info%nigrids)
-       end do
-       do ipe_neighbor = 1, nbprocs_info%max_nbprocs
-          !$acc enter data copyin(nbprocs_info%f_rcv(ipe_neighbor)%buffer, nbprocs_info%f_info_rcv(ipe_neighbor)%buffer)
-          !$acc enter data copyin(nbprocs_info%f_send(ipe_neighbor)%buffer, nbprocs_info%f_info_send(ipe_neighbor)%buffer)
-          !$acc enter data copyin(nbprocs_info%f(ipe_neighbor)%igrid)
-          !$acc enter data copyin(nbprocs_info%f(ipe_neighbor)%i1)
-          !$acc enter data copyin(nbprocs_info%f(ipe_neighbor)%i2)
-          !$acc enter data copyin(nbprocs_info%f(ipe_neighbor)%i3)
-          !$acc enter data copyin(nbprocs_info%f(ipe_neighbor)%inc1)
-          !$acc enter data copyin(nbprocs_info%f(ipe_neighbor)%inc2)
-          !$acc enter data copyin(nbprocs_info%f(ipe_neighbor)%inc3)
-          !$acc enter data copyin(nbprocs_info%f(ipe_neighbor)%isize)
-          !$acc enter data copyin(nbprocs_info%f(ipe_neighbor)%ibuf_start)
-          !$acc enter data copyin(nbprocs_info%f(ipe_neighbor)%nigrids)
-       end do
-       do ipe_neighbor = 1, nbprocs_info%max_nbprocs
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%rcv%buffer, nbprocs_info%course_nb(ipe_neighbor)%send%buffer)
-          !$acc enter data copyin( nbprocs_info%course_nb(ipe_neighbor)%info_rcv%buffer, nbprocs_info%course_nb(ipe_neighbor)%info_send%buffer)
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%info%igrid)
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%info%i1)
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%info%i2)
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%info%i3)
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%info%inc1)
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%info%inc2)
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%info%inc3)
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%info%isize)
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%info%ibuf_start)
-          !$acc enter data copyin(nbprocs_info%course_nb(ipe_neighbor)%info%nigrids)
-       end do
-
-       first = .false.
-
-    else
-       !$acc update device(nbprocs_info%nbprocs_srl, nbprocs_info%imaxigrids_srl)
-       !$acc update device(nbprocs_info%nbprocs_f, nbprocs_info%imaxigrids_f)
-       !$acc update device(nbprocs_info%nbprocs_c, nbprocs_info%imaxigrids_c)
-       !$acc update device(nbprocs_info%nbprocs_srl_list, nbprocs_info%ipe_to_inbpe_srl)
-       !$acc update device(nbprocs_info%nbprocs_f_list, nbprocs_info%ipe_to_inbpe_f)
-       !$acc update device(nbprocs_info%nbprocs_c_list, nbprocs_info%ipe_to_inbpe_c)
-       do ipe_neighbor = 1, nbprocs_info%nbprocs_srl
-          !$acc update device(nbprocs_info%srl_nb(ipe_neighbor)%info%nigrids)
-          !$acc update device(nbprocs_info%srl_nb(ipe_neighbor)%info%iencode)
-          !$acc update device(nbprocs_info%srl_nb(ipe_neighbor)%info%isize)
-          !$acc update device(nbprocs_info%srl_nb(ipe_neighbor)%info%ibuf_start)
-          !$acc update device(nbprocs_info%srl_nb(ipe_neighbor)%send%size)
-          !$acc update device(nbprocs_info%srl_nb(ipe_neighbor)%rcv%size)
-          !$acc update device(nbprocs_info%srl_nb(ipe_neighbor)%info_send%size)
-          !$acc update device(nbprocs_info%srl_nb(ipe_neighbor)%info_rcv%size)
-       end do
-       !$acc update device(nbprocs_info%nbprocs_f, nbprocs_info%imaxigrids_f)
-       do ipe_neighbor = 1, nbprocs_info%nbprocs_f
-          !$acc update device(nbprocs_info%f(ipe_neighbor)%nigrids)
-          !$acc update device(nbprocs_info%f(ipe_neighbor)%igrid)
-          !$acc update device(nbprocs_info%f(ipe_neighbor)%i1)
-          !$acc update device(nbprocs_info%f(ipe_neighbor)%i2)
-          !$acc update device(nbprocs_info%f(ipe_neighbor)%i3)
-          !$acc update device(nbprocs_info%f(ipe_neighbor)%inc1)
-          !$acc update device(nbprocs_info%f(ipe_neighbor)%inc2)
-          !$acc update device(nbprocs_info%f(ipe_neighbor)%inc3)
-          !$acc update device(nbprocs_info%f(ipe_neighbor)%isize)
-          !$acc update device(nbprocs_info%f(ipe_neighbor)%ibuf_start)
-          !$acc update device(nbprocs_info%f_send(ipe_neighbor)%size)
-          !$acc update device(nbprocs_info%f_rcv(ipe_neighbor)%size)
-          !$acc update device(nbprocs_info%f_info_send(ipe_neighbor)%size)
-          !$acc update device(nbprocs_info%f_info_rcv(ipe_neighbor)%size)
-       end do
-       !$acc update device(nbprocs_info%nbprocs_c, nbprocs_info%imaxigrids_c)
-       do ipe_neighbor = 1, nbprocs_info%nbprocs_c
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info%nigrids)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info%igrid)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info%i1)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info%i2)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info%i3)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info%inc1)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info%inc2)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info%inc3)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info%isize)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info%ibuf_start)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%send%size)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%rcv%size)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info_send%size)
-          !$acc update device(nbprocs_info%course_nb(ipe_neighbor)%info_rcv%size)
-       end do
-
-    end if
-
-    end subroutine nbprocs_update_device
 
  end module mod_connectivity

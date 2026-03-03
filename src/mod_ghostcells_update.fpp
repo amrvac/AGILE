@@ -1133,7 +1133,7 @@ contains
     ! for prolongation:
     integer  :: ixCo1, ixCo2, ixCo3, ixFi1, ixFi2, ixFi3, idims
     integer  :: ixFimin1, ixFimin2, ixFimin3, ixFimax1, ixFimax2, ixFimax3
-    integer  :: hxCo1, hxCo2, hxCo3, jxCo1, jxCo2, jxCo3
+    integer  :: hxCo1, hxCo2, hxCo3, jxCo1, jxCo2, jxCo3, nigrids
     real(dp) :: slope(ndim), dxFi1, dxFi2, dxFi3, dxCo1, dxCo2, dxCo3
     real(dp) :: invdxCo1, invdxCo2, invdxCo3
     real(dp) :: xFimin1, xFimin2, xFimin3, xComin1, xComin2, xComin3
@@ -1147,6 +1147,27 @@ contains
     nwtail = nwstart+nwbc-1
     bgstep  = psb(igrids(1))%istep
 
+    !$acc enter data copyin (idphyb)
+    !$acc enter data copyin (nbprocs_info)
+    !$acc enter data copyin (nbprocs_info%srl_nb)
+    !$acc enter data copyin (nbprocs_info%course_nb)
+    !$acc enter data copyin (nbprocs_info%fine_nb)
+    do inb = 1, nbprocs_info%nbprocs_srl
+      !$acc enter data create (nbprocs_info%srl_nb(inb)%rcv%buffer, nbprocs_info%srl_nb(inb)%send%buffer)
+      !$acc enter data create (nbprocs_info%srl_nb(inb)%info_rcv%buffer, nbprocs_info%srl_nb(inb)%info_send%buffer)
+      !$acc enter data copyin (nbprocs_info%srl_nb(inb)%info%igrid)
+      !$acc enter data copyin (nbprocs_info%srl_nb(inb)%info%iencode)
+      !$acc enter data copyin (nbprocs_info%srl_nb(inb)%info%ibuf_start)
+    end do
+    do inb = 1, nbprocs_info%nbprocs_c
+      !$acc enter data create (nbprocs_info%course_nb(inb)%rcv%buffer, nbprocs_info%course_nb(inb)%send%buffer)
+      !$acc enter data create (nbprocs_info%course_nb(inb)%info_rcv%buffer, nbprocs_info%course_nb(inb)%info_send%buffer)
+    end do
+    do inb = 1, nbprocs_info%nbprocs_f
+      !$acc enter data create (nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%send%buffer)
+      !$acc enter data create (nbprocs_info%fine_nb(inb)%info_rcv%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer)
+    end do
+
     req_diagonal = .true.
     if (present(req_diag)) req_diagonal = req_diag
     !$acc update device(req_diagonal)
@@ -1158,7 +1179,7 @@ contains
 
     ! fill physical-boundary ghost cells before internal ghost-cell values exchange
     if(bcphys.and. .not.stagger_grid) then
-       !$acc parallel loop gang
+       !$acc parallel loop gang default(present)
        do iigrid = 1, igridstail; igrid=igrids(iigrid);
           if (.not.phyboundblock(igrid)) cycle
           call fill_boundary_before_gc(psb(igrid),igrid,time,qdt)
@@ -1167,7 +1188,7 @@ contains
 
 
     ! prepare coarse values to send to coarser neighbors
-    !$acc parallel loop gang
+    !$acc parallel loop gang default(present)
     do iigrid = 1, igridstail; igrid=igrids(iigrid);
        if (any(neighbor_type(:,:,:,igrid)==neighbor_coarse)) then
 
@@ -1236,42 +1257,23 @@ contains
 #ifdef _CRAYFTN
       !$acc host_data use_device(nbprocs_info)
 #else
-      !$acc host_data use_device(nbprocs_info%f_rcv(inb)%buffer, nbprocs_info%f_info_rcv(inb)%buffer)
+      !$acc host_data use_device(nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%info_rcv%buffer)
 #endif
 #endif
-       call mpi_irecv_wrapper(nbprocs_info%f_rcv(inb)%buffer, &
-            nbprocs_info%f_rcv(inb)%size, &
+       call mpi_irecv_wrapper(nbprocs_info%fine_nb(inb)%rcv%buffer, &
+            nbprocs_info%fine_nb(inb)%rcv%size, &
             MPI_DOUBLE_PRECISION, nbprocs_info%nbprocs_f_list(inb), 1, icomm, recv_f_nb(inb), ierrmpi)
-       call mpi_irecv_wrapper(nbprocs_info%f_info_rcv(inb)%buffer, &
-            nbprocs_info%f_info_rcv(inb)%size, &
+       call mpi_irecv_wrapper(nbprocs_info%fine_nb(inb)%info_rcv%buffer, &
+            nbprocs_info%fine_nb(inb)%info_rcv%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_f_list(inb), 2, icomm, recv_f_nb(nbprocs_info%nbprocs_f + inb), ierrmpi)
 #ifndef NOGPUDIRECT
       !$acc end host_data
 #endif
     end do
 
-    !do inb = 1, nbprocs_info%nbprocs_srl
-    !  write(*,*) "nigrids", nbprocs_info%srl_nb(inb)%info%nigrids
-    !  write(*,*) "igrid", nbprocs_info%srl_nb(inb)%info%igrid
-    !  write(*,*) "iencode", nbprocs_info%srl_nb(inb)%info%iencode
-    !  write(*,*) "ibuf_start", nbprocs_info%srl_nb(inb)%info%ibuf_start
-    !  write(*,*) "idphyb", idphyb
-    !  !$acc update host(nbprocs_info%srl_nb(inb)%info%nigrids)
-    !  !$acc update host(nbprocs_info%srl_nb(inb)%info%igrid)
-    !  !$acc update host(nbprocs_info%srl_nb(inb)%info%iencode)
-    !  !$acc update host(nbprocs_info%srl_nb(inb)%info%ibuf_start)
-    !  !$acc update host(idphyb)
-    !  write(*,*) "nigrids", nbprocs_info%srl_nb(inb)%info%nigrids
-    !  write(*,*) "igrid", nbprocs_info%srl_nb(inb)%info%igrid
-    !  write(*,*) "iencode", nbprocs_info%srl_nb(inb)%info%iencode
-    !  write(*,*) "ibuf_start", nbprocs_info%srl_nb(inb)%info%ibuf_start
-    !  write(*,*) "idphyb", idphyb
-    !end do
-
-     
     ! fill the SRL send buffers on GPU
     do inb = 1, nbprocs_info%nbprocs_srl
-      !$acc parallel loop gang collapse(1) private(Nx1,Nx2,Nx3,ienc)
+       !$acc parallel loop default(present) gang private(igrid, ienc, ibuf_start, i1, i2, i3, ixSmin1, ixSmin2, ixSmin3, Nx1)
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
              igrid = nbprocs_info%srl_nb(inb)%info%igrid(i)
              ienc = nbprocs_info%srl_nb(inb)%info%iencode(i)
@@ -1307,10 +1309,9 @@ contains
     end do
 
     ! fill the C send buffers on GPU (send_restrict)
-    !$acc parallel loop gang collapse(2) independent private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3)
     do inb = 1, nbprocs_info%nbprocs_c
-       do i = 1, nbprocs_info%imaxigrids_c
-          if (i > nbprocs_info%course_nb(inb)%info%nigrids) cycle
+       !$acc parallel loop gang default(present) private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3)
+       do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%course_nb(inb)%info%igrid(i)
           i1 = nbprocs_info%course_nb(inb)%info%i1(i)
@@ -1357,15 +1358,14 @@ contains
        end do
     end do
 
-
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_srl
-       !$acc update host(nbprocs_info%srl_nb(inb)%info_send%buffer(1:nbprocs_info%srl_nb(inb)%info_send%size))
-       !$acc update host(nbprocs_info%srl_nb(inb)%send%buffer(1:nbprocs_info%srl_nb(inb)%send%size))
+       !$acc update host(nbprocs_info%srl_nb(inb)%info_send%buffer)
+       !$acc update host(nbprocs_info%srl_nb(inb)%send%buffer)
     end do
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc update host(nbprocs_info%course_nb(inb)%info_send%buffer(1:nbprocs_info%course_nb(inb)%info_send%size))
-       !$acc update host(nbprocs_info%course_nb(inb)%send%buffer(1:nbprocs_info%course_nb(inb)%send%size))
+       !$acc update host(nbprocs_info%course_nb(inb)%info_send%buffer)
+       !$acc update host(nbprocs_info%course_nb(inb)%send%buffer)
     end do
 #endif
 
@@ -1411,8 +1411,7 @@ contains
 
     ! fill ghost-cell values of sibling blocks and if neighbor is coarser (f2c)
     ! same process case
-    !TODO broken on OPENACC, but why???
-    !!$acc parallel loop gang collapse(2)
+    !$acc parallel loop gang collapse(2) default(present)
     do iigrid = 1, igridstail
        do i = 1, 27
           call idecode( i1, i2, i3, i)
@@ -1435,7 +1434,7 @@ contains
                    ixRmin3=ixR_srl_min3(iib3,n_i3); ixRmax1=ixR_srl_max1(iib1,n_i1)
                    ixRmax2=ixR_srl_max2(iib2,n_i2); ixRmax3=ixR_srl_max3(iib3,n_i3)
 
-                   !!$acc loop collapse(ndim+1) independent vector
+                   !$acc loop collapse(ndim+1) independent vector
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
@@ -1465,7 +1464,7 @@ contains
                    ixRmin3=ixR_r_min3(iib3,n_inc3);ixRmax1=ixR_r_max1(iib1,n_inc1)
                    ixRmax2=ixR_r_max2(iib2,n_inc2);ixRmax3=ixR_r_max3(iib3,n_inc3);
 
-                   !!$acc loop collapse(ndim+1) independent vector
+                   !$acc loop collapse(ndim+1) independent vector
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
@@ -1490,16 +1489,15 @@ contains
     call MPI_WAITALL(nbprocs_info%nbprocs_srl*2, send_srl_nb, sendstatus_srl_nb, ierrmpi)
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_srl
-      !$acc update device(nbprocs_info%srl_nb(inb)%info_rcv%buffer(1:nbprocs_info%srl_nb(inb)%info_rcv%size))
-      !$acc update device(nbprocs_info%srl_nb(inb)%rcv%buffer(1:nbprocs_info%srl_nb(inb)%rcv%size))
+      !$acc update device(nbprocs_info%srl_nb(inb)%info_rcv%buffer)
+      !$acc update device(nbprocs_info%srl_nb(inb)%rcv%buffer)
     end do
 #endif
 
     ! unpack the MPI buffers
-    !$acc parallel loop gang collapse(2)
     do inb = 1, nbprocs_info%nbprocs_srl
-       do i = 1, nbprocs_info%imaxigrids_srl
-          if (i > nbprocs_info%srl_nb(inb)%info%nigrids) cycle
+      !$acc parallel loop gang default(present) independent private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, ixRmin1, ixRmin2, ixRmin3, Nx1)
+       do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%srl_nb(inb)%info_rcv%buffer( 3 * (i - 1) + 1 )
           ienc        = nbprocs_info%srl_nb(inb)%info_rcv%buffer( 3 * (i - 1) + 2 )
@@ -1515,7 +1513,7 @@ contains
           ixRmax2=ixR_srl_max2(iib2,i2); ixRmax3=ixR_srl_max3(iib3,i3)
           Nx1=ixRmax1-ixRmin1+1; Nx2=ixRmax2-ixRmin2+1; Nx3=ixRmax3-ixRmin3+1
 
-          !$acc loop collapse(4) vector independent
+          !$acc loop collapse(4) vector independent private(tempval)
           do iw = nwhead, nwtail
              do ix3 = ixRmin3, ixRmax3
                 do ix2 = ixRmin2, ixRmax2
@@ -1543,22 +1541,21 @@ contains
 
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc update device(nbprocs_info%f_info_rcv(inb)%buffer(1:nbprocs_info%f_info_rcv(inb)%size))
-       !$acc update device(nbprocs_info%f_rcv(inb)%buffer(1:nbprocs_info%f_rcv(inb)%size))
+       !$acc update device(nbprocs_info%fine_nb(inb)%info_rcv%buffer(1:nbprocs_info%fine_nb(inb)%info_rcv%size))
+       !$acc update device(nbprocs_info%fine_nb(inb)%rcv%buffer(1:nbprocs_info%fine_nb(inb)%rcv%size))
     end do
 #endif
 
     ! unpack the MPI buffers, fine neighbor, (f_recv), recv_restrict
-    !$acc parallel loop gang collapse(2)
     do inb = 1, nbprocs_info%nbprocs_f
-       do i = 1, nbprocs_info%imaxigrids_f
-          if (i > nbprocs_info%f(inb)%nigrids) cycle
+       !$acc parallel loop gang default(present)
+       do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
-          igrid       = nbprocs_info%f_info_rcv(inb)%buffer( 5 * (i - 1) + 1 )
-          inc1        = nbprocs_info%f_info_rcv(inb)%buffer( 5 * (i - 1) + 2 )
-          inc2        = nbprocs_info%f_info_rcv(inb)%buffer( 5 * (i - 1) + 3 )
-          inc3        = nbprocs_info%f_info_rcv(inb)%buffer( 5 * (i - 1) + 4 )
-          ibuf_start  = nbprocs_info%f_info_rcv(inb)%buffer( 5 * (i - 1) + 5 )
+          igrid       = nbprocs_info%fine_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 1 )
+          inc1        = nbprocs_info%fine_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 2 )
+          inc2        = nbprocs_info%fine_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 3 )
+          inc3        = nbprocs_info%fine_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 4 )
+          ibuf_start  = nbprocs_info%fine_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 5 )
 
           iib1 = idphyb(1,igrid); iib2 = idphyb(2,igrid); iib3 = idphyb(3,igrid)
 
@@ -1574,7 +1571,7 @@ contains
                    do ix1 = ixRmin1, ixRmax1
                       ! going through a tempval is a workaround for Cray, which gives
                       ! a memory access fault on the GPUs otherwise
-                      tempval = nbprocs_info%f_rcv(inb)%buffer( &
+                      tempval = nbprocs_info%fine_nb(inb)%rcv%buffer( &
                            ibuf_start &
                            + (ix1-ixRmin1) &
                            + Nx1 * (ix2-ixRmin2) &
@@ -1611,17 +1608,16 @@ contains
     end do
 
     ! fill the F (neighbor is finer) send buffer on GPU (send_prolong)
-    !$acc parallel loop gang collapse(2) independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3)
     do inb = 1, nbprocs_info%nbprocs_f
-       do i = 1, nbprocs_info%imaxigrids_f
-          if (i > nbprocs_info%f(inb)%nigrids) cycle
+       !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3) default(present)
+       do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
-          igrid = nbprocs_info%f(inb)%igrid(i)
-          inc1 = nbprocs_info%f(inb)%inc1(i)
-          inc2 = nbprocs_info%f(inb)%inc2(i)
-          inc3 = nbprocs_info%f(inb)%inc3(i)
+          igrid = nbprocs_info%fine_nb(inb)%info%igrid(i)
+          inc1 = nbprocs_info%fine_nb(inb)%info%inc1(i)
+          inc2 = nbprocs_info%fine_nb(inb)%info%inc2(i)
+          inc3 = nbprocs_info%fine_nb(inb)%info%inc3(i)
 
-          ibuf_start = nbprocs_info%f(inb)%ibuf_start(i)
+          ibuf_start = nbprocs_info%fine_nb(inb)%info%ibuf_start(i)
           iib1=idphyb(1,igrid); iib2=idphyb(2,igrid); iib3=idphyb(3,igrid)
 
           ! now fill the data and info buffers
@@ -1635,7 +1631,7 @@ contains
              do ix3 = ixSmin3, ixSmax3
                 do ix2 = ixSmin2, ixSmax2
                    do ix1 = ixSmin1, ixSmax1
-                      nbprocs_info%f_send(inb)%buffer( &
+                      nbprocs_info%fine_nb(inb)%send%buffer( &
                            ibuf_start &
                            + (ix1-ixSmin1) &
                            + Nx1 * (ix2-ixSmin2) &
@@ -1653,15 +1649,15 @@ contains
           if (n_inc2 == 0) then; n_inc2 = 3; else if (n_inc2 == 3) then; n_inc2 = 0; end if
           if (n_inc3 == 0) then; n_inc3 = 3; else if (n_inc3 == 3) then; n_inc3 = 0; end if
 
-          nbprocs_info%f_info_send(inb)%buffer( 1 + 5 * (i - 1) : 5 * i ) = &
+          nbprocs_info%fine_nb(inb)%info_send%buffer( 1 + 5 * (i - 1) : 5 * i ) = &
                [neighbor_child(1,inc1,inc2,inc3,igrid), n_inc1, n_inc2, n_inc3, ibuf_start]
        end do
     end do
 
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_f
-      !$acc update host(nbprocs_info%f_info_send(inb)%buffer(1:nbprocs_info%f_info_send(inb)%size))
-      !$acc update host(nbprocs_info%f_send(inb)%buffer(1:nbprocs_info%f_send(inb)%size))
+      !$acc update host(nbprocs_info%fine_nb(inb)%info_send%buffer)
+      !$acc update host(nbprocs_info%fine_nb(inb)%send%buffer)
     end do
 #endif
 
@@ -1671,14 +1667,14 @@ contains
 #ifdef _CRAYFTN
       !$acc host_data use_device(nbprocs_info)
 #else
-      !$acc host_data use_device(nbprocs_info%f_send(inb)%buffer, nbprocs_info%f_info_send(inb)%buffer)
+      !$acc host_data use_device(nbprocs_info%fine_nb(inb)%send%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer)
 #endif
 #endif
-       call mpi_isend_wrapper(nbprocs_info%f_send(inb)%buffer, &
-            nbprocs_info%f_send(inb)%size, &
+       call mpi_isend_wrapper(nbprocs_info%fine_nb(inb)%send%buffer, &
+            nbprocs_info%fine_nb(inb)%send%size, &
             MPI_DOUBLE_PRECISION, nbprocs_info%nbprocs_f_list(inb), 1, icomm, send_f_nb(inb), ierrmpi)
-       call mpi_isend_wrapper(nbprocs_info%f_info_send(inb)%buffer, &
-            nbprocs_info%f_info_send(inb)%size, &
+       call mpi_isend_wrapper(nbprocs_info%fine_nb(inb)%info_send%buffer, &
+            nbprocs_info%fine_nb(inb)%info_send%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_f_list(inb), 2, icomm, send_f_nb(nbprocs_info%nbprocs_f + inb), ierrmpi)
 #ifndef NOGPUDIRECT
       !$acc end host_data
@@ -1687,7 +1683,7 @@ contains
 
 
     ! fill coarse ghost-cell values of finer neighbors in the same processor
-    !$acc parallel loop gang collapse(4) private(iib1,iib2,iib3,igrid)
+    !$acc parallel loop gang collapse(4) private(iib1,iib2,iib3,igrid) default(present)
     do iigrid=1,igridstail
        do i3=-1,1
           do i2=-1,1
@@ -1761,10 +1757,9 @@ contains
 #endif
 
     ! unpack the MPI buffers, coarse neighbor, (c_recv), recv_prolong
-    !$acc parallel loop gang collapse(2) independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3)
     do inb = 1, nbprocs_info%nbprocs_c
-       do i = 1, nbprocs_info%imaxigrids_c
-          if (i > nbprocs_info%course_nb(inb)%info%nigrids) cycle
+       !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3) default(present)
+       do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%course_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 1 )
           inc1        = nbprocs_info%course_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 2 )
@@ -1803,7 +1798,7 @@ contains
     end do
 
     ! do prolongation on the ghost-cell values based on the received coarse values from coarser neighbors (f2c)
-    !$acc parallel loop gang collapse(4)
+    !$acc parallel loop gang collapse(4) default(present)
     do iigrid=1, igridstail
        !      inline variant of call gc_prolong(igrid)
        do i3 = -1, 1
@@ -1907,6 +1902,27 @@ contains
 
     call nvtxEndRange
 
+
+    do inb = 1, nbprocs_info%nbprocs_srl
+    !$acc exit data delete (nbprocs_info%srl_nb(inb)%rcv%buffer, nbprocs_info%srl_nb(inb)%info_rcv%buffer)
+    !$acc exit data delete (nbprocs_info%srl_nb(inb)%send%buffer, nbprocs_info%srl_nb(inb)%info_send%buffer)
+    !$acc exit data delete (nbprocs_info%srl_nb(inb)%info%igrid)
+    !$acc exit data delete (nbprocs_info%srl_nb(inb)%info%iencode)
+    !$acc exit data delete (nbprocs_info%srl_nb(inb)%info%ibuf_start)
+    end do
+    do inb = 1, nbprocs_info%nbprocs_c
+    !$acc exit data delete (nbprocs_info%course_nb(inb)%rcv%buffer, nbprocs_info%course_nb(inb)%info_rcv%buffer)
+    !$acc exit data delete (nbprocs_info%course_nb(inb)%send%buffer, nbprocs_info%course_nb(inb)%info_send%buffer)
+    end do
+    do inb = 1, nbprocs_info%nbprocs_f
+    !$acc exit data delete (nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%info_rcv%buffer)
+    !$acc exit data delete (nbprocs_info%fine_nb(inb)%send%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer)
+    end do
+    !$acc exit data delete (idphyb)
+    !$acc exit data delete (nbprocs_info%srl_nb)
+    !$acc exit data delete (nbprocs_info%fine_nb)
+    !$acc exit data delete (nbprocs_info%course_nb)
+    !$acc exit data delete (nbprocs_info)
 
   end subroutine getbc
 
