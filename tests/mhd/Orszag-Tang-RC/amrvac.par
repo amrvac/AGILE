@@ -27,6 +27,9 @@
    flux_scheme     = 20*'tvdlf'
    limiter         = 20*'vanleer'
    phys            = 'mhd'
+   fix_small_values = T
+   small_density    = 1.0d-3
+   small_pressure   = 1.0d-6
  /
 
  &boundlist
@@ -39,7 +42,7 @@
  /
 
  &meshlist
-   max_blocks         = 16384
+   max_blocks         = 8096
    refine_criterion   = 3
    refine_max_level   = 4
    refine_threshold   = 20*0.4d0
@@ -76,8 +79,6 @@
  &rc_list
    ncool      = 4000
    coolcurve  = 'Colgan_DM'
-   Tfix       = .true.
-   tlow       = 5.0d-4
  /
 
  &usr_list
