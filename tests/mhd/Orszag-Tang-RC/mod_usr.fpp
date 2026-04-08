@@ -5,7 +5,7 @@ module mod_usr
   implicit none
 
   double precision :: v0, rho0, p0, T0, pbeta0, b0, mach0
-  integer :: netheat_
+  integer :: netheat_, jz_
 
 contains
 
@@ -31,6 +31,7 @@ contains
 
     ! Extra variable stored in dat files
     netheat_ = var_set_extravar("netheat", "netheat")
+    jz_ = var_set_extravar("jz", "jz")
 
     if (mype == 0) then
       write(*,'(A)')        ' ========================================'
@@ -229,6 +230,7 @@ contains
   !> We sync the physics variables from device first.
   subroutine set_output_vars(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
      ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,qt,w,x)
+    use mod_functions_bfield, only: get_current
     #:if defined('COOLING')
     use mod_radiative_cooling, only: rc_fl, getvar_cooling_exact
     #:endif
@@ -240,8 +242,10 @@ contains
        ixImin3:ixImax3,1:nw)
 
     double precision :: coolrate, dt_use
+    double precision :: current(ixImin1:ixImax1,ixImin2:ixImax2,&
+       ixImin3:ixImax3,7-2*ndir:3)
     double precision, save :: dt_prev = 0.0d0
-    integer :: i1, i2, i3
+    integer :: i1, i2, i3, idirmin
 
     ! usr_modify_output is called before saveamrfile syncs device->host, so w on host is stale
     !$acc update host(block%w)
@@ -269,8 +273,16 @@ contains
     endif
     #:endif
 
-    ! Push netheat back to device so saveamrfile's device->host sync picks it up
+    ! Compute current density and store jz
+    call get_current(w, ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3, &
+       ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3, &
+       idirmin, current)
+    w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,jz_) = &
+       current(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,3)
+
+    ! Push extravars back to device so saveamrfile's device->host sync picks them up
     !$acc update device(block%w(:,:,:,netheat_))
+    !$acc update device(block%w(:,:,:,jz_))
 
   end subroutine set_output_vars
 
@@ -278,6 +290,7 @@ contains
   subroutine special_log()
     use mod_forest, only: nleafs_active
     use mod_global_parameters
+    use mod_functions_bfield, only: get_current
 
     logical, save        :: opened = .false.
     integer              :: iigrid, igrid, amode, istatus(MPI_STATUS_SIZE)
@@ -286,8 +299,10 @@ contains
     character(len=1024)  :: line
 
     double precision :: local_min_T, local_max_T, local_min_rho, local_max_rho
-    double precision :: local_min_p
-    double precision :: global_mins(3), global_maxs(2), local_mins(3), local_maxs(2)
+    double precision :: local_min_p, local_max_j
+    double precision :: global_mins(3), global_maxs(3), local_mins(3), local_maxs(3)
+    double precision :: current(ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3,7-2*ndir:3)
+    integer          :: idirmin
 
     ! Compute local min/max over all blocks on this processor
     local_min_T   =  huge(1.0d0)
@@ -295,6 +310,7 @@ contains
     local_min_rho =  huge(1.0d0)
     local_max_rho = -huge(1.0d0)
     local_min_p   =  huge(1.0d0)
+    local_max_j   = 0.0d0
 
     do iigrid = 1, igridstail
        igrid = igrids(iigrid)
@@ -303,6 +319,13 @@ contains
        call compute_block_minmax(ps(igrid)%w, &
           local_min_T, local_max_T, local_min_rho, local_max_rho, &
           local_min_p)
+
+       ! Compute current and track max |jz|
+       call get_current(ps(igrid)%w, ixGlo1, ixGlo2, ixGlo3, ixGhi1, ixGhi2, ixGhi3, &
+          ixMlo1, ixMlo2, ixMlo3, ixMhi1, ixMhi2, ixMhi3, &
+          idirmin, current)
+       local_max_j = max(local_max_j, &
+          maxval(abs(current(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ixMlo3:ixMhi3,3))))
     end do
 
     ! MPI reduce
@@ -310,8 +333,8 @@ contains
     call MPI_ALLREDUCE(local_mins, global_mins, 3, MPI_DOUBLE_PRECISION, &
        MPI_MIN, icomm, ierrmpi)
 
-    local_maxs = (/ local_max_T, local_max_rho /)
-    call MPI_ALLREDUCE(local_maxs, global_maxs, 2, MPI_DOUBLE_PRECISION, &
+    local_maxs = (/ local_max_T, local_max_rho, local_max_j /)
+    call MPI_ALLREDUCE(local_maxs, global_maxs, 3, MPI_DOUBLE_PRECISION, &
        MPI_MAX, icomm, ierrmpi)
 
     if (mype == 0) then
@@ -330,17 +353,17 @@ contains
           opened = .true.
 
           if (restart_from_file == undefined .or. reset_time) then
-             line = 'it global_time dt min_T max_T min_rho max_rho min_p nleafs'
+             line = 'it global_time dt min_T max_T min_rho max_rho min_p max_jz nleafs'
              call MPI_FILE_WRITE(log_fh, trim(line) // new_line('a'), &
                 len_trim(line)+1, MPI_CHARACTER, istatus, ierrmpi)
           end if
        end if
 
-       write(line, '(i8,2ES16.8,5ES16.8,i10)') &
+       write(line, '(i8,2ES16.8,6ES16.8,i10)') &
           it, global_time, dt, &
           global_mins(1), global_maxs(1), &
           global_mins(2), global_maxs(2), &
-          global_mins(3), nleafs_active
+          global_mins(3), global_maxs(3), nleafs_active
 
        call MPI_FILE_WRITE(log_fh, trim(line) // new_line('a'), &
           len_trim(line)+1, MPI_CHARACTER, istatus, ierrmpi)
