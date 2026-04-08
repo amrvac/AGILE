@@ -1,0 +1,88 @@
+
+ &filelist
+   base_filename    = 'output/ot_rc'
+   autoconvert      = F
+   saveprim         = T
+   !nwauxio          = 3
+   typefilelog       = 'special'
+ /
+
+ &savelist
+   itsave(1,1)      = 0
+   itsave(1,2)      = 0
+   ditsave_log      = 20
+   dtsave_dat       = 0.5
+   !dtsave_slice     = 0.1
+   !nslices          = 1
+   !slicedir(1)      = 3
+   !slicecoord(1)    = 0.08333333d0
+ /
+
+ &stoplist
+   time_max = 2.5
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'tvdlf'
+   limiter         = 20*'vanleer'
+   phys            = 'mhd'
+ /
+
+ &boundlist
+   typeboundary_min1 = 8*'periodic'
+   typeboundary_max1 = 8*'periodic'
+   typeboundary_min2 = 8*'periodic'
+   typeboundary_max2 = 8*'periodic'
+   typeboundary_min3 = 8*'periodic'
+   typeboundary_max3 = 8*'periodic'
+ /
+
+ &meshlist
+   max_blocks         = 16384
+   refine_criterion   = 3
+   refine_max_level   = 4
+   refine_threshold   = 20*0.4d0
+   w_refine_weight(1) = 0.5d0
+   w_refine_weight(4) = 0.5d0
+   block_nx1          = 16
+   block_nx2          = 16
+   block_nx3          = 16
+   domain_nx1         = 64
+   domain_nx2         = 64
+   domain_nx3         = 16
+   xprobmin1       = 0.0d0
+   xprobmax1       = 1.0d0
+   xprobmin2       = 0.0d0
+   xprobmax2       = 1.0d0
+   xprobmin3       = 0.0d0
+   xprobmax3       = 0.25d0
+ /
+
+ &paramlist
+   slowsteps        = 10
+   courantpar       = 0.8d0
+   typecourant      = 'maxsum'
+ /
+
+ &mhd_list
+   mhd_energy = .true.
+   mhd_gravity = .false.
+   mhd_radiative_cooling = .true.
+   mhd_gamma = 1.6666667d0
+   He_abundance = 0.0d0
+ /
+
+ &rc_list
+   ncool      = 4000
+   coolcurve  = 'Colgan_DM'
+   Tfix       = .true.
+   tlow       = 5.0d-4
+ /
+
+ &usr_list
+   mach0  = 1.0d0
+   T0     = 0.25d0
+   pbeta0 = 3.0d0
+   rho0   = 4.0d0
+ /
