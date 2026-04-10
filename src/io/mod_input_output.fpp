@@ -2042,7 +2042,7 @@ contains
 
     !$acc update device(ixGhi1,ixGhi2,ixGhi3,ixGshi1,ixGshi2,ixGshi3,schmid_rad1,schmid_rad2,schmid_rad3,cada3_radius)
     !$acc update device(max_nb_procs, max_nb_size, max_nb_igrids)
-    !$acc update device(fix_small_values,small_density,small_pressure,H_correction,type_limiter, max_blocks)
+    !$acc update device(fix_small_values,H_correction,type_limiter, max_blocks)
     !$acc update device(rk_beta11,rk_beta22,rk_beta33,rk_beta44,rk_c2,rk_c3,rk_c4)
     !$acc update device(rk_alfa21,rk_alfa22,rk_alfa31,rk_alfa33,rk_alfa41,rk_alfa44)
     !$acc update device(rk_beta54,rk_beta55,rk_alfa53,rk_alfa54,rk_alfa55,rk_c5)

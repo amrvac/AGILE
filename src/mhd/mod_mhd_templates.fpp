@@ -456,11 +456,7 @@ end subroutine addsource_compact
 #:def to_primitive()
   pure subroutine to_primitive(u)
     !$acc routine seq
-    use mod_global_parameters, only: small_density, small_pressure, fix_small_values
     real(dp), intent(inout) :: u(nw_phys)
-
-    ! Floor density before dividing
-    if (fix_small_values) u(iw_rho) = max(u(iw_rho), small_density)
 
     u(iw_mom(1))=u(iw_mom(1))/u(iw_rho)
     u(iw_mom(2))=u(iw_mom(2))/u(iw_rho)
@@ -468,9 +464,6 @@ end subroutine addsource_compact
     u(iw_e)=mhd_gamma_m1*(u(iw_e)-0.5_dp*&
       (u(iw_rho)*(u(iw_mom(1))**2+u(iw_mom(2))**2+u(iw_mom(3))**2)+&
        u(iw_mag(1))**2+u(iw_mag(2))**2+u(iw_mag(3))**2))
-
-    ! Floor pressure
-    if (fix_small_values) u(iw_e) = max(u(iw_e), small_pressure)
 
   end subroutine to_primitive
 #:enddef
