@@ -39,7 +39,7 @@
  /
 
  &meshlist
-   max_blocks         = 16384
+   max_blocks         = 13000
    refine_criterion   = 3
    refine_max_level   = 4
    refine_threshold   = 20*0.4d0
@@ -48,15 +48,15 @@
    block_nx1          = 16
    block_nx2          = 16
    block_nx3          = 16
-   domain_nx1         = 64
-   domain_nx2         = 64
+   domain_nx1         = 96
+   domain_nx2         = 96
    domain_nx3         = 16
    xprobmin1       = 0.0d0
    xprobmax1       = 1.0d0
    xprobmin2       = 0.0d0
    xprobmax2       = 1.0d0
    xprobmin3       = 0.0d0
-   xprobmax3       = 0.25d0
+   xprobmax3       = 0.16666667d0
  /
 
  &paramlist
@@ -77,7 +77,7 @@
    ncool      = 4000
    coolcurve  = 'Colgan_DM'
    Tfix       = .true.
-   tlow       = 5.0d-4
+   tlow       = 1.0d-4
  /
 
  &usr_list
