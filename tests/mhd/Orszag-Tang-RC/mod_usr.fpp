@@ -29,7 +29,7 @@ contains
 
     call phys_activate()
 
-    ! Extra variable stored in dat files
+    ! Extra variables stored in dat files
     netheat_ = var_set_extravar("netheat", "netheat")
     jz_ = var_set_extravar("jz", "jz")
 
@@ -226,8 +226,6 @@ contains
   end subroutine specialvarnames_output
 
   !> Populate extra variables before dat output.
-  !> Note: w may be stale on host when this is called (data lives on GPU).
-  !> We sync the physics variables from device first.
   subroutine set_output_vars(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
      ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,qt,w,x)
     use mod_functions_bfield, only: get_current
@@ -247,10 +245,10 @@ contains
     double precision, save :: dt_prev = 0.0d0
     integer :: i1, i2, i3, idirmin
 
-    ! usr_modify_output is called before saveamrfile syncs device->host, so w on host is stale
+    ! Sync physics vars from device (usr_modify_output runs before saveamrfile's sync)
     !$acc update host(block%w)
 
-    ! At the final output dt can be ~0 (time_max reached exactly) which causes division by zero in getvar_cooling_exact
+    ! Guard against dt=0 at final output
     if (dt > smalldouble) then
        dt_use = dt
        dt_prev = dt
@@ -258,9 +256,10 @@ contains
        dt_use = dt_prev
     end if
 
+    ! Net heat loss
     w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,netheat_) = zero
     #:if defined('COOLING')
-    if(mhd_radiative_cooling) then
+    if(mhd_radiative_cooling .and. dt_use > smalldouble) then
        do i3=ixOmin3,ixOmax3
        do i2=ixOmin2,ixOmax2
        do i1=ixOmin1,ixOmax1
@@ -273,14 +272,14 @@ contains
     endif
     #:endif
 
-    ! Compute current density and store jz
+    ! Current density jz
     call get_current(w, ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3, &
        ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3, &
        idirmin, current)
     w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,jz_) = &
        current(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,3)
 
-    ! Push extravars back to device so saveamrfile's device->host sync picks them up
+    ! Push extravars to device
     !$acc update device(block%w(:,:,:,netheat_))
     !$acc update device(block%w(:,:,:,jz_))
 
