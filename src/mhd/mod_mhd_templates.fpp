@@ -454,7 +454,7 @@ end subroutine addsource_compact
 #:enddef
 
 #:def to_primitive()
-  subroutine to_primitive(u)
+  pure subroutine to_primitive(u)
     !$acc routine seq
     use mod_global_parameters, only: small_density, small_pressure, fix_small_values
     real(dp), intent(inout) :: u(nw_phys)
