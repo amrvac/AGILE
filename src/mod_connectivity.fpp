@@ -95,8 +95,8 @@ module mod_connectivity
       type(nbinfo_buffer_i_t), allocatable :: c_info_send(:)       ! info package send
       type(nbinfo_buffer_i_t), allocatable :: c_info_rcv(:)        ! info package receive
       integer                              :: max_size = -1        ! maximum buffer size (initialized in init)
-      integer                              :: max_nbprocs = 64     ! maximum nr of neighbor procs
-      integer                              :: max_igrids = 4096    ! maximum nr of igrids per neighbor proc
+      integer                              :: max_nbprocs = 40     ! maximum nr of neighbor procs: min(npe-1,max_nbprocs)
+      integer                              :: max_igrids = -1      ! maximum nr of igrids per neighbor proc
     contains
       procedure, non_overridable :: init, reset
       procedure, non_overridable :: add_igrid_to_srl, add_igrid_to_c, add_igrid_to_f
@@ -170,18 +170,18 @@ module mod_connectivity
      ! .. local ..
      integer               :: i
 
-     self%max_nbprocs = npe-1
+     self%max_nbprocs = min(npe-1, self%max_nbprocs)
      self%max_igrids  = nigrids
      self%max_size    = max_size
 
-     allocate(self%nbprocs_srl_list(npe-1), &
-          self%srl(npe-1))
+     allocate(self%nbprocs_srl_list(self%max_nbprocs), &
+          self%srl(self%max_nbprocs))
 
-     allocate(self%nbprocs_f_list(npe-1), &
-          self%f(npe-1))
+     allocate(self%nbprocs_f_list(self%max_nbprocs), &
+          self%f(self%max_nbprocs))
 
-     allocate(self%nbprocs_c_list(npe-1), &
-          self%c(npe-1))
+     allocate(self%nbprocs_c_list(self%max_nbprocs), &
+          self%c(self%max_nbprocs))
 
      allocate(self%ipe_to_inbpe_srl(0:npe-1))
      self%ipe_to_inbpe_srl(:) = -1
@@ -192,7 +192,7 @@ module mod_connectivity
      allocate(self%ipe_to_inbpe_c(0:npe-1))
      self%ipe_to_inbpe_c(:) = -1
 
-     do i = 1, npe-1
+     do i = 1, self%max_nbprocs
         call self%srl(i)%init(self%max_igrids)
         call self%f(i)%init(self%max_igrids)
         call self%c(i)%init(self%max_igrids)
