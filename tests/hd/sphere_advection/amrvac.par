@@ -43,7 +43,8 @@
  /
 
  &meshlist
-   max_blocks         =  2048
+   max_blocks         =  512
+   max_nb_size        =  900000
    refine_max_level   =  4
    refine_criterion   =  3 ! Lohner criterion
    refine_usr         =  .false.

@@ -95,7 +95,7 @@ module mod_connectivity
       type(nbinfo_buffer_i_t), allocatable :: c_info_send(:)       ! info package send
       type(nbinfo_buffer_i_t), allocatable :: c_info_rcv(:)        ! info package receive
       integer                              :: max_size = -1        ! maximum buffer size (initialized in init)
-      integer                              :: max_nbprocs = 40     ! maximum nr of neighbor procs: min(npe-1,max_nbprocs)
+      integer                              :: max_nbprocs = -1     ! maximum nr of neighbor procs: min(npe-1,max_nbprocs)
       integer                              :: max_igrids = -1      ! maximum nr of igrids per neighbor proc
     contains
       procedure, non_overridable :: init, reset
@@ -164,13 +164,13 @@ module mod_connectivity
 
    end subroutine reset
 
-   subroutine init(self, npe, nigrids, max_size)
+   subroutine init(self, npe, nigrids, max_size, npe_nb)
      class(nbprocs_info_t) :: self
-     integer, intent(in)   :: npe, nigrids, max_size
+     integer, intent(in)   :: npe, nigrids, max_size, npe_nb
      ! .. local ..
      integer               :: i
 
-     self%max_nbprocs = min(npe-1, self%max_nbprocs)
+     self%max_nbprocs = npe_nb
      self%max_igrids  = nigrids
      self%max_size    = max_size
 
