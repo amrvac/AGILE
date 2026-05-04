@@ -15,6 +15,7 @@ contains
     use mod_global_parameters
     use mod_geometry
     use mod_physics, only: mag
+    use mod_comm_lib, only: mpistop
 
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
@@ -71,6 +72,7 @@ contains
     use mod_global_parameters
     use mod_geometry, only: curlvector
     use mod_physics, only: mag
+    use mod_comm_lib, only: mpistop
     
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3, &
                                        ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
