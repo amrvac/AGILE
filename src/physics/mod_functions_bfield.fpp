@@ -4,6 +4,7 @@ module mod_functions_bfield
   private
 
   public :: get_divb
+  public :: get_current
 
 contains
 
@@ -62,5 +63,35 @@ contains
 
   end subroutine get_divb
 
+
+  !> Compute the current density j = curl(B)
+  subroutine get_current(w, ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3, &
+                         ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3, &
+                         idirmin, current, fourthorder)
+    use mod_global_parameters
+    use mod_geometry, only: curlvector
+    use mod_physics, only: mag
+    
+    integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3, &
+                                       ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
+    double precision, intent(in)    :: w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:nw)
+    integer, intent(out)            :: idirmin
+    double precision, intent(inout) :: current(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,7-2*ndir:3)
+    logical, intent(in), optional   :: fourthorder  !> Default: false
+
+    double precision :: qvec(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:ndir)
+
+    if (B0field) then
+      call mpistop("get_current is not implemented for B0field")
+    else
+      qvec(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:ndir) = &
+          w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,mag(1:ndir))
+
+      call curlvector(qvec, ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3, &
+                      ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3, &
+                      current, idirmin, 7-2*ndir, ndir, fourthorder)
+    end if
+
+  end subroutine get_current
 
 end module mod_functions_bfield
