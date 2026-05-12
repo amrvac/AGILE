@@ -27,21 +27,21 @@ jobs:
       - name: list GPUs
         run: nvidia-smi
 
-      - name: create Python environment
-        run: |
-          python3.13 -m pip install uv
-          uv sync
-
       - name: check compiler versions
         run: |
           mpirun --version
           nvfortran --version
+
+      - name: create Python environment
+        run: |
+          python3.13 -m pip install uv
+          uv sync
 
       - name: compile and run tests
         run: |
           #cd tests
           #NUM_PROCS=2 ARCH=nvidia OPENACC=1 ./test_runner.sh
           # Single test for now - just to see if it runs
-          cd test/hd/KH3D
+          cd tests/hd/KH3D
           make arch=nvidia OPENACC=1 
           mpirun -n 2 ./amrvac -i test.par
