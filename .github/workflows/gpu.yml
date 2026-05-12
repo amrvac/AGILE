@@ -43,5 +43,6 @@ jobs:
           #NUM_PROCS=2 ARCH=nvidia OPENACC=1 ./test_runner.sh
           # Single test for now - just to see if it runs
           cd tests/hd/KH3D
+          source $AMRVAC_DIR/.venv/bin/activate
           make arch=nvidia OPENACC=1 
           mpirun -n 2 ./amrvac -i test.par
