@@ -16,16 +16,27 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
+
+      - name: set paths
+        run: |
+          echo "/volume1/scratch/shared_software/openmpi-nvhpc-5.0.8/bin" >> "$GITHUB_PATH"
+          echo "/volume1/scratch/shared_software/nvhpc/hpc_sdk/Linux_x86_64/25.11/compilers/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: list GPUs
+        run: nvidia-smi
+
+      - name: create Python environment
+        run: |
+          python3.13 -m pip install uv
+          uv sync
 
       - name: check compiler versions
         run: |
-          nvfortran --version
           mpirun --version
-      - name: create Python environment
-        run: |
-          pip install uv
-          uv sync
+          nvfortran --version
+
       - name: compile and run tests
         run: |
           #cd tests
