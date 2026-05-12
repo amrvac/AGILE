@@ -1,4 +1,5 @@
-[![tests](https://github.com/amrvac/AGILE-experimental/actions/workflows/tests.yml/badge.svg)](https://github.com/amrvac/AGILE-experimental/actions/workflows/tests.yml)
+[![tests (CPU)](https://github.com/amrvac/AGILE-experimental/actions/workflows/tests.yml/badge.svg)](https://github.com/amrvac/AGILE-experimental/actions/workflows/tests.yml)
+[![tests (GPU)](https://github.com/amrvac/AGILE-experimental/actions/workflows/gpu.yml/badge.svg)](https://github.com/amrvac/AGILE-experimental/actions/workflows/gpu.yml)
 
 # AGILE
 
