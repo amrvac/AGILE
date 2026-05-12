@@ -1,0 +1,36 @@
+name: gpu
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  nvidia:
+    name: NVIDIA GPU
+    env:
+      AMRVAC_DIR: ${{ github.workspace }}
+      
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: check compiler versions
+        run: |
+          nvfortran --version
+          mpirun --version
+      - name: create Python environment
+        run: |
+          pip install uv
+          uv sync
+      - name: compile and run tests
+        run: |
+          #cd tests
+          #NUM_PROCS=2 ARCH=nvidia OPENACC=1 ./test_runner.sh
+          # Single test for now - just to see if it runs
+          cd test/hd/KH3D
+          make arch=nvidia OPENACC=1 
+          mpirun -n 2 ./amrvac -i test.par
