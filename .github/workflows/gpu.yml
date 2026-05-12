@@ -39,11 +39,5 @@ jobs:
 
       - name: compile and run tests
         run: |
-          #cd tests
-          #NUM_PROCS=2 ARCH=nvidia OPENACC=1 ./test_runner.sh
-          # Single test for now - just to see if it runs
-          cd tests/hd/KH3D
-          source $AMRVAC_DIR/.venv/bin/activate
-          make arch=nvidia OPENACC=1 
-          ldd amrvac
-          mpirun -n 2 ./amrvac -i test.par
+          cd tests
+          NUM_PROCS=2 ARCH=nvidia OPENACC=1 ./test_runner.sh
