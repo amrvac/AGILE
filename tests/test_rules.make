@@ -10,6 +10,7 @@ $(error AMRVAC_DIR is not set)
 endif
 
 ARCH ?= gnu
+OPENACC ?= 0
 
 # Disable built-in make rules
 .SUFFIXES:
@@ -27,6 +28,12 @@ else
 MPIRUN_ARG = --oversubscribe
 endif
 
+# Make options
+MAKE_ARGS = arch=$(ARCH)
+ifeq ($(strip $(OPENACC)),1)
+MAKE_ARGS += OPENACC=1
+endif
+
 # force is a dummy to force re-running tests
 .PHONY: all clean force
 
@@ -40,6 +47,7 @@ include $(AMRVAC_DIR)/arch/$(ARCH).mk
 
 F90 := $(compile)
 F90FLAGS := $(f90_flags)
+F90LINKFLAGS := $(link_flags)
 
 %.log: $(LOG_CMP) amrvac force
 	@$(RM) $@		# Remove log to prevent pass when aborted
@@ -52,12 +60,12 @@ F90FLAGS := $(f90_flags)
 	fi
 
 amrvac: force		# Always try a fresh build
-	@$(MAKE) arch=$(ARCH) clean
-	@$(MAKE) -j arch=$(ARCH)
+	@$(MAKE) $(MAKE_ARGS) clean
+	@$(MAKE) -j $(MAKE_ARGS)
 
 # To make sure the comparison utility can be build
 $(LOG_CMP).o: $(LOG_CMP).f
 	$(F90) $(F90FLAGS) -c $< -o $@
 
 $(LOG_CMP): $(LOG_CMP).o
-	$(F90) $< -o $@
+	$(F90) $(F90LINKFLAGS) $< -o $@
