@@ -1,4 +1,4 @@
-name: gpu
+name: tests (GPU)
 
 on:
   workflow_dispatch:
