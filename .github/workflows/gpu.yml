@@ -45,4 +45,5 @@ jobs:
           cd tests/hd/KH3D
           source $AMRVAC_DIR/.venv/bin/activate
           make arch=nvidia OPENACC=1 
+          ldd amrvac
           mpirun -n 2 ./amrvac -i test.par
