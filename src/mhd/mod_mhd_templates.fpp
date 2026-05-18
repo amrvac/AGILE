@@ -92,6 +92,10 @@
   logical, public                         :: mhd_partial_ionization = .false.
   !$acc declare copyin(mhd_partial_ionization)
 
+  !> switch for radiative cooling
+  logical, public                         :: mhd_radiative_cooling = .false.
+  !$acc declare copyin(mhd_radiative_cooling)
+
   !> Whether particles module is added
   logical, public                         :: mhd_particles = .false.
   !$acc declare copyin(mhd_particles)
@@ -106,7 +110,7 @@
     integer                      :: n
 
     namelist /mhd_list/ mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity,&
-      mhd_n_tracer, He_abundance
+      mhd_n_tracer, mhd_radiative_cooling, He_abundance
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -117,7 +121,7 @@
 #ifdef _OPENACC
     !$acc update device(mhd_energy, &
     !$acc&     mhd_gamma, mhd_glm_alpha, &
-    !$acc&     mhd_gravity, mhd_n_tracer, He_abundance)
+    !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, He_abundance)
 #endif
 
   end subroutine read_params
@@ -344,6 +348,9 @@
   subroutine phys_init()
     use mod_global_parameters
 !    use mod_particles, only: particles_init
+    #:if defined('COOLING')
+    use mod_radiative_cooling, only: rc_fl, radiative_cooling_init_params, radiative_cooling_init
+    #:endif
 
     call read_params(par_files)
     call phys_units()
@@ -406,6 +413,13 @@
 !       phys_req_diagonal = .true.
 !    end if
 
+#:if defined('COOLING')
+    call radiative_cooling_init_params(phys_gamma,He_abundance)
+    call radiative_cooling_init(rc_fl)
+    !$acc update device(rc_fl)
+    !$acc enter data copyin(rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc)
+#:endif
+
   end subroutine phys_init
 #:enddef
 
@@ -442,6 +456,9 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 #:if defined('GRAVITY')
   use mod_usr, only: gravity_field
 #:endif
+#:if defined('COOLING')
+  use mod_radiative_cooling, only: rc_fl, radiative_cooling_add_source
+#:endif
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCT(nw_phys), wCTprim(nw_phys)
   real(dp), intent(in)     :: x(1:ndim), dr(ndim)
@@ -457,7 +474,12 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
      wnew(iw_mom(idim)) = wnew(iw_mom(idim)) + qdt * field * wCT(iw_rho)
      wnew(iw_e)         = wnew(iw_e) + qdt * field * wCT(iw_mom(idim))
   end do
-#:endif  
+#:endif
+
+#:if defined('COOLING')
+  call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
+#:endif
+
   wnew(psi_)=wnew(psi_)*dexp(-qdt*cmax_global*mhd_glm_alpha/minval(dr))
 
 end subroutine addsource_local
@@ -593,6 +615,33 @@ pure real(dp) function get_cs2(u) result(cs2)
 end function get_cs2
 #:enddef
 
+#:def get_rho()
+  pure real(dp) function get_rho(w, x) result(rho)
+    !$acc routine seq
+    real(dp), intent(in)  :: w(nw_phys)
+    real(dp), intent(in)  :: x(1:ndim)
+
+    rho = w(iw_rho)
+  end function get_rho
+#:enddef
+
+#:def get_pthermal()
+pure real(dp) function get_pthermal(w, x) result(pth)
+  !$acc routine seq
+  real(dp), intent(in)  :: w(nw_phys)
+  real(dp), intent(in)  :: x(1:ndim)
+
+  pth = (phys_gamma-1.0_dp)*(w(iw_e)-0.5_dp*sum(w(iw_mom(:))**2)/w(iw_rho) &
+       -0.5_dp*(w(iw_mag(1))**2+w(iw_mag(2))**2+w(iw_mag(3))**2))
+end function get_pthermal
+#:enddef
+
+#:def get_Rfactor()
+pure real(dp) function get_Rfactor() result(Rfactor)
+  !$acc routine seq
+  Rfactor = 1.0d0
+end function get_Rfactor
+#:enddef
 
 #:def estimate_speeds_minmax()
 !> Davis (1988) min/max wave speed estimates wL = min(v_n - c_f), wR = max(v_n + c_f) (fast magnetosonic) over left/right states;

@@ -35,7 +35,12 @@ contains
     call read_par_files()
     call initialize_vars()
     call init_comm_types()
-    call nbprocs_info%init(npe=npe, nigrids=9*max_blocks, max_size=9000000)
+    call nbprocs_info%init( &
+         npe      = npe, &
+         nigrids  = max_nb_igrids, &
+         max_size = max_nb_size, &
+         npe_nb   = min(npe-1, max_nb_procs) &
+         )
 
     ! Possibly load boundary condition data or initial data
     call bc_data_init()
