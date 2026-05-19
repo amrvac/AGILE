@@ -11,7 +11,7 @@
  /
 
  &stoplist
-   time_max = 0.05d0
+   time_max = 5.0d0
  /
 
  &methodlist
@@ -63,3 +63,7 @@
    coolmethod = 'exact'
    Tfix       = .true.
  /
+
+ &usr_list
+  use_turbulence = .false.
+/

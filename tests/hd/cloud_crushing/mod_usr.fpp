@@ -9,6 +9,7 @@ module mod_usr
   !$acc declare create(ca, mach)
 
   ! --- Turbulence ---
+  logical :: use_turbulence = .true.
   integer, parameter :: nmodes = 2048
   double precision :: vturb_rms
   double precision, allocatable :: kvec(:,:), phase(:,:), amp(:)
@@ -35,7 +36,8 @@ contains
     usr_set_parameters  => initglobaldata_usr
     usr_init_one_grid   => initonegrid_usr
     usr_special_bc      => specialbound_usr   ! impose uniform inflow at x_min
-
+    
+    call params_read_user(par_files)
     call phys_activate()
 
   end subroutine usr_init
@@ -126,7 +128,7 @@ contains
 
           ! --- turbulent velocity
           dvx = 0.0d0; dvy = 0.0d0; dvz = 0.0d0
-          if (S > 1.0d-12 .and. turb_initialised) then
+          if (S > 1.0d-12 .and. turb_initialised .and. use_turbulence) then
             do n = 1, nmodes
               arg = kvec(1,n)*x(i1,i2,i3,1) + kvec(2,n)*x(i1,i2,i3,2) + kvec(3,n)*x(i1,i2,i3,3)
               dvx = dvx + amp(n) * sin(arg + phase(1,n))
@@ -324,6 +326,20 @@ contains
 
 
   end subroutine usr_refine_grid
+
+
+  subroutine params_read_user(files)
+  use mod_global_parameters, only: unitpar
+  character(len=*), dimension(:), intent(in) :: files
+  integer :: n
+  namelist /usr_list/ use_turbulence
+
+  do n = 1, size(files)
+    open(unitpar, file=trim(files(n)), status='old')
+    read(unitpar, usr_list, end=111)
+    111 close(unitpar)
+  end do
+end subroutine params_read_user
 
 
   subroutine print_timescales()
