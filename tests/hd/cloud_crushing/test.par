@@ -1,0 +1,65 @@
+
+ &filelist
+   base_filename    = 'test'
+   autoconvert      = F
+   typefilelog      = 'regression_test'
+ /
+
+ &savelist
+   dtsave_log      = 1e10
+   dtsave_dat      = 1e10
+ /
+
+ &stoplist
+   time_max = 0.05d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'tvdlf'
+   limiter         = 20*'vanleer'
+   small_values_method = 'ignore'
+   phys            = 'hd'
+ /
+
+ &boundlist
+   typeboundary_min1 = 5*'special'
+   typeboundary_max1 = 5*'cont'
+   typeboundary_min2 = 5*'noinflow'
+   typeboundary_max2 = 5*'noinflow'
+   typeboundary_min3 = 5*'noinflow'
+   typeboundary_max3 = 5*'noinflow'
+   specialboundary   = .true.
+ /
+
+ &meshlist
+   max_blocks       = 40
+   refine_max_level = 1
+   block_nx1        = 32
+   block_nx2        = 32
+   block_nx3        = 32
+   domain_nx1       = 320
+   domain_nx2       = 64
+   domain_nx3       = 64
+   xprobmin1 = 0.0d0
+   xprobmax1 = 20.0d0
+   xprobmin2 = -2.0d0
+   xprobmax2 = 2.0d0
+   xprobmin3 = -2.0d0
+   xprobmax3 = 2.0d0
+ /
+
+ &paramlist
+   slowsteps        = 10
+   courantpar       = 0.7d0
+ /
+
+ &hd_list
+   hd_radiative_cooling  = .true.
+ /
+
+ &rc_list        ! radiative-cooling options (used if cooling = .true.)
+   coolcurve  = 'Colgan_DM'
+   coolmethod = 'exact'
+   Tfix       = .true.
+ /
