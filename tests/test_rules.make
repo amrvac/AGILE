@@ -9,8 +9,7 @@ ifndef AMRVAC_DIR
 $(error AMRVAC_DIR is not set)
 endif
 
-ARCH ?= gnu
-OPENACC ?= 0
+arch ?= gnu
 
 # Disable built-in make rules
 .SUFFIXES:
@@ -21,17 +20,14 @@ LOG_CMP := $(AMRVAC_DIR)/tools/fortran/compare_logs
 # Number of MPI processes to use
 NUM_PROCS ?= 4
 
-# Enable oversubscription
-ifeq ($(strip $(ARCH)),ifx)
-MPIRUN_ARG = -genv I_MPI_PIN=0
+# Enable oversubscription and set number of processes
+ifeq ($(strip $(arch)),cray)
+# No mpirun available, use srun. Number of processes is set by slurm
+LAUNCHER = srun --overlap
+else ifeq ($(strip $(arch)),ifx)
+LAUNCHER = mpirun -genv I_MPI_PIN=0 -np $(NUM_PROCS)
 else
-MPIRUN_ARG = --oversubscribe
-endif
-
-# Make options
-MAKE_ARGS = arch=$(ARCH)
-ifeq ($(strip $(OPENACC)),1)
-MAKE_ARGS += OPENACC=1
+LAUNCHER = mpirun --oversubscribe -np $(NUM_PROCS)
 endif
 
 # force is a dummy to force re-running tests
@@ -43,7 +39,7 @@ clean:
 	$(RM) $(TESTS) amrvac *.vtu *.dat *.log *.f90 *.mod
 
 # Include architecture and compilation rules for the compare_log utility
-include $(AMRVAC_DIR)/arch/$(ARCH).mk
+include $(AMRVAC_DIR)/arch/$(arch).mk
 
 F90 := $(compile)
 F90FLAGS := $(f90_flags)
@@ -51,17 +47,17 @@ F90LINKFLAGS := $(link_flags)
 
 %.log: $(LOG_CMP) amrvac force
 	@$(RM) $@		# Remove log to prevent pass when aborted
-# for Intel same machine
-# @mpirun -genv I_MPI_FABRICS shm  -np $(NUM_PROCS) ./amrvac -i $(filter %.par,$^) > run.log
-	@mpirun $(MPIRUN_ARG) -np $(NUM_PROCS) ./amrvac -i $(filter %.par,$^) > run.log
+    # for Intel same machine
+    # @mpirun -genv I_MPI_FABRICS shm  -np $(NUM_PROCS) ./amrvac -i $(filter %.par,$^) > run.log
+	@$(LAUNCHER) ./amrvac -i $(filter %.par,$^) > run.log
 	@if $(LOG_CMP) 1.0e-5 1.0e-8 $@ correct_output/$@ ; \
 	then echo -e "$(_green)PASSED$(_reset) $@" ; \
 	else echo -e "$(_red)** FAILED **$(_reset) $@" ; \
 	fi
 
 amrvac: force		# Always try a fresh build
-	@$(MAKE) $(MAKE_ARGS) clean
-	@$(MAKE) -j $(MAKE_ARGS)
+	@$(MAKE) clean
+	@$(MAKE) -j
 
 # To make sure the comparison utility can be build
 $(LOG_CMP).o: $(LOG_CMP).f
