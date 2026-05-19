@@ -1,28 +1,16 @@
  &filelist
-   base_filename    = ''
+   base_filename    = 'test'
+   typefilelog      = 'regression_test'
    saveprim         = T
  /
 
  &savelist
-   itsave(1,1)      = 0
-   itsave(1,2)      = 0
-   itsave(1,3)      = 0
-   ditsave_log      = 100
-!  dtsave_dat       = 2.583698d-1 !     t_sh/unit_time
-   dtsave_dat       = 6.459244d-2 ! 1/4 t_sh/unit_time
-!  dtsave_slice     = 2.583698d-1 !     t_sh/unit_time
-   dtsave_slice     = 6.459244d-2 ! 1/4 t_sh/unit_time
-   nslices          = 1
-   slicedir(1)      = 2
-   slicecoord(1)    = +5d-1
+   dtsave_dat       = 1e10
+   dtsave_log       = 1e10
  /
 
  &stoplist
-   time_max         = 1.033479d+1 ! 40 t_sh/unit_time
-!  time_max         = 7.751093d+0 ! 30 t_sh/unit_time
-!  time_max         = 5.167395d+0 ! 20 t_sh/unit_time
-!  time_max         = 2.583698d+0 ! 10 t_sh/unit_time
-!  time_max         = 2.583698d-1 !  1 t_sh/unit_time
+   time_max         = 6.459244d-2 ! 1/4 t_sh/unit_time
 !  it_max           = 1
  /
 
@@ -49,19 +37,19 @@
    itfixgrid          = 0
    refine_criterion   = 1
    refine_usr         = T
-   max_blocks         = 512 ! per rank
-   block_nx1          = 48
-   block_nx2          = 48
-   block_nx3          = 48
-   domain_nx1         = 384
-   domain_nx2         = 384
-   domain_nx3         = 3072
+   max_blocks         = 1024 ! per rank
+   block_nx1          = 16
+   block_nx2          = 16
+   block_nx3          = 16
+   domain_nx1         = 32
+   domain_nx2         = 32
+   domain_nx3         = 128
    xprobmin1          = +0d+0 ! code units
    xprobmax1          = +1d+0 ! code units
    xprobmin2          = +0d+0 ! code units
    xprobmax2          = +1d+0 ! code units
-   xprobmin3          = -4d+0 ! code units
-   xprobmax3          = +4d+0 ! code units
+   xprobmin3          = -2d+0 ! code units
+   xprobmax3          = +2d+0 ! code units
  /
 
  &paramlist
