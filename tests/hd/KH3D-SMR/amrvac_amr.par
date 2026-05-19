@@ -7,10 +7,10 @@
 
  &savelist
   itsave(1,1)      = 0
-!  itsave(1,2)      = 0
-!  itsave(1,3)      = 0
+  itsave(1,2)      = 0
+  itsave(1,3)      = 0
   ditsave_log      = 5
-  ditsave_dat      = 1000
+  ditsave_dat      = 500
 !  dtsave_dat       = 0.5d0
   ditsave_slice    = 500 !0.1d0
 !  dtsave_slice     = 0.25d0
@@ -24,7 +24,7 @@
  /
 
  &stoplist
-!   it_max           = 1000 !2
+   it_max           = 1000 !2
    time_max         = 3.0d0
  /
 

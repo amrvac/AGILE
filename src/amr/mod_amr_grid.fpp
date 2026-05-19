@@ -39,6 +39,7 @@ contains
 
     ! set up boundary flux conservation arrays
     if(levmax>levmin) call allocateBflux
+    write(0,*) "Finished the first settree allocateBflux function"
 
   end subroutine settree
 
@@ -52,7 +53,7 @@ contains
     use mod_particles
     
     if(levmax>levmin) call deallocateBflux
-    if(stagger_grid) call deallocateBfaces
+    !if(stagger_grid) call deallocateBfaces
 
     ! deallocate old grids for particles
     if(use_particles) then

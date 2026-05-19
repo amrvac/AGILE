@@ -163,8 +163,8 @@ contains
     do ix3 = ixmin3, ixmax3
        do ix2 = ixmin2, ixmax2
           do ix1 = ixmin1, ixmax1
-             if ( abs(x(ix1, ix2, ix3, 2) - 0.75d0) < 1.0d-1 .or. &
-                  abs(x(ix1, ix2, ix3, 2) - 0.25d0) < 1.0d-1 ) then
+             if ( abs(x(ix1, ix2, ix3, 2) - 0.4d0) < 1.0d-2 .or. &
+                  abs(x(ix1, ix2, ix3, 2) - 0.3d0) < 1.0d-2 ) then
                 has_interface = .true.
              end if
           end do

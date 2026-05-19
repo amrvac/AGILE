@@ -724,7 +724,7 @@ subroutine acc_create_flux(arr)
 
   double precision, allocatable, intent(inout) :: arr(:,:,:,:)
 
-#ifdef OPENACC_
+#ifdef _OPENACC
 !!!  !$acc exit data delete(arr)
   !$acc enter data create(arr)
   !$acc enter data attach(arr)
@@ -735,6 +735,8 @@ end subroutine acc_create_flux
 
 subroutine allocateBflux()
   use openacc
+!  use acc_lib
+!  use omp_lib
   use mod_global_parameters
 
   integer :: iigrid, igrid, iside
@@ -748,13 +750,14 @@ subroutine allocateBflux()
   nxCo1 = nx1/2
   nxCo2 = nx2/2
   nxCo3 = nx3/2
+  write(0,*) "sanity check"
+  call cray_acc_set_debug_thread_level(0)
 
+  write(0,*) "allocateBflux igridstail", igridstail
   do iigrid = 1, igridstail
     igrid = igrids(iigrid)
 
-    !==================================================
     ! DIMENSION 1
-    !==================================================
     do iside = 1, 2
       i1 = kr(1,1)*(2*iside-3)
       i2 = kr(2,1)*(2*iside-3)
@@ -802,9 +805,7 @@ subroutine allocateBflux()
       end select
     end do
 
-    !==================================================
     ! DIMENSION 2
-    !==================================================
     do iside = 1, 2
       i1 = kr(1,2)*(2*iside-3)
       i2 = kr(2,2)*(2*iside-3)
@@ -828,8 +829,10 @@ subroutine allocateBflux()
         !!$acc update device(pflux(iside,2,igrid)%flux)
 
         if (acc_is_present(pflux(iside,2,igrid)%flux)) then
+          write(0,*) "pflux(",iside,",2,",igrid,") neighbor_fine update branch" 
           !$acc update device(pflux(iside,2,igrid)%flux)
         else
+          write(0,*) "pflux(", iside,",2,",igrid,") neighbor_fine create branch" 
           !$acc enter data create(pflux(iside,2,igrid)%flux)
           !!!$acc enter data attach(pflux(iside,2,igrid)%flux)
         end if
@@ -843,8 +846,10 @@ subroutine allocateBflux()
         !!$acc update device(pflux(iside,2,igrid)%flux)
 
         if (acc_is_present(pflux(iside,2,igrid)%flux)) then
+          write(0,*) "pflux(", iside,",2,",igrid,") neighbor_coarse update branch"
           !$acc update device(pflux(iside,2,igrid)%flux)
         else
+          write(0,*) "pflux(", iside,",2,",igrid,") neighbor_coarse create branch"
           !$acc enter data create(pflux(iside,2,igrid)%flux)
           !!!$acc enter data attach(pflux(iside,2,igrid)%flux)
         end if
@@ -852,9 +857,7 @@ subroutine allocateBflux()
       end select
     end do
 
-    !==================================================
     ! DIMENSION 3
-    !==================================================
     do iside = 1, 2
       i1 = kr(1,3)*(2*iside-3)
       i2 = kr(2,3)*(2*iside-3)
@@ -902,6 +905,8 @@ subroutine allocateBflux()
     end do
 
   end do
+
+  call cray_acc_set_debug_thread_level(0)
 
 end subroutine allocateBflux
 
@@ -1179,12 +1184,16 @@ subroutine deallocateBflux()
 
   integer :: igrid, iigrid, iside
 
+  call cray_acc_set_debug_thread_level(3)
+
+  write(0,*) "allocateBflux igridstail", igridstail
+
   do iigrid = 1, igridstail
     igrid = igrids(iigrid)
 
     do iside = 1, 2
 
-#ifdef OPENACC_
+#ifdef _OPENACC
 !!      ! Step 1: Clear device-side pointers FIRST
 !!      if (allocated(pflux(iside,1,igrid)%flux)) then
 !!        nullify(pflux(iside,1,igrid)%flux)
@@ -1207,10 +1216,10 @@ subroutine deallocateBflux()
 !!      !$acc exit data delete(pflux(iside,3,igrid)%flux)
 
       ! delete device memory first
-      !!$acc exit data delete(pflux(iside,1,igrid)%flux)
-      !!$acc exit data delete(pflux(iside,2,igrid)%flux)
-      !!$acc exit data delete(pflux(iside,3,igrid)%flux)
-      !$acc exit data delete(pflux(iside,*,igrid)%flux)
+      !$acc exit data delete(pflux(iside,1,igrid)%flux)
+      !$acc exit data delete(pflux(iside,2,igrid)%flux)
+      !$acc exit data delete(pflux(iside,3,igrid)%flux)
+      !!$acc exit data delete(pflux(iside,*,igrid)%flux) !!THIS DOES NOT WORK
 #endif
 
       ! deallocate host memory
@@ -1229,11 +1238,14 @@ subroutine deallocateBflux()
     end do
   end do
 
-  !$acc exit data delete(pflux)
-  deallocate(pflux)
+  !! the lines below here work, but are likely not neccesary
+  !!!$acc exit data delete(pflux)
+  !!deallocate(pflux)
 
-  allocate(pflux(2,3,max_blocks))
-  !$acc enter data create(pflux) !JESSE
+  !!allocate(pflux(2,3,max_blocks))
+  !!!$acc enter data create(pflux) !JESSE
+
+  call cray_acc_set_debug_thread_level(0)
 
 end subroutine deallocateBflux
 
