@@ -750,10 +750,9 @@ subroutine allocateBflux()
   nxCo1 = nx1/2
   nxCo2 = nx2/2
   nxCo3 = nx3/2
-  write(0,*) "sanity check"
-  call cray_acc_set_debug_thread_level(0)
 
-  write(0,*) "allocateBflux igridstail", igridstail
+  !call cray_acc_set_debug_thread_level(0)
+
   do iigrid = 1, igridstail
     igrid = igrids(iigrid)
 
@@ -829,10 +828,8 @@ subroutine allocateBflux()
         !!$acc update device(pflux(iside,2,igrid)%flux)
 
         if (acc_is_present(pflux(iside,2,igrid)%flux)) then
-          write(0,*) "pflux(",iside,",2,",igrid,") neighbor_fine update branch" 
           !$acc update device(pflux(iside,2,igrid)%flux)
         else
-          write(0,*) "pflux(", iside,",2,",igrid,") neighbor_fine create branch" 
           !$acc enter data create(pflux(iside,2,igrid)%flux)
           !!!$acc enter data attach(pflux(iside,2,igrid)%flux)
         end if
@@ -846,10 +843,8 @@ subroutine allocateBflux()
         !!$acc update device(pflux(iside,2,igrid)%flux)
 
         if (acc_is_present(pflux(iside,2,igrid)%flux)) then
-          write(0,*) "pflux(", iside,",2,",igrid,") neighbor_coarse update branch"
           !$acc update device(pflux(iside,2,igrid)%flux)
         else
-          write(0,*) "pflux(", iside,",2,",igrid,") neighbor_coarse create branch"
           !$acc enter data create(pflux(iside,2,igrid)%flux)
           !!!$acc enter data attach(pflux(iside,2,igrid)%flux)
         end if
@@ -906,7 +901,7 @@ subroutine allocateBflux()
 
   end do
 
-  call cray_acc_set_debug_thread_level(0)
+  !call cray_acc_set_debug_thread_level(0)
 
 end subroutine allocateBflux
 
@@ -1184,9 +1179,7 @@ subroutine deallocateBflux()
 
   integer :: igrid, iigrid, iside
 
-  call cray_acc_set_debug_thread_level(3)
-
-  write(0,*) "allocateBflux igridstail", igridstail
+  !call cray_acc_set_debug_thread_level(3)
 
   do iigrid = 1, igridstail
     igrid = igrids(iigrid)
@@ -1245,7 +1238,7 @@ subroutine deallocateBflux()
   !!allocate(pflux(2,3,max_blocks))
   !!!$acc enter data create(pflux) !JESSE
 
-  call cray_acc_set_debug_thread_level(0)
+  !call cray_acc_set_debug_thread_level(0)
 
 end subroutine deallocateBflux
 

@@ -12,4 +12,7 @@ module purge
 #make arch=nvidia OPENACC=1
 
 ##benchmark version
-module load 2023 OpenMPI/4.1.5-NVHPC-24.5-CUDA-12.1.1
+#module load 2023 OpenMPI/4.1.5-NVHPC-24.5-CUDA-12.1.1
+
+#LUMI
+module load LUMI/25.09 partition/G cray-python/3.11.7 PrgEnv-cray lumi-CrayPath
