@@ -278,7 +278,8 @@ contains
     namelist /meshlist/ refine_max_level,nbufferx1,nbufferx2,nbufferx3,&
        refine_threshold,derefine_ratio, refine_criterion, stretch_dim,&
         stretch_uncentered, qstretch_baselevel, nstretchedblocks_baselevel,&
-        amr_wavefilter,max_blocks,block_nx1,block_nx2,block_nx3,domain_nx1,&
+        amr_wavefilter, max_blocks, max_nb_procs, max_nb_size, max_nb_igrids, &
+        block_nx1,block_nx2,block_nx3,domain_nx1,&
        domain_nx2,domain_nx3,iprob,xprobmin1,xprobmin2,xprobmin3,xprobmax1,&
        xprobmax2,xprobmax3, w_refine_weight, prolongprimitive,coarsenprimitive,&
         typeprolonglimit, logflag,tfixgrid,itfixgrid,ditregrid, refine_usr
@@ -290,9 +291,6 @@ contains
        instrument_resolution_factor,activate_unit_arcsec,filename_whitelight,&
        whitelight_instrument,R_occultor,R_opt_thick,dat_resolution,&
        direction_slit
-
-    ! default maximum number of grid blocks in a processor
-    max_blocks=4000
 
     ! allocate cell size of all levels
     allocate(dx(ndim,nlevelshi))
@@ -638,6 +636,11 @@ contains
 
     base_filename = basename_full
 
+    ! Check if user requests max_nb_igrids different from default:
+    if ( max_nb_igrids == -1 ) then
+       max_nb_igrids = max_blocks * 9 ! can only be done after max_blocks is read
+    end if
+    
     ! Check whether output directory is writable
     if(mype==0) then
       dummy_file = trim(base_filename)//"DUMMY"
@@ -2027,6 +2030,7 @@ contains
 
     !$acc update device(ixGhi1,ixGhi2,ixGhi3,ixGshi1,ixGshi2,ixGshi3,schmid_rad1,schmid_rad2,schmid_rad3,cada3_radius)
     !$acc update device(fix_small_values,H_correction,type_limiter, max_blocks)
+    !$acc update device(max_nb_procs, max_nb_size, max_nb_igrids)
     !$acc update device(rk_beta11,rk_beta22,rk_beta33,rk_beta44,rk_c2,rk_c3,rk_c4)
     !$acc update device(rk_alfa21,rk_alfa22,rk_alfa31,rk_alfa33,rk_alfa41,rk_alfa44)
     !$acc update device(rk_beta54,rk_beta55,rk_alfa53,rk_alfa54,rk_alfa55,rk_c5)
