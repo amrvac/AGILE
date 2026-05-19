@@ -50,46 +50,46 @@ module mod_usr
 
 contains
 
-  subroutine seed_rng(seed)
-    implicit none
-    integer, intent(in) :: seed
-    integer :: n, i
-    integer, allocatable :: seed_array(:)
-
-    call random_seed(size=n)
-    allocate(seed_array(n))
-    do i = 1, n
-      seed_array(i) = seed+37*i
-    end do
-    call random_seed(put=seed_array)
-    deallocate(seed_array)
-  end subroutine seed_rng
-
-  function randn() result(z)
-    implicit none
-    double precision :: z
-    double precision, save :: spare
-    logical, save :: has_spare = .false.
-    double precision :: u, v, s, fac
-
-    if (has_spare) then
-      z = spare
-      has_spare = .false.
-      return
-    end if
-    do
-      call random_number(u)
-      call random_number(v)
-      u = 2d0*u-1d0
-      v = 2d0*v-1d0
-      s = u*u + v*v
-      if (s > 0d0 .and. s < 1d0) exit
-    end do
-    fac    = sqrt(-2d0*log(s)/s)
-    z      = u*fac
-    spare  = v*fac
-    has_spare = .true.
-  end function randn
+  ! subroutine seed_rng(seed)
+  !   implicit none
+  !   integer, intent(in) :: seed
+  !   integer :: n, i
+  !   integer, allocatable :: seed_array(:)
+  !
+  !   call random_seed(size=n)
+  !   allocate(seed_array(n))
+  !   do i = 1, n
+  !     seed_array(i) = seed+37*i
+  !   end do
+  !   call random_seed(put=seed_array)
+  !   deallocate(seed_array)
+  ! end subroutine seed_rng
+  !
+  ! function randn() result(z)
+  !   implicit none
+  !   double precision :: z
+  !   double precision, save :: spare
+  !   logical, save :: has_spare = .false.
+  !   double precision :: u, v, s, fac
+  !
+  !   if (has_spare) then
+  !     z = spare
+  !     has_spare = .false.
+  !     return
+  !   end if
+  !   do
+  !     call random_number(u)
+  !     call random_number(v)
+  !     u = 2d0*u-1d0
+  !     v = 2d0*v-1d0
+  !     s = u*u + v*v
+  !     if (s > 0d0 .and. s < 1d0) exit
+  !   end do
+  !   fac    = sqrt(-2d0*log(s)/s)
+  !   z      = u*fac
+  !   spare  = v*fac
+  !   has_spare = .true.
+  ! end function randn
 
   subroutine params_read_usr(files)
     implicit none
@@ -115,7 +115,7 @@ contains
     unit_temperature = 2.00d+4  ! T_C   CGS
     usr_set_parameters => set_parameters_usr
     usr_init_one_grid  => init_one_grid_usr
-    usr_special_bc     => specialbound_usr
+    ! usr_special_bc     => specialbound_usr
     call phys_activate()
     if (mype == 0) call print_units()
   end subroutine usr_init
@@ -184,19 +184,22 @@ contains
   subroutine set_parameters_usr()
     use mod_global_parameters
     use mod_physics
+    use mod_random
     implicit none
     integer :: i1, i2, i3, i4
+    integer, parameter :: i8 = selected_int_kind(18) ! as in mod_random
     double precision :: a, b, mu
+    type(rng_t) :: rng
 
     allocate(rand_1(4,n_modes,n_modes,2:3))
 
     if (mype == 0) then
-      call seed_rng(seed)
+      call rng%set_seed([int(seed, i8), 123456789_i8])
       do i4 = 2, 3
       do i3 = 1, n_modes
       do i2 = 1, n_modes
       do i1 = 1, 4
-        rand_1(i1,i2,i3,i4) = randn()
+        rand_1(i1,i2,i3,i4) = rng%normal()
       end do
       end do
       end do
@@ -340,7 +343,8 @@ contains
     integer, intent(in) :: iB
     double precision, intent(in) :: qt
     double precision, intent(inout),&
-      dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:nw_phys) :: w
+      ! dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:nw_phys) :: w
+      dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:nw) :: w
     double precision, intent(in),&
       dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:ndim) :: x
     integer :: ix1, ix2, ix3

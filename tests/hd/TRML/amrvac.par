@@ -19,9 +19,9 @@
 
  &stoplist
 !  time_max         = 1.033479d+1 ! 40 t_sh/unit_time
-   time_max         = 7.751093d+0 ! 30 t_sh/unit_time
+!  time_max         = 7.751093d+0 ! 30 t_sh/unit_time
 !  time_max         = 5.167395d+0 ! 20 t_sh/unit_time
-!  time_max         = 2.583698d+0 ! 10 t_sh/unit_time
+   time_max         = 2.583698d+0 ! 10 t_sh/unit_time
 !  time_max         = 2.583698d-1 !  1 t_sh/unit_time
 !  it_max           = 1
  /
@@ -49,13 +49,13 @@
    itfixgrid          = 0
    refine_criterion   = 1
    refine_usr         = T
-   max_blocks         = 2048 ! per rank
+   max_blocks         = 1024 ! per rank
    block_nx1          = 32
    block_nx2          = 32
    block_nx3          = 32
-   domain_nx1         = 128
-   domain_nx2         = 128
-   domain_nx3         = 1024
+   domain_nx1         = 64
+   domain_nx2         = 64
+   domain_nx3         = 512
    xprobmin1          = +0d+0 ! code units
    xprobmax1          = +1d+0 ! code units
    xprobmin2          = +0d+0 ! code units
