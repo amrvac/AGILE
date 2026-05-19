@@ -40,4 +40,4 @@ jobs:
       - name: compile and run tests
         run: |
           cd tests
-          NUM_PROCS=2 ARCH=nvidia OPENACC=1 ./test_runner.sh
+          NUM_PROCS=2 arch=nvidia OPENACC=1 ./test_runner.sh

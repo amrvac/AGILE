@@ -9,8 +9,7 @@ ifndef AMRVAC_DIR
 $(error AMRVAC_DIR is not set)
 endif
 
-ARCH ?= gnu
-OPENACC ?= 0
+arch ?= gnu
 
 # Disable built-in make rules
 .SUFFIXES:
@@ -22,16 +21,10 @@ LOG_CMP := $(AMRVAC_DIR)/tools/fortran/compare_logs
 NUM_PROCS ?= 4
 
 # Enable oversubscription
-ifeq ($(strip $(ARCH)),ifx)
+ifeq ($(strip $(arch)),ifx)
 MPIRUN_ARG = -genv I_MPI_PIN=0
 else
 MPIRUN_ARG = --oversubscribe
-endif
-
-# Make options
-MAKE_ARGS = arch=$(ARCH)
-ifeq ($(strip $(OPENACC)),1)
-MAKE_ARGS += OPENACC=1
 endif
 
 # force is a dummy to force re-running tests
@@ -43,7 +36,7 @@ clean:
 	$(RM) $(TESTS) amrvac *.vtu *.dat *.log *.f90 *.mod
 
 # Include architecture and compilation rules for the compare_log utility
-include $(AMRVAC_DIR)/arch/$(ARCH).mk
+include $(AMRVAC_DIR)/arch/$(arch).mk
 
 F90 := $(compile)
 F90FLAGS := $(f90_flags)
@@ -60,8 +53,8 @@ F90LINKFLAGS := $(link_flags)
 	fi
 
 amrvac: force		# Always try a fresh build
-	@$(MAKE) $(MAKE_ARGS) clean
-	@$(MAKE) -j $(MAKE_ARGS)
+	@$(MAKE) clean
+	@$(MAKE) -j
 
 # To make sure the comparison utility can be build
 $(LOG_CMP).o: $(LOG_CMP).f
