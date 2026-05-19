@@ -343,8 +343,8 @@ contains
     integer, intent(in) :: iB
     double precision, intent(in) :: qt
     double precision, intent(inout),&
-      ! dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:nw_phys) :: w
-      dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:nw) :: w
+      dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:nw_phys) :: w
+      !dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:nw) :: w
     double precision, intent(in),&
       dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:ndim) :: x
     integer :: ix1, ix2, ix3
