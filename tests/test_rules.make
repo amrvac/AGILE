@@ -20,11 +20,20 @@ LOG_CMP := $(AMRVAC_DIR)/tools/fortran/compare_logs
 # Number of MPI processes to use
 NUM_PROCS ?= 4
 
-# Enable oversubscription
-ifeq ($(strip $(arch)),ifx)
-MPIRUN_ARG = -genv I_MPI_PIN=0
+# Launcher to use
+LAUNCHER ?= mpirun
+
+# Enable oversubscription and set number of processes
+ifeq ($(strip $(LAUNCHER)),srun)
+# Number of processes is set by slurm
+LAUNCHER_ARG = --overlap
 else
-MPIRUN_ARG = --oversubscribe
+# assume mpirun-compatible launcher
+ifeq ($(strip $(arch)),ifx)
+LAUNCHER_ARG = -genv I_MPI_PIN=0 -np $(NUM_PROCS)
+else
+LAUNCHER_ARG = --oversubscribe -np $(NUM_PROCS)
+endif
 endif
 
 # force is a dummy to force re-running tests
@@ -46,7 +55,7 @@ F90LINKFLAGS := $(link_flags)
 	@$(RM) $@		# Remove log to prevent pass when aborted
 # for Intel same machine
 # @mpirun -genv I_MPI_FABRICS shm  -np $(NUM_PROCS) ./amrvac -i $(filter %.par,$^) > run.log
-	@mpirun $(MPIRUN_ARG) -np $(NUM_PROCS) ./amrvac -i $(filter %.par,$^) > run.log
+	@$(LAUNCHER) $(LAUNCHER_ARG) ./amrvac -i $(filter %.par,$^) > run.log
 	@if $(LOG_CMP) 1.0e-5 1.0e-8 $@ correct_output/$@ ; \
 	then echo -e "$(_green)PASSED$(_reset) $@" ; \
 	else echo -e "$(_red)** FAILED **$(_reset) $@" ; \
