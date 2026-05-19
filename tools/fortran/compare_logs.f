@@ -56,7 +56,7 @@ contains
     character(len=*), intent(in)         :: fname
     real(dp), allocatable, intent(inout) :: dd(:, :)
     integer                              :: n, n_cols
-    integer, parameter                   :: myunit     = 100
+    integer, parameter                   :: myunit     = 110
     character(len=*), parameter          :: separators = " ,'"""//char(9)
     character(len=line_len)              :: line
     integer                              :: ix_start(max_cols)

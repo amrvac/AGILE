@@ -59,7 +59,7 @@ jobs:
       - name: compile and run tests
         run: |
           cd tests
-          ARCH=gnu ./test_runner.sh
+          arch=gnu ./test_runner.sh
 
   INTEL:
     strategy:
@@ -105,4 +105,4 @@ jobs:
       - name: compile
         run: |
           cd tests
-          ARCH=ifx ./test_runner.sh
+          arch=ifx ./test_runner.sh
