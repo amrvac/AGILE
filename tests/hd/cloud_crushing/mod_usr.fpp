@@ -35,7 +35,6 @@ contains
 
     usr_set_parameters  => initglobaldata_usr
     usr_init_one_grid   => initonegrid_usr
-    usr_special_bc      => specialbound_usr   ! impose uniform inflow at x_min
     
     call params_read_user(par_files)
     call phys_activate()
@@ -230,7 +229,7 @@ contains
     integer, intent(in)             :: iB
     double precision, intent(in)    :: qt
     double precision, intent(in)    :: x(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:ndim)
-    double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:nw_phys)
+    double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:nw)
 
     double precision :: rho_w, p0, vwind, inv_gamma_m1
     integer          :: ix1, ix2, ix3
