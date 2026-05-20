@@ -139,6 +139,16 @@ end subroutine finite_volume_local
                 end do
              end do
           end do
+       end do
+       !$acc end parallel loop
+
+       !$acc parallel loop gang private(uprim, inv_dr, dr, n) default(present)
+       do iigrid = igrid_beg, igrid_end
+          n = igrids_active(iigrid)
+
+          dr  = rnode(rpdx1_:rnodehi, n)
+          inv_dr  = 1/dr
+          typelim = type_limiter(node(plevel_, n))
 
        !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}#)
        do ix3=ixOmin3,ixOmax3 
@@ -211,6 +221,8 @@ end subroutine finite_volume_local
              end do
           end do
        end do
+       !$acc end parallel loop
+
     end do
 
   end subroutine finite_volume_local_${scheme_tag}$

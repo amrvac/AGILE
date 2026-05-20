@@ -1099,6 +1099,7 @@ contains
 
   !> do update ghost cells of all blocks including physical boundaries
   subroutine getbc(time,qdt,psb,nwstart,nwbc,req_diag)
+    use openacc
     use mod_nvtx
     use mod_global_parameters
     use mod_physics
@@ -1242,6 +1243,9 @@ contains
 #endif
     end do
 
+    !call cray_acc_set_debug_thread_level(0)
+
+    !JESSEDEBUG: THIS IS NOT THE PROBLEMATIC KERNEL, YOURE WELCOME
     ! fill the SRL send buffers on GPU
     !$acc parallel loop gang collapse(2) private(Nx1,Nx2,Nx3,ienc)
     do inb = 1, nbprocs_info%nbprocs_srl
@@ -1280,6 +1284,8 @@ contains
                   [neighbor(1,i1,i2,i3,igrid), ienc, ibuf_start]
        end do
     end do
+
+    call cray_acc_set_debug_thread_level(0)
 
     ! fill the C send buffers on GPU (send_restrict)
     !$acc parallel loop gang collapse(2) independent private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3)
@@ -1384,6 +1390,9 @@ contains
 #endif
     end do
 
+    !TODO
+    call cray_acc_set_debug_thread_level(3)
+
     ! fill ghost-cell values of sibling blocks and if neighbor is coarser (f2c)
     ! same process case
     !$acc parallel loop gang collapse(2)
@@ -1458,6 +1467,8 @@ contains
 
          end do
     end do
+
+    call cray_acc_set_debug_thread_level(0)
 
     call MPI_WAITALL(nbprocs_info%nbprocs_srl*2, recv_srl_nb, recvstatus_srl_nb, ierrmpi)
     call MPI_WAITALL(nbprocs_info%nbprocs_srl*2, send_srl_nb, sendstatus_srl_nb, ierrmpi)
