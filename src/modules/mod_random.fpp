@@ -51,53 +51,34 @@ contains
 #if defined(__NVCOMPILER) ||  (defined(USE_INTRINSIC_SHIFT) && USE_INTRINSIC_SHIFT==0)
 
   !> added for nvidia compilers
-   pure function shiftl(val, shift) result(res_value)
+
+  pure function shiftl(val, shift) result(res_value)
     integer(i8), intent(in) :: val
-    integer, intent(in) :: shift
-    integer(i8) :: res_value
-!    integer(i8),parameter :: bit_mask1=9223372036854775807
-!    !b'0111111111111111111111111111111111111111111111111111111111111111'
-!    integer(i8),parameter :: bit_mask2=-9223372036854775808   
-!    !b'1000000000000000000000000000000000000000000000000000000000000000'
-    integer(i8) :: bit_mask1, bit_mask2
+    integer, intent(in)     :: shift
+    integer(i8)             :: res_value
 
-    ! cannot be initialized with b values in gnu, cannot have the big decimal numbers in nvidia 
-    bit_mask1=huge(val)
-    bit_mask2=-bit_mask1-1
-
-
-    if(val<0) then
-       res_value = ior(lshift(iand(val, bit_mask1), shift),bit_mask2)
-    else
-       res_value = lshift(val, shift)
-    endif  
-
+    res_value = lshift(val, shift)
   end function shiftl
 
   pure function shiftr(val, shift) result(res_value)
     integer(i8), intent(in) :: val
-    integer, intent(in) :: shift
-    integer(i8) :: res_value
-    !    integer(i8),parameter :: bit_mask1=9223372036854775807
-    !    !b'0111111111111111111111111111111111111111111111111111111111111111'
-    !    integer(i8),parameter :: bit_mask2=-9223372036854775808   
-    !    !b'1000000000000000000000000000000000000000000000000000000000000000'
-    integer(i8) :: bit_mask1, bit_mask2
+    integer, intent(in)     :: shift
+    integer(i8)             :: res_value
+    integer(i8)             :: bit_mask1
 
-    ! cannot be initialized with b values in gnu, cannot have the big decimal numbers in nvidia 
-    bit_mask1=huge(val)
-    bit_mask2=-bit_mask1-1
-
-    if(val<0) then
-       res_value = ior(rshift(iand(val, bit_mask1), shift),bit_mask2)
+    bit_mask1 = huge(val)
+    if (shift == 0) then
+      res_value = val
+    else if (val < 0_i8) then
+      res_value = ior(&
+        rshift(iand(val, bit_mask1), shift),&
+        lshift(1_i8, 63-shift))
     else
-       res_value = rshift(val, shift)
-    endif
-
+      res_value = rshift(val, shift)
+    end if
   end function shiftr
 
 #endif
-
 
   !> Initialize a collection of rng's for parallel use
   subroutine init_parallel(self, n_proc, rng)
