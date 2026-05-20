@@ -15,4 +15,4 @@ module purge
 #module load 2023 OpenMPI/4.1.5-NVHPC-24.5-CUDA-12.1.1
 
 #LUMI
-module load LUMI/25.09 partition/G cray-python/3.11.7 PrgEnv-cray lumi-CrayPath
+module load LUMI/25.09 partition/G cray-python/3.11.7 PrgEnv-cray lumi-CrayPath rocm
