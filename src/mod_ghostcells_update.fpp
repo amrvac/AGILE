@@ -1,3 +1,10 @@
+#ifdef _CRAYFTN
+! locally switch off gpudirect since it does not work reliably with the nested datastructures on LUMI
+#ifndef NOGPUDIRECT
+#define NOGPUDIRECT 1
+#endif
+#endif
+
 !> update ghost cells of all blocks including physical boundaries
 module mod_ghostcells_update
 #ifdef USE_MPIWRAPPERS
