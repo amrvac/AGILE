@@ -2820,8 +2820,8 @@ contains
           ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
              1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
         end if
+        !$acc update device(bg(1)%w(:,:,:,:,igrid))
       end do
-      !$acc update device(bg(1)%w(:,:,:,:,igrid))
     end if
 
     call MPI_BARRIER(icomm,ierrmpi)
