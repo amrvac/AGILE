@@ -20,7 +20,7 @@ export MPICH_GPU_SUPPORT_ENABLED=1
 export MPICH_OFI_NIC_POLICY=GPU
 
 # Ensure proper GPU to CPU binding, only works when reserving full nodes.
-# If not, remove this part and run "srun ./amrvac"
+# If not, remove this part and run "srun ./agile"
 cat << EOF > select_gpu
 #!/bin/bash
 
@@ -33,5 +33,5 @@ chmod +x ./select_gpu
 # GPU 0 is bound to CPU 49, GPU 1 to CPU 57, etc.
 CPU_BIND="map_cpu:49,57,17,25,1,9,33,41"
 
-srun --cpu-bind=${CPU_BIND} ./select_gpu ./amrvac
+srun --cpu-bind=${CPU_BIND} ./select_gpu ./agile
 rm -f ./select_gpu

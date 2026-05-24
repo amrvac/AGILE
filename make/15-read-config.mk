@@ -1,5 +1,5 @@
 # Everything that DOES have meaning in terms of model output,
-# should be configured in `amrvac.par`. The part  of this file
+# should be configured in `agile.par`. The part  of this file
 # that is relevant at  compile time is read by a Python
 # script and converted into Makefile.
 
@@ -14,10 +14,10 @@
 # Fortran code so that we can obtain git id and compile flags from
 # simulation logs.
 
-CONFIG ?= amrvac.par
+CONFIG ?= agile.par
 
 config.mk: $(CONFIG)
 	@echo -e "Generating $(_magenta)$(CONFIG)$(_reset) -> $(_blue)config.mk$(_reset)"
-	@python $(amrvac)/make/config_reader.py < $< > $@
+	@python $(agile)/make/config_reader.py < $< > $@
 
 include config.mk

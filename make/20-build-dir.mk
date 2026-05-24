@@ -13,5 +13,5 @@ $(build)/latest::
 
 $(build)/latest/arch.mk: | $(build)/latest
 	@rm -f $(build)/latest/arch.mk
-	@ln -s $(amrvac)/arch/$(arch).mk $(build)/latest/arch.mk
+	@ln -s $(agile)/arch/$(arch).mk $(build)/latest/arch.mk
 

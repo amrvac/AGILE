@@ -1,4 +1,4 @@
-# This file sets what settings in amrvac.par are read as compile
+# This file sets what settings in agile.par are read as compile
 # time flags and whether they should affect the build hash.
 # [components] is for hidden implied options inferred by the precompiler
 

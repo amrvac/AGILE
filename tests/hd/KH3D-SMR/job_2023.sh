@@ -13,9 +13,9 @@ module purge
 module load 2023
 module load OpenMPI/4.1.5-NVHPC-24.5-CUDA-12.1.1
 
-source $AMRVAC_DIR/.venv/bin/activate
+source $AGILE_DIR/.venv/bin/activate
 
 make clean-all
 make -j8 arch=nvidia OPENACC=1 NOGPUDIRECT=1
 
-srun ./amrvac -i amrvac.par
+srun ./agile -i agile.par
