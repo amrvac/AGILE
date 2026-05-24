@@ -1,0 +1,71 @@
+ &filelist
+   base_filename    = 'output/sphere_advection'
+   autoconvert      = T
+   convert_type     = 'vtuBCCmpi'
+   saveprim         = T
+   nwauxio          = 2
+ /
+
+ &savelist
+  itsave(1,1)      = 0
+  itsave(1,2)      = 0
+  itsave(1,3)      = 0
+  ditsave_log      = 100
+  dtsave_dat       = 0.1d0
+  dtsave_slice     = 0.1d0
+  nslices          = 3
+  slicedir(1)      = 3
+  slicecoord(1)    = 0.0d0
+  slicedir(2)      = 2
+  slicecoord(2)    = 0.0d0
+  slicedir(3)      = 1
+  slicecoord(3)    = 0.0d0
+ /
+
+ &stoplist
+   time_max         = 0.2d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'tvdlf'
+   limiter         = 20*'vanleer'
+   phys            = 'hd'
+ /
+
+ &boundlist
+   typeboundary_min1 = 5*'periodic'
+   typeboundary_max1 = 5*'periodic'
+   typeboundary_min2 = 5*'periodic'
+   typeboundary_max2 = 5*'periodic'
+   typeboundary_min3 = 5*'periodic'
+   typeboundary_max3 = 5*'periodic'
+ /
+
+ &meshlist
+   max_blocks         =  2048
+   refine_max_level   =  4
+   refine_criterion   =  3 ! Lohner criterion
+   refine_usr         =  .false.
+   block_nx1          =  16
+   block_nx2          =  16
+   block_nx3          =  16
+   domain_nx1         =  64
+   domain_nx2         =  64
+   domain_nx3         =  64
+   xprobmin1          = -1.0d0
+   xprobmax1          =  1.0d0
+   xprobmin2          = -1.0d0
+   xprobmax2          =  1.0d0
+   xprobmin3          = -1.0d0
+   xprobmax3          =  1.0d0
+ /
+
+ &hd_list
+ hd_force_diagonal    = .true.
+ /
+
+ &paramlist
+   slowsteps        = 10
+   courantpar       = 0.7d0
+ /

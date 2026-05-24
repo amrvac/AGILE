@@ -1,0 +1,68 @@
+
+ &filelist
+   base_filename    = 'output/ot3d'
+   autoconvert      = T
+   convert_type     = 'vtuBCCmpi'
+   saveprim         = T
+   nwauxio          = 1
+ /
+
+ &savelist
+   itsave(1,1)      = 0
+   itsave(1,2)      = 0
+   ditsave_log      = 20
+   dtsave_dat       = 0.5d0
+   dtsave_slice     = 0.1d0
+   nslices          = 1
+   slicedir(1)      = 3
+   slicecoord(1)    = 0.03125d0
+ /
+
+ &stoplist
+   time_max = 1.0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'tvdlf'
+   limiter         = 20*'vanleer'
+   small_values_method = 'ignore'
+   phys            = 'mhd'
+ /
+
+ &boundlist
+   typeboundary_min1 = 8*'periodic'
+   typeboundary_max1 = 8*'periodic'
+   typeboundary_min2 = 8*'periodic'
+   typeboundary_max2 = 8*'periodic'
+   typeboundary_min3 = 8*'periodic'
+   typeboundary_max3 = 8*'periodic'
+ /
+
+ &meshlist
+   max_blocks         = 4096
+   refine_max_level   = 1
+   block_nx1          = 16
+   block_nx2          = 16
+   block_nx3          = 16
+   domain_nx1         = 256
+   domain_nx2         = 256
+   domain_nx3         = 16
+   xprobmin1       = 0.0d0
+   xprobmax1       = 1.0d0
+   xprobmin2       = 0.0d0
+   xprobmax2       = 1.0d0
+   xprobmin3       = 0.0d0
+   xprobmax3       = 0.0625d0
+   iprob=1
+ /
+
+ &paramlist
+   slowsteps        = 10
+   courantpar       = 0.7d0
+   typecourant      = 'maxsum'
+ /
+
+ &mhd_list
+   mhd_gravity = .false.
+ /
