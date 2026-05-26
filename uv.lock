@@ -3,7 +3,7 @@ revision = 2
 requires-python = ">=3.13"
 
 [[package]]
-name = "amrvac"
+name = "agile"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
@@ -30,9 +30,13 @@ wheels = [
 
 [[package]]
 name = "f90nml"
-version = "1.4.5"
+version = "1.5"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/25/03/8e228b3df0bc9564e847c53f6d45f68aafce3eeea36d185463cb633b071d/f90nml-1.4.5.tar.gz", hash = "sha256:132ed8d72543e121de4f154fd7f0052f567401901ef9e8a0992f044b9d21c907", size = 60813, upload-time = "2025-04-10T15:12:35.621Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/39/5bef20ee2868924029b2d34523839798cc8e48183ca57d9704ae6ef92da6/f90nml-1.5.tar.gz", hash = "sha256:d5585f0051234c742f7515c4b1f8484f8f628a71c4e31f2602357089dcc05fc1", size = 70959, upload-time = "2025-10-07T15:07:14.365Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/ee/39fc4b67a7ae5ba91d6da18a1b66cbdf6b2f4f88e3a26ca36823f3482dd3/f90nml-1.5-py2.py3-none-any.whl", hash = "sha256:38bbbdfe81eb7ac62e924021c4df6bb5cf4846e2f8ad79bfecb0fd654250180a", size = 51971, upload-time = "2025-10-07T15:07:13.332Z" },
+    { url = "https://files.pythonhosted.org/packages/21/f2/4454eefc15cc326b46530d230c58cc0bb91a1e9797f2842b2a1720cbb233/f90nml-1.5.0-py2.py3-none-any.whl", hash = "sha256:bdf616dbe7e83619feb86d54358fb8d97038133bfd8f9ba9a01eeca5dc4691a7", size = 51994, upload-time = "2025-10-07T15:25:09.064Z" },
+]
 
 [[package]]
 name = "fortdepend"

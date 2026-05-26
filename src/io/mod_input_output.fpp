@@ -41,7 +41,7 @@ module mod_input_output
 
 contains
 
-  !> Read the command line arguments passed to amrvac
+  !> Read the command line arguments passed to agile
   subroutine read_arguments()
     use mod_global_parameters
     use mod_slice, only: slicenext
@@ -80,7 +80,7 @@ contains
     ! =============== Fortran 2003 command line reading ================
 
     ! Default command line arguments
-    all_par_files="amrvac.par"
+    all_par_files="agile.par"
     restart_from_file=undefined
     snapshotnext=-1
     slicenext=-1
@@ -165,7 +165,7 @@ contains
     if (help) then
        if (mype == 0) then
           print *, 'Usage example:'
-          print *, 'mpirun -np 4 ./amrvac -i file.par [file2.par ...]'
+          print *, 'mpirun -np 4 ./agile -i file.par [file2.par ...]'
           print *, '         (later .par files override earlier ones)'
           print *, ''
           print *, 'Optional arguments:'
