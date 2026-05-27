@@ -88,7 +88,7 @@
   logical, public                         :: mhd_gravity = .false.
   !$acc declare copyin(mhd_gravity)
 
-  !> The adiabatic index
+  !> The resistivity
   double precision, public                :: mhd_eta = 0.0d0
   !$acc declare copyin(mhd_eta)
 
@@ -402,10 +402,11 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
   logical, intent(in)      :: qsourcesplit
   ! .. local ..
   real(dp)                 :: mag_idir,mag5(1:5),laplb_cd2 !,laplb_cd4
-  real(dp)                 :: magx(1:5),magy(1:5),magz(1:5),Jx,Jy,Jz,Jdir
+  real(dp)                 :: magx(1:5),magy(1:5),magz(1:5),Jdir
 
 #:if defined('RESISTIVE')
   ! using the compact stencil formulation and adopting constant eta
+
   ! > eta*(laplacian of B)_idir          added to B_idir
   ! > B_idir*[eta*(laplacian of B)_idir] added to e_
   mag_idir  = wCTprim(iw_mag(1)-1+idir,3)
@@ -414,20 +415,17 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
   !!laplb_cd4= (-mag5(5)+16*mag5(4)-30*mag5(3)+16*mag5(2)-mag5(1))/12.0_dp/dx(idir)
   wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) + qdt*mhd_eta*laplb_cd2
   wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*laplb_cd2*mag_idir
+  
   ! > eta* J**2 added to e
   magx(1:5)=wCTprim(iw_mag(1),1:5)
   magy(1:5)=wCTprim(iw_mag(2),1:5)
   magz(1:5)=wCTprim(iw_mag(3),1:5)
-  Jx = (magz(4)-magz(2))/2.0_dp/dx(2)-(magy(4)-magy(2))/2.0_dp/dx(3)
-  Jy = (magx(4)-magx(2))/2.0_dp/dx(3)-(magz(4)-magz(2))/2.0_dp/dx(1)
-  Jx = (magy(4)-magy(2))/2.0_dp/dx(1)-(magx(4)-magx(2))/2.0_dp/dx(2)
-  if (idir .eq. 1) Jdir=Jx
-  if (idir .eq. 2) Jdir=Jy
-  if (idir .eq. 3) Jdir=Jz
+  if (idir .eq. 1) Jdir = (magz(4)-magz(2))/2.0_dp/dx(2)-(magy(4)-magy(2))/2.0_dp/dx(3)
+  if (idir .eq. 2) Jdir = (magx(4)-magx(2))/2.0_dp/dx(3)-(magz(4)-magz(2))/2.0_dp/dx(1)
+  if (idir .eq. 3) Jdir = (magy(4)-magy(2))/2.0_dp/dx(1)-(magx(4)-magx(2))/2.0_dp/dx(2)
   ! > only adding eta*J_idir**2 here, doing a bit redundant computes above
   wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*Jdir**2
 #:endif
-
 
 end subroutine addsource_nonlocal
 #:enddef

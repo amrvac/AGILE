@@ -2,24 +2,11 @@
  &filelist
    base_filename    = 'test'
    typefilelog      ='regression_test'
-   autoconvert      = F
-   convert_type     = 'vtuBCCmpi'
-   saveprim         = T
  /
 
  &savelist
-   itsave(1,1)      = 0
-   itsave(1,2)      = 0
-   dtsave_log       = 0.01d0
-   dtsave_dat       = 0.025d0
-   dtsave_slice     = 0.01d0
-   nslices          = 3
-   slicedir(1)      = 1
-   slicecoord(1)    = 0.0d0
-   slicedir(2)      = 2
-   slicecoord(2)    = 0.0d0
-   slicedir(3)      = 3
-   slicecoord(3)    = 0.0d0
+   dtsave_log       = 1e10
+   dtsave_dat       = 1e10
  /
 
  &stoplist
@@ -43,14 +30,14 @@
  /
 
  &meshlist
-   max_blocks         = 4096
-   refine_max_level   = 1
+   max_blocks         = 2500
+   refine_max_level   = 2
    block_nx1          = 16
    block_nx2          = 16
    block_nx3          = 16
-   domain_nx1         = 256
-   domain_nx2         = 256
-   domain_nx3         = 256
+   domain_nx1         = 128
+   domain_nx2         = 128
+   domain_nx3         = 128
    xprobmin1       = -15.0d0
    xprobmax1       = 15.0d0
    xprobmin2       = -15.0d0
