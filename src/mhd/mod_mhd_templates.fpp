@@ -401,29 +401,46 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
   integer, intent(in)      :: idir
   logical, intent(in)      :: qsourcesplit
   ! .. local ..
-  real(dp)                 :: mag_idir,mag5(1:5),laplb_cd2 !,laplb_cd4
-  real(dp)                 :: magx(1:5),magy(1:5),magz(1:5),Jdir
+  real(dp)                 :: mag_idir,laplb_cd2 !,laplb_cd4
+  real(dp)                 :: Jdir
 
 #:if defined('RESISTIVE')
   ! using the compact stencil formulation and adopting constant eta
 
   ! > eta*(laplacian of B)_idir          added to B_idir
   ! > B_idir*[eta*(laplacian of B)_idir] added to e_
-  mag_idir  = wCTprim(iw_mag(1)-1+idir,3)
-  mag5(1:5) = wCTprim(iw_mag(1)-1+idir,1:5)
-  laplb_cd2= (mag5(4)-2*mag5(3)+mag5(2))/dx(idir)
-  !!laplb_cd4= (-mag5(5)+16*mag5(4)-30*mag5(3)+16*mag5(2)-mag5(1))/12.0_dp/dx(idir)
+  laplb_cd2 = &
+       ( &
+       wCTprim(iw_mag(1)-1+idir,4) &
+       - 2*wCTprim(iw_mag(1)-1+idir,3) &
+       + wCTprim(iw_mag(1)-1+idir,2) &
+       ) &
+       / dx(idir)
+  !!laplb_cd4= (-magx(5)+16*magx(4)-30*magx(3)+16*magx(2)-magx(1))/12.0_dp/dx(idir)
+
   wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) + qdt*mhd_eta*laplb_cd2
-  wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*laplb_cd2*mag_idir
+  wnew(iw_e) = wnew(iw_e) + qdt * mhd_eta * laplb_cd2 * wCTprim(iw_mag(1)-1+idir,3)
   
   ! > eta* J**2 added to e
-  magx(1:5)=wCTprim(iw_mag(1),1:5)
-  magy(1:5)=wCTprim(iw_mag(2),1:5)
-  magz(1:5)=wCTprim(iw_mag(3),1:5)
-  if (idir .eq. 1) Jdir = (magz(4)-magz(2))/2.0_dp/dx(2)-(magy(4)-magy(2))/2.0_dp/dx(3)
-  if (idir .eq. 2) Jdir = (magx(4)-magx(2))/2.0_dp/dx(3)-(magz(4)-magz(2))/2.0_dp/dx(1)
-  if (idir .eq. 3) Jdir = (magy(4)-magy(2))/2.0_dp/dx(1)-(magx(4)-magx(2))/2.0_dp/dx(2)
-  ! > only adding eta*J_idir**2 here, doing a bit redundant computes above
+  if (idir .eq. 1) then
+     Jdir = (wCTprim(iw_mag(3),4) - wCTprim(iw_mag(3),2)) &
+          / 2.0_dp/dx(2) &
+          - (wCTprim(iw_mag(2),4) - wCTprim(iw_mag(2),2)) &
+          / 2.0_dp/dx(3)
+  end if
+  if (idir .eq. 2) then
+     Jdir = (wCTprim(iw_mag(1),4) - wCTprim(iw_mag(1),2)) &
+          /2.0_dp/dx(3) &
+          - (wCTprim(iw_mag(3),4) - wCTprim(iw_mag(3),2)) &
+          / 2.0_dp/dx(1)
+  end if
+  if (idir .eq. 3) then
+     Jdir = (wCTprim(iw_mag(2),4) - wCTprim(iw_mag(2),2)) &
+          /2.0_dp/dx(1) &
+          - (wCTprim(iw_mag(1),4) - wCTprim(iw_mag(1),2)) &
+          / 2.0_dp/dx(2)
+  end if
+  ! > only adding eta*J_idir**2 here
   wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*Jdir**2
 #:endif
 
