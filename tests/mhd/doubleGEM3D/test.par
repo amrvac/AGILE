@@ -1,0 +1,88 @@
+
+ &filelist
+   base_filename    = 'test'
+   typefilelog      ='regression_test'
+   autoconvert      = F
+   convert_type     = 'vtuBCCmpi'
+   saveprim         = T
+ /
+
+ &savelist
+   itsave(1,1)      = 0
+   itsave(1,2)      = 0
+   dtsave_log       = 0.01d0
+   dtsave_dat       = 0.025d0
+   dtsave_slice     = 0.01d0
+   nslices          = 3
+   slicedir(1)      = 1
+   slicecoord(1)    = 0.0d0
+   slicedir(2)      = 2
+   slicecoord(2)    = 0.0d0
+   slicedir(3)      = 3
+   slicecoord(3)    = 0.0d0
+ /
+
+ &stoplist
+   time_max = 0.02d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'hll'
+   limiter         = 20*'vanleer'
+   phys            = 'mhd'
+ /
+
+ &boundlist
+   typeboundary_min1 = 8*'periodic'
+   typeboundary_max1 = 8*'periodic'
+   typeboundary_min2 = 8*'periodic'
+   typeboundary_max2 = 8*'periodic'
+   typeboundary_min3 = 8*'periodic'
+   typeboundary_max3 = 8*'periodic'
+ /
+
+ &meshlist
+   max_blocks         = 4096
+   refine_max_level   = 1
+   block_nx1          = 16
+   block_nx2          = 16
+   block_nx3          = 16
+   domain_nx1         = 256
+   domain_nx2         = 256
+   domain_nx3         = 256
+   xprobmin1       = -15.0d0
+   xprobmax1       = 15.0d0
+   xprobmin2       = -15.0d0
+   xprobmax2       = 15.0d0
+   xprobmin3       = -15.0d0
+   xprobmax3       = 15.0d0
+ /
+
+ &paramlist
+   slowsteps        = 10
+   courantpar       = 0.7d0
+   dtdiffpar        = 0.4d0
+   typecourant      = 'maxsum'
+ /
+
+ &mhd_list
+   mhd_gravity = .false.
+   mhd_radiative_cooling = .false.
+   mhd_source_usr = .false.
+   mhd_resistivity = .true.
+   mhd_eta=1.0d-3
+ /
+
+ &usr_list
+   psi0bot=0.05d0
+   psi0top=0.1d0
+   seed     = 20360812    
+   v_per(2) =0.0d0 ! for regression we do not perturb velocity randomly
+   v_per(3) =0.0d0 ! for regression we do not perturb velocity randomly
+   sig_z    =2d-1
+   f_til(2) =2d-2
+   f_til(3) =2d-2
+   mode_root =1
+   n_modes   =10
+ /
