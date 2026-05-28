@@ -7,13 +7,13 @@
 
 # This selects the architecture from latest build if not given
 ifndef arch
--include $(amrvac)/build/latest/arch.mk
+-include $(agile)/build/latest/arch.mk
 arch ?= gnu
 endif
 
 # validate architecture selection
-ifneq ("$(wildcard $(amrvac)/arch/$(arch).mk)","")
-include $(amrvac)/arch/$(arch).mk
+ifneq ("$(wildcard $(agile)/arch/$(arch).mk)","")
+include $(agile)/arch/$(arch).mk
 else
 $(error Unknown architecture: $(arch))
 endif

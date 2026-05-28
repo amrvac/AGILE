@@ -1,7 +1,7 @@
 !> AMRVAC solves a set of hyperbolic equations
 !> \f$\vec{u}_t + \nabla_x \cdot \vec{f}(\vec{u}) = \vec{s}\f$
 !> using adaptive mesh refinement.
-program amrvac
+program agile
   use mpi
   integer        :: ierror
   ! Initialize MPI
@@ -520,4 +520,4 @@ contains
     fixgrid= (global_time>=tfixgrid .or. it>=itfixgrid)
   end function fixgrid
 
-end program amrvac
+end program agile

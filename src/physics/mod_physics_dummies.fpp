@@ -77,3 +77,18 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
 
 end subroutine addsource_nonlocal
 #:enddef
+
+#:def addsource_compact()
+subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, x, dx, &
+     qsourcesplit)
+  !$acc routine seq
+
+  real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
+  real(dp), intent(in)     :: wCTprim1(nw_phys,3),wCTprim2(nw_phys,3),wCTprim3(nw_phys,3)
+  real(dp), intent(in)     :: x(1:ndim), dx(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  logical, intent(in)      :: qsourcesplit
+
+
+end subroutine addsource_compact
+#:enddef

@@ -41,7 +41,7 @@ module mod_input_output
 
 contains
 
-  !> Read the command line arguments passed to amrvac
+  !> Read the command line arguments passed to agile
   subroutine read_arguments()
     use mod_global_parameters
     use mod_slice, only: slicenext
@@ -54,21 +54,33 @@ contains
     logical                          :: unknown_arg, help, morepars
 
     if (mype == 0) then
-       print *, '-----------------------------------------------------------------------------'
-       print *, '-----------------------------------------------------------------------------'
-       print *, '|         __  __ ____ ___        _    __  __ ______     ___    ____         |'
-       print *, '|        |  \/  |  _ \_ _|      / \  |  \/  |  _ \ \   / / \  / ___|        |'
-       print *, '|        | |\/| | |_) | |_____ / _ \ | |\/| | |_) \ \ / / _ \| |            |'
-       print *, '|        | |  | |  __/| |_____/ ___ \| |  | |  _ < \ V / ___ \ |___         |'
-       print *, '|        |_|  |_|_|  |___|   /_/   \_\_|  |_|_| \_\ \_/_/   \_\____|        |'
-       print *, '-----------------------------------------------------------------------------'
-       print *, '-----------------------------------------------------------------------------'
+       print *, "-----------------------------------------------------------------------------"
+       print *, "-----------------------------------------------------------------------------"
+       print *, "|                                                                           |"
+       print *, "|                  _______  ______ _____        _______                     |"
+       print *, "|                  |_____| |  ____   |   |      |______                     |"
+       print *, "|                  |     | |_____| __|__ |_____ |______                     |"
+       print *, "|                                                                           |"
+       print *, "|                                                                           |"
+       print *, "|                                        d8, d8b                            |"
+       print *, "|                                       `8P  88P                            |"
+       print *, "|                                           d88                             |"
+       print *, "|                   d888b8b   d888b8b    88b888   d8888b                    |"
+       print *, "|                  d8P' ?88  d8P' ?88    88P?88  d8b_,dP                    |"
+       print *, "|                  88b  ,88b 88b  ,88b  d88  88b 88b                        |"
+       print *, "|                  `?88P'`88b`?88P'`88bd88'   88b`?888P'                    |"
+       print *, "|                                   )88                                     |"
+       print *, "|                                  ,88P                                     |"
+       print *, "|                              `?8888P                                      |"
+       print *, "|                                                                           |"
+       print *, "-----------------------------------------------------------------------------"
+       print *, "-----------------------------------------------------------------------------"
     end if
 
     ! =============== Fortran 2003 command line reading ================
 
     ! Default command line arguments
-    all_par_files="amrvac.par"
+    all_par_files="agile.par"
     restart_from_file=undefined
     snapshotnext=-1
     slicenext=-1
@@ -153,7 +165,7 @@ contains
     if (help) then
        if (mype == 0) then
           print *, 'Usage example:'
-          print *, 'mpirun -np 4 ./amrvac -i file.par [file2.par ...]'
+          print *, 'mpirun -np 4 ./agile -i file.par [file2.par ...]'
           print *, '         (later .par files override earlier ones)'
           print *, ''
           print *, 'Optional arguments:'
@@ -2039,6 +2051,7 @@ contains
     !$acc update device(w_refine_weight, amr_wavefilter)
     !$acc update device(refine_threshold, derefine_ratio)
     !$acc update device(block_nx1, block_nx2, block_nx3)
+    !$acc update device(courantpar, dtdiffpar)
 
   end subroutine read_par_files
 

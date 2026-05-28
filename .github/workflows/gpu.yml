@@ -11,7 +11,7 @@ jobs:
   nvidia:
     name: NVIDIA GPU
     env:
-      AMRVAC_DIR: ${{ github.workspace }}
+      AGILE_DIR: ${{ github.workspace }}
       
     runs-on: self-hosted
 

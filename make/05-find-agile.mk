@@ -1,6 +1,6 @@
-$(info AMRVAC Path: $(AMRVAC_DIR))
+$(info AGILE Path: $(AGILE_DIR))
 
-amrvac := $(AMRVAC_DIR)
+agile := $(AGILE_DIR)
 build := $(shell pwd)/build
 
 ifeq ($(findstring help, $(MAKECMDGOALS)), help)
@@ -14,4 +14,4 @@ endif
 .PHONY: help
 
 help:
-	less $(amrvac)/make/README.md
+	less $(agile)/make/README.md

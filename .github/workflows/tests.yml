@@ -24,7 +24,7 @@ jobs:
     env:
       CC: ${{ matrix.CC_compiler }}
       FC: ${{ matrix.FC_compiler }}
-      AMRVAC_DIR: ${{ github.workspace }}
+      AGILE_DIR: ${{ github.workspace }}
       OSX_GCC_PACKAGE_NAME: gcc@15
       
     runs-on: ${{ matrix.os }}
@@ -73,7 +73,7 @@ jobs:
     env:
       FC: ifx
       CC: icc
-      AMRVAC_DIR: ${{ github.workspace }}
+      AGILE_DIR: ${{ github.workspace }}
 
     steps:
       - uses: actions/checkout@v6

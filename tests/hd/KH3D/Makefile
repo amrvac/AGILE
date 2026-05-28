@@ -1,8 +1,8 @@
-ifndef AMRVAC_DIR
-    $(error The AMRVAC_DIR environment variable needs to be defined.)
+ifndef AGILE_DIR
+    $(error The AGILE_DIR environment variable needs to be defined.)
 endif
 
-include $(AMRVAC_DIR)/make/include-all.mk
+include $(AGILE_DIR)/make/include-all.mk
 
-all: amrvac
+all: agile
 	

@@ -14,7 +14,7 @@ endif
 
 # make sure that config is read first
 ifdef CONFIG_READ
-$(build_dir)/dependencies.mk: $(f90_files) $(build_dir)/f90/amrvac.h | $(build_dir)
+$(build_dir)/dependencies.mk: $(f90_files) $(build_dir)/f90/agile.h | $(build_dir)
 	@echo "Regenerating depencies"
 	@fortdepend $(fortdepend_flags) -f $(f90_files) -i mpi openacc -b $(build_dir)/obj -w -o $@
 

@@ -2,8 +2,6 @@
 !> generator is the xoroshiro128plus method.
 module mod_random
 
-#include "amrvac.h"
-
   implicit none
   private
 

@@ -1,8 +1,14 @@
-# This file sets what settings in amrvac.par are read as compile
+# This file sets what settings in agile.par are read as compile
 # time flags and whether they should affect the build hash.
 # [components] is for hidden implied options inferred by the precompiler
 
 [components]
+[components.source_compact]
+type = "flag"
+name = "SOURCE_COMPACT"
+flags = ["fypp", "hash"]
+default = false
+
 [components.source_nonlocal]
 type = "flag"
 name = "SOURCE_NONLOCAL"
@@ -100,6 +106,27 @@ type = "value"
 name = "N_TRACER"
 dtype = "int"
 flags = ["fypp", "hash"]
+
+[mhd_list.mhd_source_usr]
+type = "flag"
+name = "SOURCE_USR"
+flags = ["fypp", "hash"]
+default = false
+implies = ["components.source_local"]
+
+[mhd_list.mhd_resistivity]
+type = "flag"
+name = "RESISTIVE"
+flags = ["fypp", "hash"]
+default = false
+implies = ["components.source_compact"]
+
+[mhd_list.mhd_radiative_cooling]
+type = "flag"
+name = "COOLING"
+flags = ["fypp", "hash"]
+default = false
+implies = ["components.source_local"]
 
 [meshlist]
 [meshlist.refine_usr]

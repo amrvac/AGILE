@@ -5,7 +5,7 @@ on: [ workflow_dispatch ]
 env:
   CC: /usr/bin/gcc-9
   FC: /usr/bin/gfortran-9
-  AMRVAC_DIR: ${GITHUB_WORKSPACE}
+  AGILE_DIR: ${GITHUB_WORKSPACE}
 
 jobs:
   report:
@@ -24,7 +24,7 @@ jobs:
           mpirun --version
           gfortran-9 --version
           pip install gcovr
-      - name: Compile amrvac
+      - name: Compile agile
         run: |
           cd lib
           make -j 2 ARCH=coverage

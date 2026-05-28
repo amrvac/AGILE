@@ -5,8 +5,8 @@ _reset := "\\e[m"
 
 
 # This is a template Makefile to simplify writing tests
-ifndef AMRVAC_DIR
-$(error AMRVAC_DIR is not set)
+ifndef AGILE_DIR
+$(error AGILE_DIR is not set)
 endif
 
 arch ?= gnu
@@ -15,7 +15,7 @@ arch ?= gnu
 .SUFFIXES:
 
 # Tool to compare test output numerically
-LOG_CMP := $(AMRVAC_DIR)/tools/fortran/compare_logs
+LOG_CMP := $(AGILE_DIR)/tools/fortran/compare_logs
 
 # Number of MPI processes to use
 NUM_PROCS ?= 4
@@ -36,26 +36,26 @@ endif
 all: $(TESTS)
 
 clean:
-	$(RM) $(TESTS) amrvac *.vtu *.dat *.log *.f90 *.mod
+	$(RM) $(TESTS) agile *.vtu *.dat *.log *.f90 *.mod
 
 # Include architecture and compilation rules for the compare_log utility
-include $(AMRVAC_DIR)/arch/$(arch).mk
+include $(AGILE_DIR)/arch/$(arch).mk
 
 F90 := $(compile)
 F90FLAGS := $(f90_flags)
 F90LINKFLAGS := $(link_flags)
 
-%.log: $(LOG_CMP) amrvac force
+%.log: $(LOG_CMP) agile force
 	@$(RM) $@		# Remove log to prevent pass when aborted
     # for Intel same machine
-    # @mpirun -genv I_MPI_FABRICS shm  -np $(NUM_PROCS) ./amrvac -i $(filter %.par,$^) > run.log
-	@$(LAUNCHER) ./amrvac -i $(filter %.par,$^) > run.log
+    # @mpirun -genv I_MPI_FABRICS shm  -np $(NUM_PROCS) ./agile -i $(filter %.par,$^) > run.log
+	@$(LAUNCHER) ./agile -i $(filter %.par,$^) > run.log
 	@if $(LOG_CMP) 1.0e-5 1.0e-8 $@ correct_output/$@ ; \
 	then echo -e "$(_green)PASSED$(_reset) $@" ; \
 	else echo -e "$(_red)** FAILED **$(_reset) $@" ; \
 	fi
 
-amrvac: force		# Always try a fresh build
+agile: force		# Always try a fresh build
 	@$(MAKE) clean
 	@$(MAKE) -j
 

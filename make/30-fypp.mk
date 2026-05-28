@@ -8,11 +8,11 @@ endif
 
 fypp_flags += -n
 
-fypp_flags += -M $(amrvac)/make
+fypp_flags += -M $(agile)/make
 
 $(info Fypp flags: $(fypp_flags))
 
-source_files := $(shell find $(amrvac)/src -name '*.fpp') mod_usr.fpp
+source_files := $(shell find $(agile)/src -name '*.fpp') mod_usr.fpp
 f90_files := $(patsubst %.fpp, $(build_dir)/f90/%.f90, \
 	     $(notdir $(source_files)))
 
@@ -23,8 +23,8 @@ define fypp_rule
 
 $(patsubst %.fpp, $(build_dir)/f90/%.f90, $(notdir $(1))): $(1)
 	@mkdir -p $$(@D)
-	@echo -e "Precompiling $(_magenta)$$(<:$(amrvac)/src/%=%)$(_reset)"
-	@python $(amrvac)/make/fypp-deps.py $$< $$@
+	@echo -e "Precompiling $(_magenta)$$(<:$(agile)/src/%=%)$(_reset)"
+	@python $(agile)/make/fypp-deps.py $$< $$@
 	@fypp $(fypp_flags) $$<  $$@
 endef
 
