@@ -389,62 +389,68 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 end subroutine addsource_local
 #:enddef
 
-#:def addsource_nonlocal()
-subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir, &
+#:def addsource_compact()
+subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, x, dx, &
      qsourcesplit)
   !$acc routine seq
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
-  real(dp), intent(in)     :: wCTprim(nw_phys,5)
+  real(dp), intent(in)     :: wCTprim1(nw_phys,3),wCTprim2(nw_phys,3),wCTprim3(nw_phys,3)
   real(dp), intent(in)     :: x(1:ndim), dx(1:ndim)
   real(dp), intent(inout)  :: wnew(nw_phys)
-  integer, intent(in)      :: idir
   logical, intent(in)      :: qsourcesplit
   ! .. local ..
-  real(dp)                 :: mag_idir,laplb_cd2 !,laplb_cd4
-  real(dp)                 :: Jdir
+  real(dp)                 :: mag_idir,laplb_cd2
+  real(dp)                 :: Jdir1,Jdir2,Jdir3
+  integer                  :: idir
 
 #:if defined('RESISTIVE')
   ! using the compact stencil formulation and adopting constant eta
 
   ! > eta*(laplacian of B)_idir          added to B_idir
   ! > B_idir*[eta*(laplacian of B)_idir] added to e_
-  laplb_cd2 = &
+  do idir = 1,ndim
+    laplb_cd2 =  &
        ( &
-       wCTprim(iw_mag(1)-1+idir,4) &
-       - 2*wCTprim(iw_mag(1)-1+idir,3) &
-       + wCTprim(iw_mag(1)-1+idir,2) &
+       wCTprim1(iw_mag(1)-1+idir,3) &
+       - 2*wCTprim1(iw_mag(1)-1+idir,2) &
+       + wCTprim1(iw_mag(1)-1+idir,1) &
        ) &
-       / dx(idir)
-  !!laplb_cd4= (-magx(5)+16*magx(4)-30*magx(3)+16*magx(2)-magx(1))/12.0_dp/dx(idir)
+       / dx(1)**2 + &
+       ( &
+       wCTprim2(iw_mag(1)-1+idir,3) &
+       - 2*wCTprim2(iw_mag(1)-1+idir,2) &
+       + wCTprim2(iw_mag(1)-1+idir,1) &
+       ) &
+       / dx(2)**2 + &
+       ( &
+       wCTprim3(iw_mag(1)-1+idir,3) &
+       - 2*wCTprim3(iw_mag(1)-1+idir,2) &
+       + wCTprim3(iw_mag(1)-1+idir,1) &
+       ) &
+       / dx(3)**2 
 
-  wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) + qdt*mhd_eta*laplb_cd2
-  wnew(iw_e) = wnew(iw_e) + qdt * mhd_eta * laplb_cd2 * wCTprim(iw_mag(1)-1+idir,3)
+      wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) + qdt*mhd_eta*laplb_cd2
+      wnew(iw_e) = wnew(iw_e) + qdt * mhd_eta * laplb_cd2 * wCTprim1(iw_mag(1)-1+idir,2)
+   enddo
   
   ! > eta* J**2 added to e
-  if (idir .eq. 1) then
-     Jdir = (wCTprim(iw_mag(3),4) - wCTprim(iw_mag(3),2)) &
+  Jdir1 = (wCTprim2(iw_mag(3),3) - wCTprim2(iw_mag(3),1)) &
           / 2.0_dp/dx(2) &
-          - (wCTprim(iw_mag(2),4) - wCTprim(iw_mag(2),2)) &
+        - (wCTprim3(iw_mag(2),3) - wCTprim3(iw_mag(2),1)) &
           / 2.0_dp/dx(3)
-  end if
-  if (idir .eq. 2) then
-     Jdir = (wCTprim(iw_mag(1),4) - wCTprim(iw_mag(1),2)) &
+  Jdir2 = (wCTprim3(iw_mag(1),3) - wCTprim3(iw_mag(1),1)) &
           /2.0_dp/dx(3) &
-          - (wCTprim(iw_mag(3),4) - wCTprim(iw_mag(3),2)) &
+        - (wCTprim1(iw_mag(3),3) - wCTprim1(iw_mag(3),1)) &
           / 2.0_dp/dx(1)
-  end if
-  if (idir .eq. 3) then
-     Jdir = (wCTprim(iw_mag(2),4) - wCTprim(iw_mag(2),2)) &
+  Jdir3 = (wCTprim1(iw_mag(2),3) - wCTprim1(iw_mag(2),1)) &
           /2.0_dp/dx(1) &
-          - (wCTprim(iw_mag(1),4) - wCTprim(iw_mag(1),2)) &
+        - (wCTprim2(iw_mag(1),3) - wCTprim2(iw_mag(1),1)) &
           / 2.0_dp/dx(2)
-  end if
-  ! > only adding eta*J_idir**2 here
-  wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*Jdir**2
+  wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*(Jdir1**2+Jdir2**2+Jdir3**2)
 #:endif
 
-end subroutine addsource_nonlocal
+end subroutine addsource_compact
 #:enddef
 
 #:def to_primitive()

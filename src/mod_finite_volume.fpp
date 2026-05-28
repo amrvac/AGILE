@@ -21,6 +21,7 @@ contains
 ! instantiate the templated functions here for inlining:
 @:addsource_local()
 @:addsource_nonlocal()
+@:addsource_compact()
 @:to_primitive()
 @:to_conservative()
 @:get_cmax()
@@ -103,6 +104,7 @@ end subroutine finite_volume_local
     double precision       :: uprim(nw_phys, ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3)
     real(dp)               :: tmp(nw_phys,5)
+    real(dp)               :: tmp1(nw_phys,3),tmp2(nw_phys,3),tmp3(nw_phys,3)
     real(dp)               :: f(nw_flux, 2)
     real(dp)               :: inv_dr(ndim)
     real(dp)               :: dr(ndim)
@@ -205,6 +207,19 @@ end subroutine finite_volume_local
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp,&
                         qt, wnew, xloc, dr, 3, .false. )
 
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)           
+#:endif                
+
+#:if defined('SOURCE_COMPACT')
+                   ! Add non-local compact source terms:
+                   xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
+                   tmp1 = uprim(1:nw_phys, ix1-1:ix1+1, ix2, ix3)
+                   tmp2 = uprim(1:nw_phys, ix1, ix2-1:ix2+1, ix3)
+                   tmp3 = uprim(1:nw_phys, ix1, ix2, ix3-1:ix3+1)
+                   call addsource_compact(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
+                        dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp1,tmp2,tmp3, &
+                        qt, wnew, xloc, dr, 3, .false. )
                    bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)           
 #:endif                
                 end do
