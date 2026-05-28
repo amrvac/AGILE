@@ -1,3 +1,4 @@
+
  &filelist
    base_filename    = 'test'
    typefilelog      = 'regression_test'
@@ -55,4 +56,8 @@
  &paramlist
   slowsteps        = 10
  /
+
+&hd_list
+   hd_gravity      = .true.
+/
 

@@ -88,6 +88,14 @@
   logical, public                         :: mhd_gravity = .false.
   !$acc declare copyin(mhd_gravity)
 
+  !> The resistivity
+  double precision, public                :: mhd_eta = 0.0d0
+  !$acc declare copyin(mhd_eta)
+
+  !> switch for adding resistive terms
+  logical, public                         :: mhd_resistivity = .false.
+  !$acc declare copyin(mhd_resistivity)
+
   !> Whether plasma is partially ionized
   logical, public                         :: mhd_partial_ionization = .false.
   !$acc declare copyin(mhd_partial_ionization)
@@ -100,6 +108,10 @@
   logical, public                         :: mhd_particles = .false.
   !$acc declare copyin(mhd_particles)
 
+  !> switch for source user
+  logical, public                         :: mhd_source_usr = .false.
+  !$acc declare copyin(mhd_source_usr)
+
 #:enddef
 
 #:def read_params()
@@ -110,7 +122,8 @@
     integer                      :: n
 
     namelist /mhd_list/ mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity,&
-      mhd_n_tracer, mhd_radiative_cooling, He_abundance
+      mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
+      mhd_resistivity
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -121,7 +134,8 @@
 #ifdef _OPENACC
     !$acc update device(mhd_energy, &
     !$acc&     mhd_gamma, mhd_glm_alpha, &
-    !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, He_abundance)
+    !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, &
+    !$acc&     He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity)
 #endif
 
   end subroutine read_params
@@ -136,135 +150,8 @@
 #:def phys_units()
   subroutine phys_units()
     use mod_global_parameters
-    double precision :: mp, kB, miu0
+    double precision :: mp, kB
     double precision :: a,b
-
-    ! Derive scaling units
-    if(SI_unit) then
-      mp=mp_SI
-      kB=kB_SI
-      miu0=miu0_SI
-    else
-      mp=mp_cgs
-      kB=kB_cgs
-      miu0=4.d0*dpi ! G^2 cm^2 dyne^-1
-    end if
-    a=1d0+4d0*He_abundance
-    if(mhd_partial_ionization) then
-      b=1d0+H_ion_fr+He_abundance*(He_ion_fr*(He_ion_fr2+1d0)+1d0)
-    else
-      b=2d0+3d0*He_abundance
-    end if
-    RR=1d0
-    if(unit_density/=1.d0 .or. unit_numberdensity/=1.d0) then
-      if(unit_density/=1.d0) then
-        unit_numberdensity=unit_density/(a*mp)
-      else if(unit_numberdensity/=1.d0) then
-        unit_density=a*mp*unit_numberdensity
-      end if
-      if(unit_temperature/=1.d0) then
-        unit_pressure=b*unit_numberdensity*kB*unit_temperature
-        unit_velocity=sqrt(unit_pressure/unit_density)
-        unit_magneticfield=sqrt(miu0*unit_pressure)
-        if(unit_length/=1.d0) then
-          unit_time=unit_length/unit_velocity
-        else if(unit_time/=1.d0) then
-          unit_length=unit_velocity*unit_time
-        end if
-      else if(unit_magneticfield/=1.d0) then
-        unit_pressure=unit_magneticfield**2/miu0
-        unit_temperature=unit_pressure/(b*unit_numberdensity*kB)
-        unit_velocity=sqrt(unit_pressure/unit_density)
-        if(unit_length/=1.d0) then
-          unit_time=unit_length/unit_velocity
-        else if(unit_time/=1.d0) then
-          unit_length=unit_velocity*unit_time
-        end if
-      else if(unit_pressure/=1.d0) then
-        unit_temperature=unit_pressure/(b*unit_numberdensity*kB)
-        unit_velocity=sqrt(unit_pressure/unit_density)
-        unit_magneticfield=sqrt(miu0*unit_pressure)
-        if(unit_length/=1.d0) then
-          unit_time=unit_length/unit_velocity
-        else if(unit_time/=1.d0) then
-          unit_length=unit_velocity*unit_time
-        end if
-      else if(unit_velocity/=1.d0) then
-        unit_pressure=unit_density*unit_velocity**2
-        unit_temperature=unit_pressure/(b*unit_numberdensity*kB)
-        unit_magneticfield=sqrt(miu0*unit_pressure)
-        if(unit_length/=1.d0) then
-          unit_time=unit_length/unit_velocity
-        else if(unit_time/=1.d0) then
-          unit_length=unit_velocity*unit_time
-        end if
-      else if(unit_time/=1.d0) then
-        unit_velocity=unit_length/unit_time
-        unit_pressure=unit_density*unit_velocity**2
-        unit_magneticfield=sqrt(miu0*unit_pressure)
-        unit_temperature=unit_pressure/(b*unit_numberdensity*kB)
-      end if
-    else if(unit_temperature/=1.d0) then
-      ! units of temperature and velocity are dependent
-      if(unit_magneticfield/=1.d0) then
-        unit_pressure=unit_magneticfield**2/miu0
-        unit_numberdensity=unit_pressure/(b*unit_temperature*kB)
-        unit_density=a*mp*unit_numberdensity
-        unit_velocity=sqrt(unit_pressure/unit_density)
-        if(unit_length/=1.d0) then
-          unit_time=unit_length/unit_velocity
-        else if(unit_time/=1.d0) then
-          unit_length=unit_velocity*unit_time
-        end if
-      else if(unit_pressure/=1.d0) then
-        unit_magneticfield=sqrt(miu0*unit_pressure)
-        unit_numberdensity=unit_pressure/(b*unit_temperature*kB)
-        unit_density=a*mp*unit_numberdensity
-        unit_velocity=sqrt(unit_pressure/unit_density)
-        if(unit_length/=1.d0) then
-          unit_time=unit_length/unit_velocity
-        else if(unit_time/=1.d0) then
-          unit_length=unit_velocity*unit_time
-        end if
-      end if
-    else if(unit_magneticfield/=1.d0) then
-      ! units of magnetic field and pressure are dependent
-      if(unit_velocity/=1.d0) then
-        unit_pressure=unit_magneticfield**2/miu0
-        unit_numberdensity=unit_pressure/(b*unit_temperature*kB)
-        unit_density=a*mp*unit_numberdensity
-        unit_temperature=unit_pressure/(b*unit_numberdensity*kB)
-        if(unit_length/=1.d0) then
-          unit_time=unit_length/unit_velocity
-        else if(unit_time/=1.d0) then
-          unit_length=unit_velocity*unit_time
-        end if
-      else if(unit_time/=0.d0) then
-        unit_pressure=unit_magneticfield**2/miu0
-        unit_velocity=unit_length/unit_time
-        unit_density=unit_pressure/unit_velocity**2
-        unit_numberdensity=unit_density/(a*mp)
-        unit_temperature=unit_pressure/(b*unit_numberdensity*kB)
-      end if
-    else if(unit_pressure/=1.d0) then
-      if(unit_velocity/=1.d0) then
-        unit_magneticfield=sqrt(miu0*unit_pressure)
-        unit_density=unit_pressure/unit_velocity**2
-        unit_numberdensity=unit_density/(a*mp)
-        unit_temperature=unit_pressure/(b*unit_numberdensity*kB)
-        if(unit_length/=1.d0) then
-          unit_time=unit_length/unit_velocity
-        else if(unit_time/=1.d0) then
-          unit_length=unit_velocity*unit_time
-        end if
-      else if(unit_time/=0.d0) then
-        unit_magneticfield=sqrt(miu0*unit_pressure)
-        unit_velocity=unit_length/unit_time
-        unit_density=unit_pressure/unit_velocity**2
-        unit_numberdensity=unit_density/(a*mp)
-        unit_temperature=unit_pressure/(b*unit_numberdensity*kB)
-      end if
-    end if
 
     !> here no SI_UNIT used by default, to be implemented
     mp = mp_cgs
@@ -429,6 +316,9 @@
 #:if defined('GRAVITY')
   use mod_usr, only: gravity_field
 #:endif    
+#:if defined('RESISTIVE')
+  use mod_global_parameters, only: dtdiffpar
+#:endif    
     real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
     real(dp), intent(out)  :: dtnew
     ! .. local ..
@@ -445,6 +335,12 @@
     end do
 #:endif    
     
+#:if defined('RESISTIVE')
+    do idim = 1,ndim
+       dtnew=min(dtnew, dtdiffpar*dx(idim)**2/mhd_eta)
+    enddo
+#:endif    
+
   end subroutine phys_get_dt
 #:enddef  
 
@@ -452,13 +348,17 @@
 subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
     qsourcesplit)
   !$acc routine seq
-  use mod_global_parameters, only:cmax_global
+#:if defined('SOURCE_USR')
+  use mod_usr, only: addsource_usr
+#:endif
 #:if defined('GRAVITY')
   use mod_usr, only: gravity_field
 #:endif
 #:if defined('COOLING')
   use mod_radiative_cooling, only: rc_fl, radiative_cooling_add_source
 #:endif
+
+  use mod_global_parameters, only:cmax_global
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCT(nw_phys), wCTprim(nw_phys)
   real(dp), intent(in)     :: x(1:ndim), dr(ndim)
@@ -480,27 +380,77 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
   call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
 #:endif
 
+#:if defined('SOURCE_USR')
+  call addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, .false.)
+#:endif
+
   wnew(psi_)=wnew(psi_)*dexp(-qdt*cmax_global*mhd_glm_alpha/minval(dr))
 
 end subroutine addsource_local
 #:enddef
 
-#:def addsource_nonlocal()
-subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir, &
+#:def addsource_compact()
+subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, x, dx, &
      qsourcesplit)
   !$acc routine seq
-  use mod_global_parameters, only: dt, cs2max_global
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
-  real(dp), intent(in)     :: wCTprim(nw_phys,5)
+  real(dp), intent(in)     :: wCTprim1(nw_phys,3),wCTprim2(nw_phys,3),wCTprim3(nw_phys,3)
   real(dp), intent(in)     :: x(1:ndim), dx(1:ndim)
   real(dp), intent(inout)  :: wnew(nw_phys)
-  integer, intent(in)      :: idir
   logical, intent(in)      :: qsourcesplit
   ! .. local ..
-  real(dp)                 :: field, mag
+  real(dp)                 :: laplb_cd2
+  real(dp)                 :: Jdir1,Jdir2,Jdir3
+  integer                  :: idir
 
-end subroutine addsource_nonlocal
+#:if defined('RESISTIVE')
+  ! using the compact stencil formulation and adopting constant eta
+
+  ! > eta*(laplacian of B)_idir          added to B_idir
+  ! > B_idir*[eta*(laplacian of B)_idir] added to e_
+  do idir = 1,ndim
+    laplb_cd2 =  &
+       ( &
+       wCTprim1(iw_mag(1)-1+idir,3) &
+       - 2*wCTprim1(iw_mag(1)-1+idir,2) &
+       + wCTprim1(iw_mag(1)-1+idir,1) &
+       ) &
+       / dx(1)**2 + &
+       ( &
+       wCTprim2(iw_mag(1)-1+idir,3) &
+       - 2*wCTprim2(iw_mag(1)-1+idir,2) &
+       + wCTprim2(iw_mag(1)-1+idir,1) &
+       ) &
+       / dx(2)**2 + &
+       ( &
+       wCTprim3(iw_mag(1)-1+idir,3) &
+       - 2*wCTprim3(iw_mag(1)-1+idir,2) &
+       + wCTprim3(iw_mag(1)-1+idir,1) &
+       ) &
+       / dx(3)**2 
+
+      wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) + qdt*mhd_eta*laplb_cd2
+      wnew(iw_e) = wnew(iw_e) + qdt * mhd_eta * laplb_cd2 * wCTprim1(iw_mag(1)-1+idir,2)
+   enddo
+  
+  ! > eta* J**2 added to e
+  Jdir1 = (wCTprim2(iw_mag(3),3) - wCTprim2(iw_mag(3),1)) &
+          / 2.0_dp/dx(2) &
+        - (wCTprim3(iw_mag(2),3) - wCTprim3(iw_mag(2),1)) &
+          / 2.0_dp/dx(3)
+  Jdir2 = (wCTprim3(iw_mag(1),3) - wCTprim3(iw_mag(1),1)) &
+          /2.0_dp/dx(3) &
+        - (wCTprim1(iw_mag(3),3) - wCTprim1(iw_mag(3),1)) &
+          / 2.0_dp/dx(1)
+  Jdir3 = (wCTprim1(iw_mag(2),3) - wCTprim1(iw_mag(2),1)) &
+          /2.0_dp/dx(1) &
+        - (wCTprim2(iw_mag(1),3) - wCTprim2(iw_mag(1),1)) &
+          / 2.0_dp/dx(2)
+  wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*(Jdir1**2+Jdir2**2+Jdir3**2)
+#:endif
+
+end subroutine addsource_compact
 #:enddef
 
 #:def to_primitive()

@@ -2051,6 +2051,7 @@ contains
     !$acc update device(w_refine_weight, amr_wavefilter)
     !$acc update device(refine_threshold, derefine_ratio)
     !$acc update device(block_nx1, block_nx2, block_nx3)
+    !$acc update device(courantpar, dtdiffpar)
 
   end subroutine read_par_files
 

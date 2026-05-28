@@ -522,6 +522,7 @@ module mod_global_parameters
 
   !> The Courant (CFL) number used for the simulation
   double precision :: courantpar
+  !$acc declare create(courantpar)
 
   !> How to compute the CFL-limited time step
   integer :: type_courant=1
@@ -537,6 +538,7 @@ module mod_global_parameters
   !> For resistive MHD, the time step is also limited by the diffusion time:
   !> \f$ dt < dtdiffpar \times dx^2/eta \f$
   double precision :: dtdiffpar
+  !$acc declare create(dtdiffpar)
 
   !> The global simulation time
   double precision :: global_time
