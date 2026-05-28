@@ -3,6 +3,12 @@
 # [components] is for hidden implied options inferred by the precompiler
 
 [components]
+[components.source_compact]
+type = "flag"
+name = "SOURCE_COMPACT"
+flags = ["fypp", "hash"]
+default = false
+
 [components.source_nonlocal]
 type = "flag"
 name = "SOURCE_NONLOCAL"
@@ -113,7 +119,7 @@ type = "flag"
 name = "RESISTIVE"
 flags = ["fypp", "hash"]
 default = false
-implies = ["components.source_nonlocal"]
+implies = ["components.source_compact"]
 
 [mhd_list.mhd_radiative_cooling]
 type = "flag"
