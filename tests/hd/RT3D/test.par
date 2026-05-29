@@ -49,6 +49,10 @@
    xprobmax3       = 1.0d0
  /
 
+&hd_list
+   hd_gravity      = .true.
+/
+
  &paramlist
   slowsteps        = 10
  /
