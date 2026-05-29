@@ -58,7 +58,7 @@ contains
                    end do
                    dtmin_mype     = min( dtmin_mype, courantpar / cmaxtot )
 
-#:if defined('SOURCE_TERM')
+#:if defined('SOURCE_DT')
                    u = bg(1)%w(ix1,ix2,ix3,1:nw_phys,igrid)
                    xloc(1:ndim) = ps(igrid)%x(ix1, ix2, ix3, 1:ndim)
                    call phys_get_dt(u, xloc, [dx1, dx2, dx3], qdtnew)

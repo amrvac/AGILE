@@ -3,23 +3,32 @@
 # [components] is for hidden implied options inferred by the precompiler
 
 [components]
+[components.source_dt]
+type = "flag"
+name = "SOURCE_DT"
+flags = ["fypp", "hash"]
+default = false
+
 [components.source_compact]
 type = "flag"
 name = "SOURCE_COMPACT"
 flags = ["fypp", "hash"]
 default = false
+implies = ["components.source_dt"]
 
 [components.source_nonlocal]
 type = "flag"
 name = "SOURCE_NONLOCAL"
 flags = ["fypp", "hash"]
 default = false
+implies = ["components.source_dt"]
 
 [components.source_local]
 type = "flag"
 name = "SOURCE_LOCAL"
 flags = ["fypp", "hash"]
 default = false
+implies = ["components.source_dt"]
 
 [methodlist]
 [methodlist.phys]
