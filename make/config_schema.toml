@@ -137,13 +137,6 @@ flags = ["fypp", "hash"]
 default = false
 implies = ["components.source_compact"]
 
-[mhd_list.mhd_radiative_cooling]
-type = "flag"
-name = "COOLING"
-flags = ["fypp", "hash"]
-default = false
-implies = ["components.source_local"]
-
 [meshlist]
 [meshlist.refine_usr]
 type = "flag"
