@@ -326,23 +326,37 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
   integer                  :: idim
   real(dp)                 :: field, mag, divb
 
+  if (.not. qsourcesplit) then 
+     !---------------------------------
+     ! unsplit sources
+     !---------------------------------
+     
 #:if defined('GRAVITY')
-  do idim = 1, ndim
-     field = gravity_field(wCT, x, idim)
-     mag = wCTprim(iw_b1-1+idim)
-     wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * field * wCT(iw_rho) * mag
-     wnew(iw_e)      = wnew(iw_e) + qdt * field * wCT(iw_mom(1)) * mag
-  end do
+     do idim = 1, ndim
+        field = gravity_field(wCT, x, idim)
+        mag = wCTprim(iw_b1-1+idim)
+        wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * field * wCT(iw_rho) * mag
+        wnew(iw_e)      = wnew(iw_e) + qdt * field * wCT(iw_mom(1)) * mag
+     end do
 #:endif  
 
 #:if defined('COOLING')
-  call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
+     call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
 #:endif
 
 #:if defined('SOURCE_USR')
-  call addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, .false.)
+     call addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, .false.)
 #:endif
 
+  else
+     !---------------------------------
+     ! split sources     
+     !---------------------------------
+
+     ! Not yet implemented
+
+  end if
+  
 end subroutine addsource_local
 #:enddef
 
@@ -363,36 +377,50 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
   real(dp)                 :: T(1:5), gradT, Tface(2)
   real(dp)                 :: mag5(1:5), divb, mag
 
+  if (.not. qsourcesplit) then 
+     !---------------------------------
+     ! unsplit sources
+     !---------------------------------
+
 #:if defined('PDIVB')
-  ! > p*divb 
-  mag5(1:5) = wCTprim(iw_b1-1+idir,1:5)
-  divb = (8*mag5(4)-8*mag5(2)-mag5(5)+mag5(1))/12.0_dp/dx(idir)
-  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt*wCTprim(iw_e,3)*divb
+     ! > p*divb 
+     mag5(1:5) = wCTprim(iw_b1-1+idir,1:5)
+     divb = (8*mag5(4)-8*mag5(2)-mag5(5)+mag5(1))/12.0_dp/dx(idir)
+     wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt*wCTprim(iw_e,3)*divb
 #:endif
 
 #:if defined('HYPERTC')
-  !> gradient of temperature:
-  T(1:5) = wCTprim(iw_e,1:5) / wCTprim(iw_rho,1:5)
-  mag = wCTprim(iw_b1-1+idir,3)
-  
-  Tface(1) = (7.0d0*(T(2)+T(3))-(T(1)+T(4)))/12.0d0
-  Tface(2) = (7.0d0*(T(3)+T(4))-(T(2)+T(5)))/12.0d0
-  gradT    = (Tface(2)-Tface(1)) / dx(idir)
-  
-  Te     = wCTprim(iw_e,3) / wCTprim(iw_rho,3)
-  sigT   = hypertc_kappa * sqrt(Te**5)
-  taumin = 4.d0
+     !> gradient of temperature:
+     T(1:5) = wCTprim(iw_e,1:5) / wCTprim(iw_rho,1:5)
+     mag = wCTprim(iw_b1-1+idir,3)
 
-  tau = taumin
-  tau = max( taumin*dt, sigT*Te*(phys_gamma-1.0d0)/wCTprim(iw_e,3)/cs2max_global)
+     Tface(1) = (7.0d0*(T(2)+T(3))-(T(1)+T(4)))/12.0d0
+     Tface(2) = (7.0d0*(T(3)+T(4))-(T(2)+T(5)))/12.0d0
+     gradT    = (Tface(2)-Tface(1)) / dx(idir)
 
-  htc_qrsc = sigT * mag * gradT
-  htc_qrsc = ( htc_qrsc + wCTprim(iw_q,3)/3.0_dp ) / tau
+     Te     = wCTprim(iw_e,3) / wCTprim(iw_rho,3)
+     sigT   = hypertc_kappa * sqrt(Te**5)
+     taumin = 4.d0
 
-  wnew(iw_q) = wnew(iw_q) - qdt * htc_qrsc
+     tau = taumin
+     tau = max( taumin*dt, sigT*Te*(phys_gamma-1.0d0)/wCTprim(iw_e,3)/cs2max_global)
+
+     htc_qrsc = sigT * mag * gradT
+     htc_qrsc = ( htc_qrsc + wCTprim(iw_q,3)/3.0_dp ) / tau
+
+     wnew(iw_q) = wnew(iw_q) - qdt * htc_qrsc
 #:endif
-end subroutine addsource_nonlocal
 
+  else
+     !---------------------------------
+     ! split sources     
+     !---------------------------------
+
+     ! Not yet implemented
+
+  end if
+  
+end subroutine addsource_nonlocal
 #:enddef
 
 #:def to_primitive()

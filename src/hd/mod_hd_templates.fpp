@@ -316,17 +316,31 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
   integer                  :: idim
   real(dp)                 :: field
 
+  if (.not. qsourcesplit) then 
+     !---------------------------------
+     ! unsplit sources
+     !---------------------------------
+
 #:if defined('GRAVITY')
-  do idim = 1, ndim
-     field = gravity_field(wCT, x, idim)
-     wnew(iw_mom(idim)) = wnew(iw_mom(idim)) + qdt * field * wCT(iw_rho)
-     wnew(iw_e)         = wnew(iw_e) + qdt * field * wCT(iw_mom(idim))
-  end do
+     do idim = 1, ndim
+        field = gravity_field(wCT, x, idim)
+        wnew(iw_mom(idim)) = wnew(iw_mom(idim)) + qdt * field * wCT(iw_rho)
+        wnew(iw_e)         = wnew(iw_e) + qdt * field * wCT(iw_mom(idim))
+     end do
 #:endif  
 
 #:if defined('COOLING')
-  call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
+     call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
 #:endif
+
+  else
+     !---------------------------------
+     ! split sources     
+     !---------------------------------
+
+     ! Not yet implemented
+
+  end if
 
 end subroutine addsource_local
 #:enddef

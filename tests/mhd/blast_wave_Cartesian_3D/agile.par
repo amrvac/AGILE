@@ -35,7 +35,7 @@
  /
 
  &meshlist
-   max_blocks         = 4096
+   max_blocks         = 512
    refine_max_level   = 1
    block_nx1          = 16
    block_nx2          = 16
