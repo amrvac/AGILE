@@ -47,7 +47,7 @@ contains
     integer                :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     real(dp)               :: wprim(nw_phys), wnew(nw_phys), wCT(nw_phys)
     logical                :: src_active
-    
+
     src_active = .false.
     
     if ((.not.prior).and.(sourcesplit==sourcesplit_sf .or. &
@@ -78,6 +78,7 @@ contains
                do ix2=ixOmin2,ixOmax2 
                   do ix1=ixOmin1,ixOmax1
                      
+#:if defined('SOURCE_LOCAL')
                      xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                      wCT   = bg(1)%w(ix1,ix2,ix3, 1:nw_phys, n)
                      wnew  = wCT
@@ -89,6 +90,9 @@ contains
                           wprim, qt, wnew, xloc, dr, .true. )
                      bg(1)%w(ix1,ix2,ix3, 1:nw_phys, n) = wnew(1:nw_phys)
 
+                     src_active = .true.
+#:endif
+                   
 #:if defined('SOURCE_NONLOCAL')
                      ! TBD             
 #:endif
@@ -100,7 +104,6 @@ contains
              end do
           end do
         end do
-        src_active = .true.
       case default
          write(unitterm,*)'No such type/not yet implemented sourcesplit=',sourcesplit
          call mpistop("Error: Unknown type of sourcesplit!")
