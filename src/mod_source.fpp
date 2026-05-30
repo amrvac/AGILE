@@ -46,6 +46,9 @@ contains
     integer                :: iigrid, n, ix1, ix2, ix3
     integer                :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     real(dp)               :: wprim(nw_phys), wnew(nw_phys), wCT(nw_phys)
+    logical                :: src_active
+    
+    src_active = .false.
     
     if ((.not.prior).and.(sourcesplit==sourcesplit_sf .or. &
        sourcesplit==sourcesplit_ssf)) return
@@ -97,16 +100,19 @@ contains
              end do
           end do
         end do
+        src_active = .true.
       case default
          write(unitterm,*)'No such type/not yet implemented sourcesplit=',sourcesplit
          call mpistop("Error: Unknown type of sourcesplit!")
       end select
 
       if (.not. prior .and. associated(phys_global_source_after)) then
-         call phys_global_source_after(dt, qt, .true.)
+         call phys_global_source_after(dt, qt, src_active)
       end if
-      
-      call getbc(qt,0.d0,ps,iwstart,nwgc,phys_req_diagonal)
+
+      if (src_active) then
+         call getbc(qt,0.d0,ps,iwstart,nwgc,phys_req_diagonal)
+      end if
       
    end if 
 
