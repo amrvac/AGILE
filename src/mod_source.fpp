@@ -46,9 +46,6 @@ contains
     integer                :: iigrid, n, ix1, ix2, ix3
     integer                :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     real(dp)               :: wprim(nw_phys), wnew(nw_phys), wCT(nw_phys)
-    logical                :: src_active
-
-    src_active = .false.
     
     if ((.not.prior).and.(sourcesplit==sourcesplit_sf .or. &
        sourcesplit==sourcesplit_ssf)) return
@@ -78,7 +75,6 @@ contains
                do ix2=ixOmin2,ixOmax2 
                   do ix1=ixOmin1,ixOmax1
                      
-#:if defined('SOURCE_LOCAL')
                      xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                      wCT   = bg(1)%w(ix1,ix2,ix3, 1:nw_phys, n)
                      wnew  = wCT
@@ -90,9 +86,6 @@ contains
                           wprim, qt, wnew, xloc, dr, .true. )
                      bg(1)%w(ix1,ix2,ix3, 1:nw_phys, n) = wnew(1:nw_phys)
 
-                     src_active = .true.
-#:endif
-                   
 #:if defined('SOURCE_NONLOCAL')
                      ! TBD             
 #:endif
@@ -110,12 +103,10 @@ contains
       end select
 
       if (.not. prior .and. associated(phys_global_source_after)) then
-         call phys_global_source_after(dt, qt, src_active)
+         call phys_global_source_after(dt, qt, .true.)
       end if
-
-      if (src_active) then
-         call getbc(qt,0.d0,ps,iwstart,nwgc,phys_req_diagonal)
-      end if
+      
+      call getbc(qt,0.d0,ps,iwstart,nwgc,phys_req_diagonal)
       
    end if 
 
