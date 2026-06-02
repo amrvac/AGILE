@@ -5,6 +5,8 @@ module mod_usr
   implicit none
 
   double precision :: v0, rho0, p0, T0, pbeta0, b0, mach0
+  !$acc declare create(v0, rho0, p0, T0, pbeta0, b0, mach0)
+
   integer :: netheat_, jz_
 
 contains
@@ -69,6 +71,7 @@ contains
         b0=zero
     endif
     v0 = mach0*dsqrt(mhd_gamma*p0/rho0)
+    !$acc update device(rho0, p0)
 
   end subroutine usr_params_read
 
@@ -208,7 +211,8 @@ contains
     double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3,1:nw)
 
-    double precision :: coolrate, dt_use
+    double precision :: coolrate, coolrate_bg, dt_use
+    double precision :: winit(nw_phys)
     double precision :: current(ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3,7-2*ndir:3)
     double precision, save :: dt_prev = 0.0d0
@@ -225,16 +229,26 @@ contains
        dt_use = dt_prev
     end if
 
-    ! Net heat loss
+    ! Net heat loss = actual cooling rate - background cooling rate (matches addsource_usr)
     w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,netheat_) = zero
     #:if defined('COOLING')
     if(mhd_radiative_cooling .and. dt_use > smalldouble) then
+       winit(iw_rho)    = rho0
+       winit(iw_mom(1)) = 0.0d0
+       winit(iw_mom(2)) = 0.0d0
+       winit(iw_mom(3)) = 0.0d0
+       winit(iw_e)      = p0 / (mhd_gamma - 1.0d0)
+       winit(iw_mag(1)) = 0.0d0
+       winit(iw_mag(2)) = 0.0d0
+       winit(iw_mag(3)) = 0.0d0
+       call getvar_cooling_exact(dt_use, winit, winit, x(ixOmin1,ixOmin2,ixOmin3,:), &
+          coolrate_bg, rc_fl)
        do i3=ixOmin3,ixOmax3
        do i2=ixOmin2,ixOmax2
        do i1=ixOmin1,ixOmax1
           call getvar_cooling_exact(dt_use, w(i1,i2,i3,1:nw_phys), &
              w(i1,i2,i3,1:nw_phys), x(i1,i2,i3,:), coolrate, rc_fl)
-          w(i1,i2,i3,netheat_) = coolrate
+          w(i1,i2,i3,netheat_) = coolrate - coolrate_bg
        end do
        end do
        end do
