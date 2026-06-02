@@ -43,8 +43,6 @@
    refine_criterion   = 3
    refine_max_level   = 4
    refine_threshold   = 20*0.4d0
-   w_refine_weight(1) = 0.5d0
-   w_refine_weight(4) = 0.5d0
    block_nx1          = 16
    block_nx2          = 16
    block_nx3          = 16
@@ -56,7 +54,7 @@
    xprobmin2       = 0.0d0
    xprobmax2       = 1.0d0
    xprobmin3       = 0.0d0
-   xprobmax3       = 0.16666667d0
+   xprobmax3       = 1.0d0
  /
 
  &paramlist
@@ -66,11 +64,8 @@
  /
 
  &mhd_list
-   mhd_energy = .true.
-   mhd_gravity = .false.
    mhd_radiative_cooling = .true.
-   mhd_gamma = 1.6666667d0
-   He_abundance = 0.0d0
+   mhd_source_usr        = .true.
  /
 
  &rc_list

@@ -20,8 +20,6 @@ contains
     usr_init_one_grid => initonegrid_usr
     usr_aux_output    => specialvar_output
     usr_add_aux_names => specialvarnames_output
-    usr_init_vector_potential => initvecpot_usr
-    usr_source => special_source
     usr_modify_output => set_output_vars
     usr_print_log => special_log
 
@@ -87,90 +85,61 @@ contains
     w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,rho_) = rho0
 
     w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mom(1)) = &
-       -v0*sin(2.0_dp * dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2))
+       -2.0_dp*v0 * sin(2.0_dp*dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2))
 
     w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mom(2)) = &
-        v0*sin(2.0_dp * dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1))
+        2.0_dp*v0 * sin(2.0_dp*dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1))
 
     w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mom(3)) = zero
 
     w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,p_) = p0
 
-    w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mag(1)) = &
-       -b0 * sin(2.0_dp * dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2))
-    w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mag(2)) = &
-        b0 * sin(4.0_dp * dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1))
-    w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mag(3)) = zero
+    ! 3D Orszag-Tang: b0 = beta*[-2 sin 2y + sin z, 2 sin x + sin z, sin x + sin y]
+    w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mag(1)) = b0 * ( &
+       -2.0_dp * sin(4.0_dp*dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2)) &
+       +         sin(2.0_dp*dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,3)))
+    w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mag(2)) = b0 * ( &
+        2.0_dp * sin(2.0_dp*dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1)) &
+       +         sin(2.0_dp*dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,3)))
+    w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mag(3)) = b0 * ( &
+                 sin(2.0_dp*dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1)) &
+       +         sin(2.0_dp*dpi * x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2)))
 
     call phys_to_conserved(ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3,&
        ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,w,x)
 
   end subroutine initonegrid_usr
 
-  ! Initialise the vectorpotential on the corners - used with staggered grid
-  subroutine initvecpot_usr(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
-     ixCmin1,ixCmin2,ixCmin3,ixCmax1,ixCmax2,ixCmax3, xC, A, idir)
-    integer, intent(in)                :: ixImin1,ixImin2,ixImin3,ixImax1,&
-       ixImax2,ixImax3, ixCmin1,ixCmin2,ixCmin3,ixCmax1,ixCmax2,ixCmax3, idir
-    double precision, intent(in)       :: xC(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3,1:ndim)
-    double precision, intent(out)      :: A(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3)
-
-    if (idir == 3) then
-      A(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ixCmin3:ixCmax3) = &
-         b0 * half / dpi * (half * cos(4.0_dp * dpi * &
-         xC(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ixCmin3:ixCmax3,1)) + &
-         cos(2.0_dp * dpi * xC(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ixCmin3:ixCmax3,2)))
-    else
-      A(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ixCmin3:ixCmax3) = zero
-    end if
-
-  end subroutine initvecpot_usr
-
-
-  subroutine special_source(qdt,ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
-     ixImax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,iwmin,iwmax,&
-     qtC,wCT,qt,w,x)
+  subroutine addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, qsourcesplit)
+    !$acc routine seq
     #:if defined('COOLING')
     use mod_radiative_cooling, only: rc_fl, getvar_cooling_exact
     #:endif
-    integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,&
-       ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,&
-       iwmin,iwmax
-    double precision, intent(in)    :: qdt, qtC, qt
-    double precision, intent(in)    :: wCT(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3,1:nw), x(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3,1:ndim)
-    double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3,1:nw)
+    double precision, intent(in)    :: qdt, qt
+    double precision, intent(in)    :: wCT(nw_phys), wCTprim(nw_phys)
+    double precision, intent(in)    :: x(ndim)
+    double precision, intent(inout) :: wnew(nw_phys)
+    logical, intent(in)             :: qsourcesplit
 
     #:if defined('COOLING')
-    double precision :: winit(nw_phys), coolrate
-    integer :: i1, i2, i3
+    double precision :: coolrate, winit(nw_phys)
 
-    if(mhd_radiative_cooling)then
-       ! Subtract background cooling: uniform state at rest with p0
-       winit(iw_rho) = rho0
-       winit(iw_mom(1)) = 0.0d0
-       winit(iw_mom(2)) = 0.0d0
-       winit(iw_mom(3)) = 0.0d0
-       winit(iw_e) = p0/(mhd_gamma-1.0d0)
-       winit(iw_mag(1)) = 0.0d0
-       winit(iw_mag(2)) = 0.0d0
-       winit(iw_mag(3)) = 0.0d0
-       do i3=ixOmin3,ixOmax3
-       do i2=ixOmin2,ixOmax2
-       do i1=ixOmin1,ixOmax1
-          call getvar_cooling_exact(qdt, winit, winit, x(i1,i2,i3,:), coolrate, rc_fl)
-          w(i1,i2,i3,e_) = w(i1,i2,i3,e_) + qdt*coolrate
-       end do
-       end do
-       end do
-    endif
+    if (mhd_radiative_cooling) then
+      ! Subtract background cooling: uniform state at rest with rho0, p0
+      winit(iw_rho)    = rho0
+      winit(iw_mom(1)) = 0.0d0
+      winit(iw_mom(2)) = 0.0d0
+      winit(iw_mom(3)) = 0.0d0
+      winit(iw_e)      = p0 / (mhd_gamma - 1.0d0)
+      winit(iw_mag(1)) = 0.0d0
+      winit(iw_mag(2)) = 0.0d0
+      winit(iw_mag(3)) = 0.0d0
+      call getvar_cooling_exact(qdt, winit, winit, x, coolrate, rc_fl)
+      wnew(iw_e) = wnew(iw_e) + coolrate * qdt
+    end if
     #:endif
 
-  end subroutine special_source
+  end subroutine addsource_usr
 
 
   !> Auxiliary variables for VTU conversion only (autoconvert=T).
