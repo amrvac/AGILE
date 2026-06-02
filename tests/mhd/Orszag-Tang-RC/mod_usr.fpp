@@ -7,7 +7,7 @@ module mod_usr
   double precision :: v0, rho0, p0, T0, pbeta0, b0, mach0
   !$acc declare create(v0, rho0, p0, T0, pbeta0, b0, mach0)
 
-  integer :: netheat_, jz_
+  integer :: netheat_
 
 contains
 
@@ -20,18 +20,14 @@ contains
     call usr_params_read(par_files)
 
     usr_init_one_grid => initonegrid_usr
-    usr_aux_output    => specialvar_output
-    usr_add_aux_names => specialvarnames_output
     usr_modify_output => set_output_vars
-    usr_print_log => special_log
+    usr_print_log     => special_log
 
     call set_coordinate_system("Cartesian_3D")
 
     call phys_activate()
 
-    ! Extra variables stored in dat files
     netheat_ = var_set_extravar("netheat", "netheat")
-    jz_ = var_set_extravar("jz", "jz")
 
     if (mype == 0) then
       write(*,'(A)')        ' ========================================'
@@ -145,62 +141,9 @@ contains
   end subroutine addsource_usr
 
 
-  !> Auxiliary variables for VTU conversion only (autoconvert=T).
-  !> These are computed on-the-fly during conversion and then discarded. 
-  !> For datfiles, we need to use var_set_extravar + usr_modify_output instead.
-  subroutine specialvar_output(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
-     ixImax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,w,x,normconv)
-    use mod_functions_bfield
-    integer, intent(in)          :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
-       ixImax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
-    double precision, intent(in) :: x(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3,1:ndim)
-    double precision             :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3,nw+nwauxio)
-    double precision             :: normconv(0:nw+nwauxio)
-
-    double precision :: wlocal(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3,1:nw)
-    double precision :: divb(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3)
-    integer :: i1, i2, i3
-
-    wlocal(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:nw) = &
-       w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:nw)
-
-    ! Convert to primitive for temperature and invbeta
-    call phys_to_primitive(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
-       ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,wlocal,x)
-
-    ! nw+1: Temperature = p/rho
-    w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,nw+1) = &
-       wlocal(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,p_) / &
-       wlocal(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,rho_)
-
-    ! nw+2: 1/beta = B^2 / (2*p)
-    w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,nw+2) = &
-       (wlocal(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,mag(1))**2 + &
-        wlocal(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,mag(2))**2 + &
-        wlocal(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,mag(3))**2) / &
-       (2.0d0*wlocal(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,p_))
-
-    ! nw+3: div B
-    call get_divb(w,ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
-       ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,divb)
-    w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,nw+3) = &
-       divb(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3)
-
-  end subroutine specialvar_output
-
-
-  subroutine specialvarnames_output(varnames)
-    character(len=*) :: varnames
-    varnames = 'Temp invbeta divb'
-  end subroutine specialvarnames_output
-
   !> Populate extra variables before dat output.
   subroutine set_output_vars(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
      ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,qt,w,x)
-    use mod_functions_bfield, only: get_current
     #:if defined('COOLING')
     use mod_radiative_cooling, only: rc_fl, getvar_cooling_exact
     #:endif
@@ -213,10 +156,8 @@ contains
 
     double precision :: coolrate, coolrate_bg, dt_use
     double precision :: winit(nw_phys)
-    double precision :: current(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3,7-2*ndir:3)
     double precision, save :: dt_prev = 0.0d0
-    integer :: i1, i2, i3, idirmin
+    integer :: i1, i2, i3
 
     ! Sync physics vars from device (usr_modify_output runs before saveamrfile's sync)
     !$acc update host(block%w)
@@ -255,16 +196,7 @@ contains
     endif
     #:endif
 
-    ! Current density jz
-    call get_current(w, ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3, &
-       ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3, &
-       idirmin, current)
-    w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,jz_) = &
-       current(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,3)
-
-    ! Push extravars to device
     !$acc update device(block%w(:,:,:,netheat_))
-    !$acc update device(block%w(:,:,:,jz_))
 
   end subroutine set_output_vars
 
@@ -272,7 +204,7 @@ contains
   subroutine special_log()
     use mod_forest, only: nleafs_active
     use mod_global_parameters
-    use mod_functions_bfield, only: get_current
+    use mod_functions_bfield, only: get_divb
 
     logical, save        :: opened = .false.
     integer              :: iigrid, igrid, amode, istatus(MPI_STATUS_SIZE)
@@ -281,43 +213,48 @@ contains
     character(len=1024)  :: line
 
     double precision :: local_min_T, local_max_T, local_min_rho, local_max_rho
-    double precision :: local_min_p, local_max_j
+    double precision :: local_min_p, local_max_divb
+    double precision :: local_KE, local_ME, local_TE, dV
     double precision :: global_mins(3), global_maxs(3), local_mins(3), local_maxs(3)
-    double precision :: current(ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3,7-2*ndir:3)
-    integer          :: idirmin
+    double precision :: global_KE, global_ME, global_TE, local_energy(3), global_energy(3)
+    double precision :: divb(ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3)
 
-    ! Compute local min/max over all blocks on this processor
     local_min_T   =  huge(1.0d0)
     local_max_T   = -huge(1.0d0)
     local_min_rho =  huge(1.0d0)
     local_max_rho = -huge(1.0d0)
     local_min_p   =  huge(1.0d0)
-    local_max_j   = 0.0d0
+    local_max_divb = 0.0d0
+    local_KE = 0.0d0
+    local_ME = 0.0d0
+    local_TE = 0.0d0
 
     do iigrid = 1, igridstail
        igrid = igrids(iigrid)
        block => ps(igrid)
+       dV = ps(igrid)%dvolume(ixMlo1, ixMlo2, ixMlo3)
 
-       call compute_block_minmax(ps(igrid)%w, &
+       call compute_block_stats(ps(igrid)%w, dV, &
           local_min_T, local_max_T, local_min_rho, local_max_rho, &
-          local_min_p)
+          local_min_p, local_KE, local_ME, local_TE)
 
-       ! Compute current and track max |jz|
-       call get_current(ps(igrid)%w, ixGlo1, ixGlo2, ixGlo3, ixGhi1, ixGhi2, ixGhi3, &
-          ixMlo1, ixMlo2, ixMlo3, ixMhi1, ixMhi2, ixMhi3, &
-          idirmin, current)
-       local_max_j = max(local_max_j, &
-          maxval(abs(current(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ixMlo3:ixMhi3,3))))
+       call get_divb(ps(igrid)%w, ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3, &
+          ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3, divb)
+       local_max_divb = max(local_max_divb, &
+          maxval(abs(divb(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ixMlo3:ixMhi3))))
     end do
 
-    ! MPI reduce
     local_mins = (/ local_min_T, local_min_rho, local_min_p /)
     call MPI_ALLREDUCE(local_mins, global_mins, 3, MPI_DOUBLE_PRECISION, &
        MPI_MIN, icomm, ierrmpi)
 
-    local_maxs = (/ local_max_T, local_max_rho, local_max_j /)
+    local_maxs = (/ local_max_T, local_max_rho, local_max_divb /)
     call MPI_ALLREDUCE(local_maxs, global_maxs, 3, MPI_DOUBLE_PRECISION, &
        MPI_MAX, icomm, ierrmpi)
+
+    local_energy = (/ local_KE, local_ME, local_TE /)
+    call MPI_ALLREDUCE(local_energy, global_energy, 3, MPI_DOUBLE_PRECISION, &
+       MPI_SUM, icomm, ierrmpi)
 
     if (mype == 0) then
        filename = trim(base_filename) // "_special.log"
@@ -335,17 +272,19 @@ contains
           opened = .true.
 
           if (restart_from_file == undefined .or. reset_time) then
-             line = 'it global_time dt min_T max_T min_rho max_rho min_p max_jz nleafs'
+             line = 'it global_time dt min_T max_T min_rho max_rho min_p KE ME TE max_divb nleafs'
              call MPI_FILE_WRITE(log_fh, trim(line) // new_line('a'), &
                 len_trim(line)+1, MPI_CHARACTER, istatus, ierrmpi)
           end if
        end if
 
-       write(line, '(i8,2ES16.8,6ES16.8,i10)') &
+       write(line, '(i8,11ES16.8,i10)') &
           it, global_time, dt, &
           global_mins(1), global_maxs(1), &
           global_mins(2), global_maxs(2), &
-          global_mins(3), global_maxs(3), nleafs_active
+          global_mins(3), &
+          global_energy(1), global_energy(2), global_energy(3), &
+          global_maxs(3), nleafs_active
 
        call MPI_FILE_WRITE(log_fh, trim(line) // new_line('a'), &
           len_trim(line)+1, MPI_CHARACTER, istatus, ierrmpi)
@@ -353,10 +292,13 @@ contains
 
   contains
 
-    subroutine compute_block_minmax(w, bmin_T, bmax_T, bmin_rho, bmax_rho, bmin_p)
+    subroutine compute_block_stats(w, dV, bmin_T, bmax_T, bmin_rho, bmax_rho, &
+         bmin_p, bKE, bME, bTE)
       double precision, intent(in)    :: w(ixGlo1:ixGhi1,ixGlo2:ixGhi2,&
          ixGlo3:ixGhi3,1:nw)
+      double precision, intent(in)    :: dV
       double precision, intent(inout) :: bmin_T, bmax_T, bmin_rho, bmax_rho, bmin_p
+      double precision, intent(inout) :: bKE, bME, bTE
 
       integer :: i1, i2, i3
       double precision :: rho, vmag2, Bmag2, pth, Temp
@@ -378,10 +320,14 @@ contains
          bmin_rho = min(bmin_rho, rho)
          bmax_rho = max(bmax_rho, rho)
          bmin_p   = min(bmin_p,   pth)
+
+         bKE = bKE + 0.5d0 * rho * vmag2 * dV
+         bME = bME + 0.5d0 * Bmag2 * dV
+         bTE = bTE + pth / (mhd_gamma - 1.0d0) * dV
       end do
       end do
       end do
-    end subroutine compute_block_minmax
+    end subroutine compute_block_stats
 
   end subroutine special_log
 
