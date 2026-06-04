@@ -278,6 +278,10 @@
     psi_ = var_set_fluxvar('psi', 'psi', need_bc=.false.)
     !$acc update device(psi_)
 
+    !> GLM MHD uses split source addition in psi:
+    any_source_split = .true.
+    !$acc update device(any_source_split)
+
     ! Whether diagonal ghost cells are required for the physics
     phys_req_diagonal = .true.
 
@@ -368,23 +372,36 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
   integer                  :: idim
   real(dp)                 :: field
 
+  if (.not. qsourcesplit) then 
+     !---------------------------------
+     ! unsplit sources
+     !---------------------------------
+
 #:if defined('GRAVITY')
-  do idim = 1, ndim
-     field = gravity_field(wCT, x, idim)
-     wnew(iw_mom(idim)) = wnew(iw_mom(idim)) + qdt * field * wCT(iw_rho)
-     wnew(iw_e)         = wnew(iw_e) + qdt * field * wCT(iw_mom(idim))
-  end do
+     do idim = 1, ndim
+        field = gravity_field(wCT, x, idim)
+        wnew(iw_mom(idim)) = wnew(iw_mom(idim)) + qdt * field * wCT(iw_rho)
+        wnew(iw_e)         = wnew(iw_e) + qdt * field * wCT(iw_mom(idim))
+     end do
 #:endif
 
 #:if defined('COOLING')
-  call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
+     call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
 #:endif
 
 #:if defined('SOURCE_USR')
-  call addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, .false.)
+     call addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, .false.)
 #:endif
 
-  wnew(psi_)=wnew(psi_)*dexp(-qdt*cmax_global*mhd_glm_alpha/minval(dr))
+     
+  else
+     !---------------------------------
+     ! split sources     
+     !---------------------------------
+     
+     wnew(psi_)=wnew(psi_)*dexp(-qdt*cmax_global*mhd_glm_alpha/minval(dr))
+     
+  end if
 
 end subroutine addsource_local
 #:enddef
@@ -404,52 +421,66 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
   real(dp)                 :: Jdir1,Jdir2,Jdir3
   integer                  :: idir
 
+  if (.not. qsourcesplit) then 
+     !---------------------------------
+     ! unsplit sources
+     !---------------------------------
+
 #:if defined('RESISTIVE')
-  ! using the compact stencil formulation and adopting constant eta
+     ! using the compact stencil formulation and adopting constant eta
 
-  ! > eta*(laplacian of B)_idir          added to B_idir
-  ! > B_idir*[eta*(laplacian of B)_idir] added to e_
-  do idir = 1,ndim
-    laplb_cd2 =  &
-       ( &
-       wCTprim1(iw_mag(1)-1+idir,3) &
-       - 2*wCTprim1(iw_mag(1)-1+idir,2) &
-       + wCTprim1(iw_mag(1)-1+idir,1) &
-       ) &
-       / dx(1)**2 + &
-       ( &
-       wCTprim2(iw_mag(1)-1+idir,3) &
-       - 2*wCTprim2(iw_mag(1)-1+idir,2) &
-       + wCTprim2(iw_mag(1)-1+idir,1) &
-       ) &
-       / dx(2)**2 + &
-       ( &
-       wCTprim3(iw_mag(1)-1+idir,3) &
-       - 2*wCTprim3(iw_mag(1)-1+idir,2) &
-       + wCTprim3(iw_mag(1)-1+idir,1) &
-       ) &
-       / dx(3)**2 
+     ! > eta*(laplacian of B)_idir          added to B_idir
+     ! > B_idir*[eta*(laplacian of B)_idir] added to e_
+     do idir = 1,ndim
+        laplb_cd2 =  &
+             ( &
+             wCTprim1(iw_mag(1)-1+idir,3) &
+             - 2*wCTprim1(iw_mag(1)-1+idir,2) &
+             + wCTprim1(iw_mag(1)-1+idir,1) &
+             ) &
+             / dx(1)**2 + &
+             ( &
+             wCTprim2(iw_mag(1)-1+idir,3) &
+             - 2*wCTprim2(iw_mag(1)-1+idir,2) &
+             + wCTprim2(iw_mag(1)-1+idir,1) &
+             ) &
+             / dx(2)**2 + &
+             ( &
+             wCTprim3(iw_mag(1)-1+idir,3) &
+             - 2*wCTprim3(iw_mag(1)-1+idir,2) &
+             + wCTprim3(iw_mag(1)-1+idir,1) &
+             ) &
+             / dx(3)**2 
 
-      wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) + qdt*mhd_eta*laplb_cd2
-      wnew(iw_e) = wnew(iw_e) + qdt * mhd_eta * laplb_cd2 * wCTprim1(iw_mag(1)-1+idir,2)
-   enddo
-  
-  ! > eta* J**2 added to e
-  Jdir1 = (wCTprim2(iw_mag(3),3) - wCTprim2(iw_mag(3),1)) &
+        wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) + qdt*mhd_eta*laplb_cd2
+        wnew(iw_e) = wnew(iw_e) + qdt * mhd_eta * laplb_cd2 * wCTprim1(iw_mag(1)-1+idir,2)
+     enddo
+
+     ! > eta* J**2 added to e
+     Jdir1 = (wCTprim2(iw_mag(3),3) - wCTprim2(iw_mag(3),1)) &
           / 2.0_dp/dx(2) &
-        - (wCTprim3(iw_mag(2),3) - wCTprim3(iw_mag(2),1)) &
+          - (wCTprim3(iw_mag(2),3) - wCTprim3(iw_mag(2),1)) &
           / 2.0_dp/dx(3)
-  Jdir2 = (wCTprim3(iw_mag(1),3) - wCTprim3(iw_mag(1),1)) &
+     Jdir2 = (wCTprim3(iw_mag(1),3) - wCTprim3(iw_mag(1),1)) &
           /2.0_dp/dx(3) &
-        - (wCTprim1(iw_mag(3),3) - wCTprim1(iw_mag(3),1)) &
+          - (wCTprim1(iw_mag(3),3) - wCTprim1(iw_mag(3),1)) &
           / 2.0_dp/dx(1)
-  Jdir3 = (wCTprim1(iw_mag(2),3) - wCTprim1(iw_mag(2),1)) &
+     Jdir3 = (wCTprim1(iw_mag(2),3) - wCTprim1(iw_mag(2),1)) &
           /2.0_dp/dx(1) &
-        - (wCTprim2(iw_mag(1),3) - wCTprim2(iw_mag(1),1)) &
+          - (wCTprim2(iw_mag(1),3) - wCTprim2(iw_mag(1),1)) &
           / 2.0_dp/dx(2)
-  wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*(Jdir1**2+Jdir2**2+Jdir3**2)
+     wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*(Jdir1**2+Jdir2**2+Jdir3**2)
 #:endif
 
+  else
+     !---------------------------------
+     ! split sources     
+     !---------------------------------
+
+     ! Not yet implemented
+
+  end if
+  
 end subroutine addsource_compact
 #:enddef
 
