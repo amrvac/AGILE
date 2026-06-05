@@ -44,7 +44,8 @@ module mod_connectivity
    ! c and f neighbor info
    type nbinfo_cf_t
       integer                            :: nigrids=0
-      integer, pointer, dimension(:) :: igrid => null(), inc1 => null(), inc2 => null(), inc3 => null(), isize => null(), ibuf_start => null(), i1 => null(), i2 => null(), i3 => null()
+      integer, pointer, dimension(:) :: igrid => null(), inc1 => null(), inc2 => null(), inc3 => null(), isize => null(), ibuf_start => null()
+      integer, pointer, dimension(:) :: i1 => null(), i2 => null(), i3 => null()
     contains
       procedure, non_overridable         :: init => init_cf_info
    end type nbinfo_cf_t
