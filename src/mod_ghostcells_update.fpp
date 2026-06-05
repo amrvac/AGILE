@@ -1147,49 +1147,6 @@ contains
     nwtail = nwstart+nwbc-1
     bgstep  = psb(igrids(1))%istep
 
-    !$acc enter data copyin (idphyb)
-    !$acc enter data copyin (nbprocs_info)
-    !$acc enter data copyin (nbprocs_info%srl_nb)
-    !$acc enter data copyin (nbprocs_info%course_nb)
-    !$acc enter data copyin (nbprocs_info%fine_nb)
-    do inb = 1, nbprocs_info%nbprocs_srl
-      !$acc enter data create (nbprocs_info%srl_nb(inb)%rcv%buffer, nbprocs_info%srl_nb(inb)%send%buffer)
-       !$acc enter data create (nbprocs_info%srl_nb(inb)%info_rcv%buffer, nbprocs_info%srl_nb(inb)%info_send%buffer)
-      !$acc enter data copyin (nbprocs_info%srl_nb(inb)%info%nigrids)
-      !$acc enter data copyin (nbprocs_info%srl_nb(inb)%info%igrid)
-      !$acc enter data copyin (nbprocs_info%srl_nb(inb)%info%iencode)
-      !$acc enter data copyin (nbprocs_info%srl_nb(inb)%info%ibuf_start)
-      !$acc enter data copyin (nbprocs_info%srl_nb(inb)%info%isize)
-    end do
-    do inb = 1, nbprocs_info%nbprocs_c
-      !$acc enter data create (nbprocs_info%course_nb(inb)%rcv%buffer, nbprocs_info%course_nb(inb)%send%buffer)
-      !$acc enter data create (nbprocs_info%course_nb(inb)%info_rcv%buffer, nbprocs_info%course_nb(inb)%info_send%buffer)
-      !$acc enter data copyin (nbprocs_info%course_nb(inb)%info%nigrids)
-      !$acc enter data copyin (nbprocs_info%course_nb(inb)%info%igrid)
-      !$acc enter data copyin (nbprocs_info%course_nb(inb)%info%inc1)
-      !$acc enter data copyin (nbprocs_info%course_nb(inb)%info%inc2)
-      !$acc enter data copyin (nbprocs_info%course_nb(inb)%info%inc3)
-      !$acc enter data copyin (nbprocs_info%course_nb(inb)%info%i1)
-      !$acc enter data copyin (nbprocs_info%course_nb(inb)%info%i2)
-      !$acc enter data copyin (nbprocs_info%course_nb(inb)%info%i3)
-      !$acc enter data copyin (nbprocs_info%course_nb(inb)%info%ibuf_start)
-      !$acc enter data copyin (nbprocs_info%course_nb(inb)%info%isize)
-    end do
-    do inb = 1, nbprocs_info%nbprocs_f
-      !$acc enter data create (nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%send%buffer)
-      !$acc enter data create (nbprocs_info%fine_nb(inb)%info_rcv%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer)
-      !$acc enter data copyin (nbprocs_info%fine_nb(inb)%info%nigrids)
-      !$acc enter data copyin (nbprocs_info%fine_nb(inb)%info%igrid)
-      !$acc enter data copyin (nbprocs_info%fine_nb(inb)%info%inc1)
-      !$acc enter data copyin (nbprocs_info%fine_nb(inb)%info%inc2)
-      !$acc enter data copyin (nbprocs_info%fine_nb(inb)%info%inc3)
-      !$acc enter data copyin (nbprocs_info%fine_nb(inb)%info%i1)
-      !$acc enter data copyin (nbprocs_info%fine_nb(inb)%info%i2)
-      !$acc enter data copyin (nbprocs_info%fine_nb(inb)%info%i3)
-      !$acc enter data copyin (nbprocs_info%fine_nb(inb)%info%ibuf_start)
-      !$acc enter data copyin (nbprocs_info%fine_nb(inb)%info%isize)
-    end do
-
     req_diagonal = .true.
     if (present(req_diag)) req_diagonal = req_diag
     !$acc update device(req_diagonal)
@@ -1923,50 +1880,6 @@ contains
     time_bc=time_bc+(MPI_WTIME()-time_bcin)
 
     call nvtxEndRange
-
-
-    do inb = 1, nbprocs_info%nbprocs_srl
-       !$acc exit data delete (nbprocs_info%srl_nb(inb)%rcv%buffer, nbprocs_info%srl_nb(inb)%info_rcv%buffer)
-       !$acc exit data delete (nbprocs_info%srl_nb(inb)%send%buffer, nbprocs_info%srl_nb(inb)%info_send%buffer)
-       !$acc exit data delete (nbprocs_info%srl_nb(inb)%info%nigrids)
-       !$acc exit data delete (nbprocs_info%srl_nb(inb)%info%igrid)
-       !$acc exit data delete (nbprocs_info%srl_nb(inb)%info%iencode)
-       !$acc exit data delete (nbprocs_info%srl_nb(inb)%info%ibuf_start)
-       !$acc exit data delete (nbprocs_info%srl_nb(inb)%info%isize)
-    end do
-    do inb = 1, nbprocs_info%nbprocs_c
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%rcv%buffer, nbprocs_info%course_nb(inb)%info_rcv%buffer)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%send%buffer, nbprocs_info%course_nb(inb)%info_send%buffer)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%info%nigrids)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%info%igrid)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%info%inc1)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%info%inc2)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%info%inc3)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%info%i1)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%info%i2)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%info%i3)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%info%ibuf_start)
-       !$acc exit data delete (nbprocs_info%course_nb(inb)%info%isize)
-    end do
-    do inb = 1, nbprocs_info%nbprocs_f
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%info_rcv%buffer)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%send%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%info%nigrids)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%info%igrid)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%info%inc1)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%info%inc2)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%info%inc3)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%info%i1)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%info%i2)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%info%i3)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%info%ibuf_start)
-       !$acc exit data delete (nbprocs_info%fine_nb(inb)%info%isize)
-    end do
-    !$acc exit data delete (idphyb)
-    !$acc exit data delete (nbprocs_info%srl_nb)
-    !$acc exit data delete (nbprocs_info%fine_nb)
-    !$acc exit data delete (nbprocs_info%course_nb)
-    !$acc exit data delete (nbprocs_info)
 
   end subroutine getbc
 
