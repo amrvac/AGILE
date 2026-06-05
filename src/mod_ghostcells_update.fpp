@@ -1145,7 +1145,12 @@ contains
 
     nwhead = nwstart
     nwtail = nwstart+nwbc-1
-    bgstep  = psb(igrids(1))%istep
+    ! igrids(1) is undefined when this rank owns no blocks
+    if (igridstail > 0) then
+       bgstep = psb(igrids(1))%istep
+    else
+       bgstep = 1
+    end if
 
     req_diagonal = .true.
     if (present(req_diag)) req_diagonal = req_diag
