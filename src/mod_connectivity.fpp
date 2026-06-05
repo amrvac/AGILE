@@ -38,13 +38,13 @@ module mod_connectivity
    ! srl neighbor info
    type nbinfo_srl_t
       integer                            :: nigrids=0
-      integer, pointer, dimension(:) :: igrid, iencode, isize, ibuf_start
+      integer, pointer, dimension(:) :: igrid => null(), iencode => null(), isize => null(), ibuf_start => null()
    end type nbinfo_srl_t
 
    ! c and f neighbor info
    type nbinfo_cf_t
       integer                            :: nigrids=0
-      integer, pointer, dimension(:) :: igrid, inc1, inc2, inc3, isize, ibuf_start, i1, i2, i3
+      integer, pointer, dimension(:) :: igrid => null(), inc1 => null(), inc2 => null(), inc3 => null(), isize => null(), ibuf_start => null(), i1 => null(), i2 => null(), i3 => null()
     contains
       procedure, non_overridable         :: init => init_cf_info
    end type nbinfo_cf_t
@@ -84,21 +84,21 @@ module mod_connectivity
       ! SRL (neighbor is at same level)
       integer                              :: nbprocs_srl=0        ! number of neighboring processes at srl
       integer                              :: imaxigrids_srl=0     ! max number of igrids over all neighbor processors (for loop collasing)
-      integer, pointer                     :: nbprocs_srl_list(:)  ! list of neighboring ipe at srl
+      integer, pointer                     :: nbprocs_srl_list(:) => null()  ! list of neighboring ipe at srl
       integer, allocatable                 :: ipe_to_inbpe_srl(:)  ! inverse to nbprocs_srl_list
       ! F (neighbor is finer)
       integer                              :: nbprocs_f=0          ! number of neighboring processes with finer grids
       integer                              :: imaxigrids_f=0       ! max number of igrids over all neighbor processors (for loop collasing)
-      integer, pointer                     :: nbprocs_f_list(:)    ! list of neighboring ipe at f
+      integer, pointer                     :: nbprocs_f_list(:) => null()  ! list of neighboring ipe at f
       integer, allocatable                 :: ipe_to_inbpe_f(:)    ! inverse to nbprocs_f_list
       ! C (neighbor is coarser)
       integer                              :: nbprocs_c=0          ! number of neighboring processes with coarser grids
       integer                              :: imaxigrids_c=0       ! max number of igrids over all neighbor processors (for loop collasing)
-      integer, pointer                     :: nbprocs_c_list(:)    ! list of neighboring ipe at f
+      integer, pointer                     :: nbprocs_c_list(:)  => null()   ! list of neighboring ipe at f
       integer, allocatable                 :: ipe_to_inbpe_c(:)    ! inverse to nbprocs_f_list
-      type(cf_nb_t), pointer               :: course_nb(:)         ! Info about course neighbours
-      type(cf_nb_t), pointer               :: fine_nb(:)           ! Info about fine neighbours
-      type(srl_nb_t), pointer              :: srl_nb(:)            ! Info about same refinment level neighbours
+      type(cf_nb_t), pointer               :: course_nb(:) => null()        ! Info about course neighbours
+      type(cf_nb_t), pointer               :: fine_nb(:) => null()          ! Info about fine neighbours
+      type(srl_nb_t), pointer              :: srl_nb(:) => null()           ! Info about same refinment level neighbours
     contains
       procedure, non_overridable :: init, reset
       procedure, non_overridable :: add_igrid_to_srl, add_igrid_to_c, add_igrid_to_f
