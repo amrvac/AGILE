@@ -379,8 +379,10 @@ module mod_connectivity
      ! enlarge counter
      self%srl_nb(inbpe)%info%nigrids = self%srl_nb(inbpe)%info%nigrids + 1
 
-     ! need to enlarge storage
-     if ( self%srl_nb(inbpe)%info%nigrids > size(self%srl_nb(inbpe)%info%igrid) ) then
+     ! need to initialize or enlarge storage
+     if ( .not. associated(self%srl_nb(inbpe)%info%igrid) ) then
+        call init_srl_info(self%srl_nb(inbpe)%info, self%srl_nb(inbpe)%info%nigrids)
+     else if ( self%srl_nb(inbpe)%info%nigrids > size(self%srl_nb(inbpe)%info%igrid) ) then
         call init_srl_info(self%srl_nb(inbpe)%info, self%srl_nb(inbpe)%info%nigrids)
      end if
 
@@ -404,8 +406,10 @@ module mod_connectivity
      ! enlarge counter
      self%course_nb(inbpe)%info%nigrids = self%course_nb(inbpe)%info%nigrids + 1
 
-     ! need to enlarge storage
-     if ( self%course_nb(inbpe)%info%nigrids > size(self%course_nb(inbpe)%info%igrid)) then
+     ! need to initialize or enlarge storage
+     if ( .not. associated(self%course_nb(inbpe)%info%igrid) ) then
+        call init_cf_info(self%course_nb(inbpe)%info, self%course_nb(inbpe)%info%nigrids)
+     else if ( self%course_nb(inbpe)%info%nigrids > size(self%course_nb(inbpe)%info%igrid) ) then
         call init_cf_info(self%course_nb(inbpe)%info, self%course_nb(inbpe)%info%nigrids)
      end if
 
@@ -432,8 +436,10 @@ module mod_connectivity
      ! enlarge counter
      self%fine_nb(inbpe)%info%nigrids = self%fine_nb(inbpe)%info%nigrids + 1
 
-     ! need to enlarge storage
-     if ( self%fine_nb(inbpe)%info%nigrids > size(self%fine_nb(inbpe)%info%igrid)) then
+     ! need to initialize or enlarge storage
+     if ( .not. associated(self%fine_nb(inbpe)%info%igrid) ) then
+        call init_cf_info(self%fine_nb(inbpe)%info, self%fine_nb(inbpe)%info%nigrids)
+     else if ( self%fine_nb(inbpe)%info%nigrids > size(self%fine_nb(inbpe)%info%igrid) ) then
         call init_cf_info(self%fine_nb(inbpe)%info, self%fine_nb(inbpe)%info%nigrids)
      end if
 
