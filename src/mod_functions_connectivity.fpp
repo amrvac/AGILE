@@ -81,64 +81,62 @@ module mod_functions_connectivity
     nbuff_bc_recv_r=0; nbuff_bc_send_r=0
     nbuff_bc_recv_p=0; nbuff_bc_send_p=0
     if(stagger_grid) nrecv_cc=0; nsend_cc=0
-
-
-#ifdef _OPENACC
-do inb = 1, nbprocs_info%nbprocs_srl
-   !$acc exit data delete( nbprocs_info%srl_nb(inb)%rcv%buffer,      &
-   !$acc&                    nbprocs_info%srl_nb(inb)%info_rcv%buffer, &
-   !$acc&                    nbprocs_info%srl_nb(inb)%send%buffer,     &
-   !$acc&                    nbprocs_info%srl_nb(inb)%info_send%buffer, &
-   !$acc&                    nbprocs_info%srl_nb(inb)%info%nigrids,    &
-   !$acc&                    nbprocs_info%srl_nb(inb)%info%igrid,      &
-   !$acc&                    nbprocs_info%srl_nb(inb)%info%iencode,    &
-   !$acc&                    nbprocs_info%srl_nb(inb)%info%ibuf_start, &
-   !$acc&                    nbprocs_info%srl_nb(inb)%info%isize )
-end do
-
-do inb = 1, nbprocs_info%nbprocs_c
-   !$acc exit data delete( nbprocs_info%course_nb(inb)%rcv%buffer,      &
-   !$acc&                    nbprocs_info%course_nb(inb)%info_rcv%buffer, &
-   !$acc&                    nbprocs_info%course_nb(inb)%send%buffer,     &
-   !$acc&                    nbprocs_info%course_nb(inb)%info_send%buffer, &
-   !$acc&                    nbprocs_info%course_nb(inb)%info%nigrids,    &
-   !$acc&                    nbprocs_info%course_nb(inb)%info%igrid,      &
-   !$acc&                    nbprocs_info%course_nb(inb)%info%inc1,       &
-   !$acc&                    nbprocs_info%course_nb(inb)%info%inc2,       &
-   !$acc&                    nbprocs_info%course_nb(inb)%info%inc3,       &
-   !$acc&                    nbprocs_info%course_nb(inb)%info%i1,         &
-   !$acc&                    nbprocs_info%course_nb(inb)%info%i2,         &
-   !$acc&                    nbprocs_info%course_nb(inb)%info%i3,         &
-   !$acc&                    nbprocs_info%course_nb(inb)%info%ibuf_start, &
-   !$acc&                    nbprocs_info%course_nb(inb)%info%isize )
-end do
-
-do inb = 1, nbprocs_info%nbprocs_f
-   !$acc exit data delete( nbprocs_info%fine_nb(inb)%rcv%buffer,      &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info_rcv%buffer, &
-   !$acc&                    nbprocs_info%fine_nb(inb)%send%buffer,     &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info_send%buffer, &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info%nigrids,    &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info%igrid,      &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info%inc1,       &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info%inc2,       &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info%inc3,       &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info%i1,         &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info%i2,         &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info%i3,         &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info%ibuf_start, &
-   !$acc&                    nbprocs_info%fine_nb(inb)%info%isize )
-end do
-
-! Deallocate the top-level objects
-!$acc exit data delete( idphyb,                   &
-!$acc&                  nbprocs_info%srl_nb,      &
-!$acc&                  nbprocs_info%fine_nb,     &
-!$acc&                  nbprocs_info%course_nb )
-!$acc exit data delete (nbprocs_info)
-#endif
-
     
+    
+#ifdef _OPENACC
+    do inb = 1, nbprocs_info%nbprocs_srl
+       !$acc exit data delete( nbprocs_info%srl_nb(inb)%rcv%buffer,      &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info_rcv%buffer, &
+       !$acc&                    nbprocs_info%srl_nb(inb)%send%buffer,     &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info_send%buffer, &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info%nigrids,    &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info%igrid,      &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info%iencode,    &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info%ibuf_start, &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info%isize )
+    end do
+
+    do inb = 1, nbprocs_info%nbprocs_c
+       !$acc exit data delete( nbprocs_info%course_nb(inb)%rcv%buffer,      &
+       !$acc&                    nbprocs_info%course_nb(inb)%info_rcv%buffer, &
+       !$acc&                    nbprocs_info%course_nb(inb)%send%buffer,     &
+       !$acc&                    nbprocs_info%course_nb(inb)%info_send%buffer, &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%nigrids,    &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%igrid,      &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%inc1,       &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%inc2,       &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%inc3,       &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%i1,         &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%i2,         &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%i3,         &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%ibuf_start, &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%isize )
+    end do
+
+    do inb = 1, nbprocs_info%nbprocs_f
+       !$acc exit data delete( nbprocs_info%fine_nb(inb)%rcv%buffer,      &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info_rcv%buffer, &
+       !$acc&                    nbprocs_info%fine_nb(inb)%send%buffer,     &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info_send%buffer, &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%nigrids,    &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%igrid,      &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%inc1,       &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%inc2,       &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%inc3,       &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%i1,         &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%i2,         &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%i3,         &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%ibuf_start, &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%isize )
+    end do
+
+    ! Deallocate the top-level objects
+    !$acc exit data delete(                           &
+    !$acc&                  nbprocs_info%srl_nb,      &
+    !$acc&                  nbprocs_info%fine_nb,     &
+    !$acc&                  nbprocs_info%course_nb )
+    !$acc exit data delete (nbprocs_info)
+#endif
 
     call nbprocs_info%reset
 
@@ -654,63 +652,62 @@ end do
       end if
       sendrequest_p=MPI_REQUEST_NULL
     end if
-
+    
     
     !update the neighbor information on the device
     !$acc update device(neighbor, neighbor_type, neighbor_pole, neighbor_child, idphyb)
-    !call nbprocs_update_device
     
     !$acc enter data copyin (nbprocs_info)
     !$acc enter data copyin (nbprocs_info%srl_nb, nbprocs_info%course_nb, nbprocs_info%fine_nb)
 #ifdef _OPENACC
-do inb = 1, nbprocs_info%nbprocs_srl
-   !$acc enter data create( nbprocs_info%srl_nb(inb)%rcv%buffer, &
-   !$acc&                   nbprocs_info%srl_nb(inb)%send%buffer, &
-   !$acc&                   nbprocs_info%srl_nb(inb)%info_rcv%buffer, &
-   !$acc&                   nbprocs_info%srl_nb(inb)%info_send%buffer )
+    do inb = 1, nbprocs_info%nbprocs_srl
+       !$acc enter data create( nbprocs_info%srl_nb(inb)%rcv%buffer, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%send%buffer, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info_rcv%buffer, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info_send%buffer )
 
-   !$acc enter data copyin( nbprocs_info%srl_nb(inb)%info%nigrids, &
-   !$acc&                   nbprocs_info%srl_nb(inb)%info%igrid, &
-   !$acc&                   nbprocs_info%srl_nb(inb)%info%iencode, &
-   !$acc&                   nbprocs_info%srl_nb(inb)%info%ibuf_start, &
-   !$acc&                   nbprocs_info%srl_nb(inb)%info%isize )
-end do
+       !$acc enter data copyin( nbprocs_info%srl_nb(inb)%info%nigrids, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info%igrid, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info%iencode, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info%ibuf_start, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info%isize )
+    end do
 
-do inb = 1, nbprocs_info%nbprocs_c
-   !$acc enter data create( nbprocs_info%course_nb(inb)%rcv%buffer, &
-   !$acc&                   nbprocs_info%course_nb(inb)%send%buffer, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info_rcv%buffer, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info_send%buffer )
+    do inb = 1, nbprocs_info%nbprocs_c
+       !$acc enter data create( nbprocs_info%course_nb(inb)%rcv%buffer, &
+       !$acc&                   nbprocs_info%course_nb(inb)%send%buffer, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info_rcv%buffer, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info_send%buffer )
 
-   !$acc enter data copyin( nbprocs_info%course_nb(inb)%info%nigrids, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info%igrid, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info%inc1, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info%inc2, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info%inc3, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info%i1, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info%i2, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info%i3, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info%ibuf_start, &
-   !$acc&                   nbprocs_info%course_nb(inb)%info%isize )
-end do
+       !$acc enter data copyin( nbprocs_info%course_nb(inb)%info%nigrids, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%igrid, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%inc1, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%inc2, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%inc3, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%i1, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%i2, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%i3, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%ibuf_start, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%isize )
+    end do
 
-do inb = 1, nbprocs_info%nbprocs_f
-   !$acc enter data create( nbprocs_info%fine_nb(inb)%rcv%buffer, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%send%buffer, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info_rcv%buffer, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info_send%buffer )
+    do inb = 1, nbprocs_info%nbprocs_f
+       !$acc enter data create( nbprocs_info%fine_nb(inb)%rcv%buffer, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%send%buffer, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info_rcv%buffer, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info_send%buffer )
 
-   !$acc enter data copyin( nbprocs_info%fine_nb(inb)%info%nigrids, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info%igrid, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info%inc1, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info%inc2, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info%inc3, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info%i1, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info%i2, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info%i3, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info%ibuf_start, &
-   !$acc&                   nbprocs_info%fine_nb(inb)%info%isize )
-end do
+       !$acc enter data copyin( nbprocs_info%fine_nb(inb)%info%nigrids, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%igrid, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%inc1, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%inc2, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%inc3, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%i1, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%i2, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%i3, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%ibuf_start, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%isize )
+    end do
 #endif 
 
   end subroutine build_connectivity
