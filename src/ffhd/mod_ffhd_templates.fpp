@@ -250,10 +250,10 @@
     ! Set index for heat flux
 #:if defined('HYPERTC')
     q_ = var_set_q()
-    need_global_cs2max = .true.
+    need_global_cmax = .true.
     hypertc_kappa = 8.d-7*unit_temperature**3.5_dp/unit_length/unit_density/unit_velocity**3.0_dp
     !$acc update device(q_)
-    !$acc update device(need_global_cs2max)
+    !$acc update device(need_global_cmax)
     !$acc update device(hypertc_kappa)
 #:endif
 
@@ -316,7 +316,6 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
   use mod_radiative_cooling, only: radiative_cooling_add_source
 #:endif
 
-  use mod_global_parameters, only : dt, cs2max_global
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCT(nw_phys), wCTprim(nw_phys)
   real(dp), intent(in)     :: x(1:ndim), dr(ndim)
@@ -364,7 +363,7 @@ end subroutine addsource_local
 subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir, &
      qsourcesplit)
   !$acc routine seq
-  use mod_global_parameters, only: dt, cs2max_global
+  use mod_global_parameters, only: dt, cmax_global, courantpar, third
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim(nw_phys,5)
@@ -373,8 +372,8 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
   integer, intent(in)      :: idir
   logical, intent(in)      :: qsourcesplit
   ! .. local ..
-  real(dp)                 :: Te, tau, htc_qrsc, sigT, taumin
-  real(dp)                 :: T(1:5), gradT, Tface(2)
+  real(dp)                 :: tau, htc_qrsc, sigT
+  real(dp)                 :: Te(1:5), gradT
   real(dp)                 :: mag5(1:5), divb, mag
 
   if (.not. qsourcesplit) then 
@@ -391,24 +390,18 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
 
 #:if defined('HYPERTC')
      !> gradient of temperature:
-     T(1:5) = wCTprim(iw_e,1:5) / wCTprim(iw_rho,1:5)
+     Te(1:5) = wCTprim(iw_e,1:5) / wCTprim(iw_rho,1:5)
      mag = wCTprim(iw_b1-1+idir,3)
 
-     Tface(1) = (7.0d0*(T(2)+T(3))-(T(1)+T(4)))/12.0d0
-     Tface(2) = (7.0d0*(T(3)+T(4))-(T(2)+T(5)))/12.0d0
-     gradT    = (Tface(2)-Tface(1)) / dx(idir)
+     gradT = (8.d0*(Te(4)-Te(2))-Te(5)+Te(1))/(12.d0*dx(idir))
 
-     Te     = wCTprim(iw_e,3) / wCTprim(iw_rho,3)
-     sigT   = hypertc_kappa * sqrt(Te**5)
-     taumin = 4.d0
-
-     tau = taumin
-     tau = max( taumin*dt, sigT*Te*(phys_gamma-1.0d0)/wCTprim(iw_e,3)/cs2max_global)
+     sigT = hypertc_kappa * sqrt(Te(3)**5)
+     tau = max(4.d0*dt, sigT*Te(3)*courantpar**2*(phys_gamma-1.0d0)/&
+        (wCTprim(iw_e,3)*cmax_global**2))
 
      htc_qrsc = sigT * mag * gradT
-     htc_qrsc = ( htc_qrsc + wCTprim(iw_q,3)/3.0_dp ) / tau
 
-     wnew(iw_q) = wnew(iw_q) - qdt * htc_qrsc
+     wnew(iw_q) = wnew(iw_q) - qdt * (htc_qrsc + wCTprim(iw_q,3)*third) / tau
 #:endif
 
   else
@@ -503,16 +496,6 @@ pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
 
 end function get_cmax
 #:enddef  
-
-#:def get_cs2()
-!> obtain the squared sound speed
-pure real(dp) function get_cs2(u) result(cs2)
-  !$acc routine seq
-  real(dp), intent(in)  :: u(nw_phys)
-
-  cs2 = phys_gamma*u(iw_e)/u(iw_rho)
-end function get_cs2
-#:enddef
 
 #:def get_rho()
 pure real(dp) function get_rho(w, x) result(rho)
