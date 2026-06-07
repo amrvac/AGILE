@@ -236,6 +236,9 @@ module mod_global_parameters
   !> IO: snapshot and collapsed views output numbers/labels
   integer :: snapshotnext, collapsenext
 
+  !> IO: slice output numbers/labels
+  integer :: slicenext
+
   !> Constant indicating log output
   integer, parameter :: filelog_      = 1
 
