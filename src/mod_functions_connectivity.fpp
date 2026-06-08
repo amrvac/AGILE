@@ -137,7 +137,12 @@ module mod_functions_connectivity
     !$acc exit data delete (nbprocs_info%srl_nb) if(acc_is_present(nbprocs_info%srl_nb))
     !$acc exit data delete (nbprocs_info%course_nb) if(acc_is_present(nbprocs_info%course_nb))
     !$acc exit data delete (nbprocs_info%fine_nb) if(acc_is_present(nbprocs_info%fine_nb))
+#ifdef _CRAYFTN ! should be a no-op, but hey, its cray...
     !$acc exit data delete (nbprocs_info) if(acc_is_present(nbprocs_info))
+#endif
+#ifndef _CRAYFTN ! acc_is_present can only be cast on arrays with nvidia (its anyways a no-op)
+    !$acc exit data delete (nbprocs_info)
+#endif
 #endif
 
     call nbprocs_info%reset
