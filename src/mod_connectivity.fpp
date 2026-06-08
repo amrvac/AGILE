@@ -265,14 +265,14 @@ module mod_connectivity
      ! .. local ..
      integer               :: i
 
-     allocate(self%nbprocs_srl_list(0), &
-          self%srl_nb(0))
+     allocate(self%nbprocs_srl_list(1), &
+          self%srl_nb(1))
 
-     allocate(self%nbprocs_f_list(0), &
-          self%fine_nb(0))
+     allocate(self%nbprocs_f_list(1), &
+          self%fine_nb(1))
 
-     allocate(self%nbprocs_c_list(0), &
-          self%course_nb(0))
+     allocate(self%nbprocs_c_list(1), &
+          self%course_nb(1))
 
      allocate(self%ipe_to_inbpe_srl(0:npe-1))
      self%ipe_to_inbpe_srl(:) = -1

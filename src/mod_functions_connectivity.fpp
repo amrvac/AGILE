@@ -57,6 +57,7 @@ module mod_functions_connectivity
     use mod_forest
     use mod_global_parameters
     use mod_ghostcells_update
+    use openacc, only: acc_is_present
     use mod_amr_neighbors, only: find_neighbor
 
     integer :: iigrid, igrid, i1,i2,i3, my_neighbor_type
@@ -131,11 +132,10 @@ module mod_functions_connectivity
     end do
 
     ! Deallocate the top-level objects
-    !$acc exit data delete(                           &
-    !$acc&                  nbprocs_info%srl_nb,      &
-    !$acc&                  nbprocs_info%fine_nb,     &
-    !$acc&                  nbprocs_info%course_nb )
-    !$acc exit data delete (nbprocs_info)
+    !$acc exit data delete (nbprocs_info%srl_nb) if(acc_is_present(nbprocs_info%srl_nb))
+    !$acc exit data delete (nbprocs_info%course_nb) if(acc_is_present(nbprocs_info%course_nb))
+    !$acc exit data delete (nbprocs_info%fine_nb) if(acc_is_present(nbprocs_info%fine_nb))
+    !$acc exit data delete (nbprocs_info) if(acc_is_present(nbprocs_info))
 #endif
 
     call nbprocs_info%reset
