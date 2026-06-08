@@ -57,7 +57,9 @@ module mod_functions_connectivity
     use mod_forest
     use mod_global_parameters
     use mod_ghostcells_update
+#ifdef _OPENACC
     use openacc, only: acc_is_present
+#endif    
     use mod_amr_neighbors, only: find_neighbor
 
     integer :: iigrid, igrid, i1,i2,i3, my_neighbor_type
