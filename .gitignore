@@ -6,9 +6,9 @@ doc/html/*
 *.log
 *.mod
 *.o
-amrvac.h
-*amrvac
-*.amrvac.log.shfp.*
+agile.h
+*agile
+*.agile.log.shfp.*
 *F90sources
 !**/correct_output/**
 *.bak
@@ -36,3 +36,4 @@ amrvac.h
 mod_usr.F90
 **/build/
 *.f90
+config.mk
