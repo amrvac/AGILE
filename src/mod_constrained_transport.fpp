@@ -15,7 +15,6 @@ contains
 
     call init_comm_fix_conserve(1,ndim,3)
 
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        ! Make zero the magnetic fluxes
        ! Fake advance, storing electric fields at edges
@@ -23,7 +22,6 @@ contains
        call fake_advance(igrid,1,3,ps(igrid))
 
     end do
-    !$OMP END PARALLEL DO
 
     ! Do correction
     call recvflux(1,ndim)
@@ -33,7 +31,6 @@ contains
     call fix_edges(ps,1,3)
 
     ! Now we fill the centers for the staggered variables
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
        call phys_to_primitive(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,&
           ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,ps(igrid)%x)
@@ -43,7 +40,6 @@ contains
        call phys_to_conserved(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,&
           ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,ps(igrid)%x)
     end do
-    !$OMP END PARALLEL DO
 
     call getbc(global_time,0.d0,ps,iwstart,nwgc)
 
@@ -70,7 +66,7 @@ contains
 
     call store_flux(igrid,fC,idimmin,idimmax,3)
     call store_edge(igrid,ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,fE,idimmin,&
-       idimmax) 
+       idimmax)
 
   end subroutine fake_advance
 
@@ -148,32 +144,32 @@ contains
     xCC=0.d0
     xCC(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,&
        1:ndim)=x(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,1:ndim)
-    
+
     xCC(ixIsmin1,ixImin2:ixImax2,ixImin3:ixImax3,1:ndim)=x(ixImin1,&
        ixImin2:ixImax2,ixImin3:ixImax3,1:ndim)
     xCC(ixIsmin1,ixIsmin2:ixIsmax2,ixIsmin3:ixIsmax3,1)=x(ixImin1,ixImin2,&
        ixImin3,1)-block%dx(ixImin1,ixImin2,ixImin3,1)
-    
-    
+
+
     xCC(ixImin1:ixImax1,ixIsmin2,ixImin3:ixImax3,1:ndim)=x(ixImin1:ixImax1,&
        ixImin2,ixImin3:ixImax3,1:ndim)
     xCC(ixIsmin1:ixIsmax1,ixIsmin2,ixIsmin3:ixIsmax3,2)=x(ixImin1,ixImin2,&
        ixImin3,2)-block%dx(ixImin1,ixImin2,ixImin3,2)
-    
-    
+
+
     xCC(ixImin1:ixImax1,ixImin2:ixImax2,ixIsmin3,1:ndim)=x(ixImin1:ixImax1,&
        ixImin2:ixImax2,ixImin3,1:ndim)
     xCC(ixIsmin1:ixIsmax1,ixIsmin2:ixIsmax2,ixIsmin3,3)=x(ixImin1,ixImin2,&
        ixImin3,3)-block%dx(ixImin1,ixImin2,ixImin3,3)
-    
-    
+
+
     xCC(ixImin1:ixImax1,ixIsmin2,ixIsmin3,1)=x(ixImin1:ixImax1,ixImin2,ixImin3,&
        1)
     xCC(ixIsmin1,ixImin2:ixImax2,ixIsmin3,2)=x(ixImin1,ixImin2:ixImax2,ixImin3,&
        2)
     xCC(ixIsmin1,ixIsmin2,ixImin3:ixImax3,3)=x(ixImin1,ixImin2,ixImin3:ixImax3,&
        3)
-   
+
 
     do idir=sdim,3
       ixCmax1=ixOmax1;ixCmax2=ixOmax2;ixCmax3=ixOmax3;
@@ -201,10 +197,10 @@ contains
          idir)*block%dsC(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ixCmin3:ixCmax3,idir)
     end do
 
-    ! Take the curl of the vector potential 
+    ! Take the curl of the vector potential
     circ=zero
     ! Calculate circulation on each face
-    do idim1=1,ndim ! Coordinate perpendicular to face 
+    do idim1=1,ndim ! Coordinate perpendicular to face
       ixCmax1=ixOmax1;ixCmax2=ixOmax2;ixCmax3=ixOmax3;
       ixCmin1=ixOmin1-kr(idim1,1);ixCmin2=ixOmin2-kr(idim1,2)
       ixCmin3=ixOmin3-kr(idim1,3);
@@ -240,7 +236,7 @@ contains
   end subroutine b_from_vector_potentialA
 
   !> Reconstruct scalar q within ixO^L to 1/2 dx in direction idir
-  !> Return both left and right reconstructed values 
+  !> Return both left and right reconstructed values
   subroutine reconstruct(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
      ixCmin1,ixCmin2,ixCmin3,ixCmax1,ixCmax2,ixCmax3,idir,q,qL,qR)
     use mod_limiter

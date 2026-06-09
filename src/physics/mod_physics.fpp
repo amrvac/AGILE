@@ -10,10 +10,10 @@ module mod_physics
   use mod_variables
   use mod_physics_vars
   use mod_comm_lib, only: mpistop
-  
+
   implicit none
   public
-  
+
 
   procedure(sub_check_params), pointer    :: phys_check_params           => &
      null()
@@ -43,7 +43,7 @@ module mod_physics
      null()
 
   interface
-     
+
      subroutine sub_check_params
      end subroutine sub_check_params
 
@@ -52,7 +52,7 @@ module mod_physics
        integer, intent(in) :: igrid
        type(state), target :: psb(max_blocks)
      end subroutine sub_boundary_adjust
-     
+
      subroutine sub_face_to_center(ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
         ixOmax3,s)
        use mod_global_parameters
@@ -94,7 +94,7 @@ module mod_physics
        double precision, intent(in) :: qtC
        double precision, intent(in) :: dtfactor
      end subroutine sub_implicit_update
-     
+
      !> set equilibrium variables other than b0 (e.g. p0 and rho0)
      subroutine sub_set_equi_vars(igrid)
        integer, intent(in) :: igrid
@@ -121,7 +121,7 @@ module mod_physics
           ixImin3:ixImax3,1:ndim)
        character(len=*), intent(in)    :: subname
      end subroutine sub_small_values
-     
+
   end interface
 
 contains
@@ -133,7 +133,7 @@ contains
   @:to_conservative()
   @:phys_activate()
 
-  
+
   subroutine phys_check()
 
     use mod_comm_lib, only: mpistop
@@ -143,7 +143,7 @@ contains
     ! Checks whether the required physics methods have been defined
     if (.not. associated(phys_check_params)) phys_check_params => &
        dummy_check_params
-    
+
     if (.not. associated(phys_boundary_adjust)) phys_boundary_adjust => &
        dummy_boundary_adjust
 
@@ -170,7 +170,7 @@ contains
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
-         ixImin3:ixImax3, nw_phys) 
+         ixImin3:ixImax3, nw_phys)
     double precision, intent(in)    :: x(ixImin1:ixImax1,ixImin2:ixImax2,&
          ixImin3:ixImax3, 1:ndim)
     integer                         :: ix1,ix2,ix3
@@ -186,7 +186,7 @@ contains
     end do
 
   end subroutine phys_to_conserved
-  
+
   !> Transform conservative variables into primitive ones
   subroutine phys_to_primitive(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
       ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, w, x)
@@ -198,7 +198,7 @@ contains
     double precision, intent(in)    :: x(ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3, 1:ndim)
     integer                         :: ix1,ix2,ix3
-    
+
     do ix3=ixOmin3,ixOmax3
        do ix2=ixOmin2,ixOmax2
           do ix1=ixOmin1,ixOmax1
@@ -210,13 +210,13 @@ contains
     end do
 
   end subroutine phys_to_primitive
-  
+
   subroutine dummy_boundary_adjust(igrid,psb)
     use mod_global_parameters
     integer, intent(in) :: igrid
     type(state), target :: psb(max_blocks)
   end subroutine dummy_boundary_adjust
-  
+
   subroutine dummy_evaluate_implicit(qtC,psa)
     use mod_global_parameters
     type(state), target :: psa(max_blocks)
@@ -224,12 +224,10 @@ contains
     integer :: iigrid, igrid
 
     ! Just copy in nul state
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        psa(igrid)%w = 0.0d0*psa(igrid)%w
        if(stagger_grid) psa(igrid)%ws = 0.0d0*psa(igrid)%ws
     end do
-    !$OMP END PARALLEL DO
 
   end subroutine dummy_evaluate_implicit
 
@@ -243,12 +241,10 @@ contains
     integer :: iigrid, igrid
 
     ! Just copy in psb state when using the scheme without implicit part
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        psa(igrid)%w = psb(igrid)%w
        if(stagger_grid) psa(igrid)%ws = psb(igrid)%ws
     end do
-    !$OMP END PARALLEL DO
 
   end subroutine dummy_implicit_update
 
@@ -288,5 +284,5 @@ contains
 
     call MPI_FILE_WRITE(fh, n_par, 1, MPI_INTEGER, st, er)
   end subroutine dummy_write_info
-  
+
 end module mod_physics

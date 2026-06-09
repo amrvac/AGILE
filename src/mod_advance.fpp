@@ -22,7 +22,7 @@ contains
     integer, intent(in) :: iit
 
     integer :: iigrid, igrid, idimsplit
-    
+
     ! split source addition
     call add_split_source(prior=.true.)
 
@@ -52,7 +52,7 @@ contains
     ! do iigrid=1,igridstail; igrid=igrids(iigrid);
     !    !$acc exit data delete(ps(igrid)%x, ps1(igrid)%w, ps2(igrid)%w) copyout(ps(igrid)%w)
     ! end do
-    
+
   end subroutine advance
 
   !> Advance all grids over one time step, but without taking dimensional
@@ -70,33 +70,30 @@ contains
 
     call init_comm_fix_conserve(idimmin,idimmax,nwflux)
     fix_conserve_at_step = time_advance .and. levmax>levmin
-    
+
     ! copy w instead of wold because of potential use of dimsplit or sourcesplit
-    !$OMP PARALLEL DO PRIVATE(igrid)
     !$acc parallel loop present(bg, bg(1), bg(2)) private(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        !$acc loop collapse(ndim+1)
        do iw = 1, nw
-          do ix3 = ixGlo3, ixGhi3 
-             do ix2 = ixGlo2, ixGhi2 
-                do ix1 = ixGlo1, ixGhi1 
+          do ix3 = ixGlo3, ixGhi3
+             do ix2 = ixGlo2, ixGhi2
+                do ix1 = ixGlo1, ixGhi1
                    bg(2)%w(ix1,ix2,ix3,iw,igrid) = bg(1)%w(ix1,ix2,ix3,iw,igrid)
                 end do
              end do
           end do
        end do
     end do
-    !$OMP END PARALLEL DO
-    
+
     if(stagger_grid) then
-       !$OMP PARALLEL DO PRIVATE(igrid)
        !$acc parallel loop present(ps1, ps) private(igrid)
        do iigrid=1,igridstail; igrid=igrids(iigrid);
           !$acc loop collapse(ndim+1)
           do iw = 1, nws
-             do ix3 = ps(igrid)%ixGsmin3, ps(igrid)%ixGsmax3 
-                do ix2 = ps(igrid)%ixGsmin2, ps(igrid)%ixGsmax2 
-                   do ix1 = ps(igrid)%ixGsmin1, ps(igrid)%ixGsmax1 
+             do ix3 = ps(igrid)%ixGsmin3, ps(igrid)%ixGsmax3
+                do ix2 = ps(igrid)%ixGsmin2, ps(igrid)%ixGsmax2
+                   do ix1 = ps(igrid)%ixGsmin1, ps(igrid)%ixGsmax1
                       ps1(igrid)%ws(ix1,ix2,ix3,iw) = ps(igrid)%ws(ix1,ix2,ix3,iw)
                    end do
                 end do
@@ -104,29 +101,27 @@ contains
           end do
        end do
     end if
-    !$OMP END PARALLEL DO
 
  istep = 0
 
  select case (t_stepper)
-  
+
     case (threestep)
        select case (t_integrator)
        ! AGILE this is our integrator (default threestep)
        case (ssprk3)
           ! this is SSPRK(3,3) Gottlieb-Shu 1998 or SSP(3,2) depending on ssprk_order (3 vs 2)
-          
+
           call advect1(flux_method,rk_beta11, idimmin,idimmax,global_time,ps,&
                bg(1),global_time,ps1,bg(2))
 
-          !$OMP PARALLEL DO PRIVATE(igrid)
           !$acc parallel loop present(bg, ps2, ps1, ps) private(igrid)
           do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
              !$acc loop collapse(ndim+1)
              do iw = 1, nw
-                do ix3 = ixGlo3, ixGhi3 
-                   do ix2 = ixGlo2, ixGhi2 
-                      do ix1 = ixGlo1, ixGhi1 
+                do ix3 = ixGlo3, ixGhi3
+                   do ix2 = ixGlo2, ixGhi2
+                      do ix1 = ixGlo1, ixGhi1
                          bg(3)%w(ix1,ix2,ix3,iw,igrid) = rk_alfa21 * bg(1)%w(ix1,ix2,&
                               ix3,iw,igrid) + rk_alfa22 * bg(2)%w(ix1,ix2,ix3,iw,igrid)
                       end do
@@ -136,20 +131,18 @@ contains
              if(stagger_grid) ps2(igrid)%ws=rk_alfa21*ps(igrid)%ws+&
                   rk_alfa22*ps1(igrid)%ws
           end do
-          !$OMP END PARALLEL DO
 
           call advect1(flux_method,rk_beta22, idimmin,idimmax,&
                global_time+rk_c2*dt,ps1,bg(2),global_time+rk_alfa22*rk_c2*dt,ps2,&
                bg(3))
 
-          !$OMP PARALLEL DO PRIVATE(igrid)
           !$acc parallel loop present(bg, ps2, ps) private(igrid)
           do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
              !$acc loop collapse(ndim+1)
              do iw = 1, nw
-                do ix3 = ixGlo3, ixGhi3 
-                   do ix2 = ixGlo2, ixGhi2 
-                      do ix1 = ixGlo1, ixGhi1 
+                do ix3 = ixGlo3, ixGhi3
+                   do ix2 = ixGlo2, ixGhi2
+                      do ix1 = ixGlo1, ixGhi1
                          bg(1)%w(ix1,ix2,ix3,iw,igrid) = rk_alfa31 * bg(1)%w(ix1,ix2,&
                               ix3,iw,igrid) + rk_alfa33 * bg(3)%w(ix1,ix2,ix3,iw,igrid)
                       end do
@@ -159,7 +152,6 @@ contains
              if(stagger_grid) ps(igrid)%ws=rk_alfa31*ps(igrid)%ws+&
                   rk_alfa33*ps2(igrid)%ws
           end do
-          !$OMP END PARALLEL DO
 
           call advect1(flux_method,rk_beta33, idimmin,idimmax,&
                global_time+rk_c3*dt,ps2,bg(3),global_time+(1.0d0-rk_beta33)*dt,&
@@ -284,19 +276,17 @@ contains
     !   if(stagger_grid) then
     !     call fix_edges(psb,idimmin,idimmax)
     !     ! fill the cell-center values from the updated staggered variables
-    !     !$OMP PARALLEL DO PRIVATE(igrid)
     !     do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
     !       call phys_face_to_center(ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,&
     !          psb(igrid))
     !     end do
-    !     !$OMP END PARALLEL DO
     !   end if
     ! end if
 
-    
+
     ! For all grids: fill ghost cells
     call getbc(qt+qdt,qdt,psb,iwstart,nwgc,phys_req_diagonal)
-    
+
   end subroutine advect1
 
   !> process is a user entry in time loop, before output and advance
@@ -318,7 +308,6 @@ contains
     end if
 
     if (associated(usr_process_grid)) then
-      !$OMP PARALLEL DO PRIVATE(igrid)
       do iigrid=1,igridstail; igrid=igrids(iigrid);
          ! next few lines ensure correct usage of routines like divvector etc
          dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
@@ -328,7 +317,6 @@ contains
             ixGhi1,ixGhi2,ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3, qt,&
             ps(igrid)%w,ps(igrid)%x)
       end do
-      !$OMP END PARALLEL DO
       call getbc(qt,dt,ps,iwstart,nwgc,phys_req_diagonal)
     end if
   end subroutine process
@@ -353,7 +341,6 @@ contains
     end if
 
     if (associated(usr_process_adv_grid)) then
-      !$OMP PARALLEL DO PRIVATE(igrid)
       do iigrid=1,igridstail; igrid=igrids(iigrid);
          ! next few lines ensure correct usage of routines like divvector etc
          dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
@@ -364,7 +351,6 @@ contains
             ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,&
             ixMhi3, qt,ps(igrid)%w,ps(igrid)%x)
       end do
-      !$OMP END PARALLEL DO
       call getbc(qt,dt,ps,iwstart,nwgc,phys_req_diagonal)
     end if
   end subroutine process_advanced

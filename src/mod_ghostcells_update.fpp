@@ -1727,7 +1727,6 @@ contains
        end do
 
     end do
-    !$OMP END PARALLEL DO
 
     call MPI_WAITALL(nbprocs_info%nbprocs_c*2, recv_c_nb, recvstatus_c_nb, ierrmpi)
     call MPI_WAITALL(nbprocs_info%nbprocs_f*2, send_f_nb, sendstatus_f_nb, ierrmpi)

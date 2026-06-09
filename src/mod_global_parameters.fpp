@@ -73,11 +73,11 @@ module mod_global_parameters
   !$acc declare copyin(ndir)
 
   !> starting dimension for electric field
-  
-  
-  
+
+
+
   integer, parameter :: sdim=1
- 
+
   !$acc declare copyin(sdim)
 
   !> Cartesian geometry or not
@@ -87,7 +87,7 @@ module mod_global_parameters
   !> uniform Cartesian geometry or not (stretched Cartesian)
   logical :: slab_uniform=.true.
   !$acc declare copyin(slab_uniform)
-  
+
   !> each cell has its own timestep or not
   logical :: local_timestep = .false.
   !$acc declare copyin(local_timestep)
@@ -332,10 +332,10 @@ module mod_global_parameters
   !> Save a snapshot before crash a run met unphysical values
   logical :: crash=.false.
   !$acc declare copyin(crash)
-  
+
   !> type of physics to build
   character(len=std_len) :: phys
-  
+
   ! Physics factors
 
   !> Physical scaling factor for length
@@ -376,7 +376,7 @@ module mod_global_parameters
 
   !> Physical scaling factor for mass
   double precision :: unit_mass=1.d0
-  !$acc declare copyin(unit_mass)  
+  !$acc declare copyin(unit_mass)
 
   !> Normalised speed of light
   double precision :: c_norm=1.d0
@@ -407,7 +407,7 @@ module mod_global_parameters
   !$acc declare copyin(check_small_values, fix_small_values)
 
   !> split magnetic field as background B0 field
-  ! TODO these should be moved in a different file  
+  ! TODO these should be moved in a different file
   logical :: B0field=.false.
   logical :: B0fieldAllocCoarse=.false.
   !$acc declare copyin(B0field, B0fieldAllocCoarse)
@@ -445,7 +445,7 @@ module mod_global_parameters
 
   !> Specify to use user-defined refinement criterion
   logical :: refine_usr = .false.
-  
+
   !> Weights of variables used to calculate error for mesh refinement
   double precision, allocatable :: w_refine_weight(:)
   !$acc declare create(w_refine_weight)
@@ -481,7 +481,7 @@ module mod_global_parameters
   !> True for using stagger grid
   logical :: stagger_grid=.false.
   !$acc declare copyin(stagger_grid)
-  
+
   !> True for record electric field
   logical :: record_electric_field=.false.
 
@@ -781,7 +781,7 @@ module mod_global_parameters
   character(len=std_len) :: filename_whitelight
   !> white light observation instrument
   character(len=std_len) :: whitelight_instrument
-  !> the white light emission below it (unit=Rsun) is not visible 
+  !> the white light emission below it (unit=Rsun) is not visible
   double precision :: R_occultor
   !> direction of the line of sight (LOS)
   double precision :: LOS_theta,LOS_phi
@@ -810,7 +810,6 @@ module mod_global_parameters
   type(state), pointer :: block
   !$acc declare create(block)
 
-  !$OMP THREADPRIVATE(block,dxlevel,b0i)
 
 contains
 
