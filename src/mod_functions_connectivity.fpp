@@ -57,6 +57,9 @@ module mod_functions_connectivity
     use mod_forest
     use mod_global_parameters
     use mod_ghostcells_update
+#ifdef _OPENACC
+    use openacc, only: acc_is_present
+#endif    
     use mod_amr_neighbors, only: find_neighbor
 
     integer :: iigrid, igrid, i1,i2,i3, my_neighbor_type
@@ -67,7 +70,7 @@ module mod_functions_connectivity
     ! Variables to detect special corners for stagger grid
     integer :: idir,pi1,pi2,pi3, mi1,mi2,mi3, ph1,ph2,ph3, mh1,mh2,mh3,&
         ipe_neighbor
-    integer :: nrecvs,nsends
+    integer :: nrecvs,nsends, inb
 
     ! total size of buffer arrays
     integer :: nbuff_bc_recv_srl, nbuff_bc_send_srl, nbuff_bc_recv_r,&
@@ -81,6 +84,66 @@ module mod_functions_connectivity
     nbuff_bc_recv_r=0; nbuff_bc_send_r=0
     nbuff_bc_recv_p=0; nbuff_bc_send_p=0
     if(stagger_grid) nrecv_cc=0; nsend_cc=0
+    
+    
+#ifdef _OPENACC
+    do inb = 1, nbprocs_info%nbprocs_srl
+       !$acc exit data delete( nbprocs_info%srl_nb(inb)%rcv%buffer,      &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info_rcv%buffer, &
+       !$acc&                    nbprocs_info%srl_nb(inb)%send%buffer,     &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info_send%buffer, &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info%nigrids,    &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info%igrid,      &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info%iencode,    &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info%ibuf_start, &
+       !$acc&                    nbprocs_info%srl_nb(inb)%info%isize )
+    end do
+
+    do inb = 1, nbprocs_info%nbprocs_c
+       !$acc exit data delete( nbprocs_info%course_nb(inb)%rcv%buffer,      &
+       !$acc&                    nbprocs_info%course_nb(inb)%info_rcv%buffer, &
+       !$acc&                    nbprocs_info%course_nb(inb)%send%buffer,     &
+       !$acc&                    nbprocs_info%course_nb(inb)%info_send%buffer, &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%nigrids,    &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%igrid,      &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%inc1,       &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%inc2,       &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%inc3,       &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%i1,         &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%i2,         &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%i3,         &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%ibuf_start, &
+       !$acc&                    nbprocs_info%course_nb(inb)%info%isize )
+    end do
+
+    do inb = 1, nbprocs_info%nbprocs_f
+       !$acc exit data delete( nbprocs_info%fine_nb(inb)%rcv%buffer,      &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info_rcv%buffer, &
+       !$acc&                    nbprocs_info%fine_nb(inb)%send%buffer,     &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info_send%buffer, &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%nigrids,    &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%igrid,      &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%inc1,       &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%inc2,       &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%inc3,       &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%i1,         &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%i2,         &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%i3,         &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%ibuf_start, &
+       !$acc&                    nbprocs_info%fine_nb(inb)%info%isize )
+    end do
+
+    ! Deallocate the top-level objects
+    !$acc exit data delete (nbprocs_info%srl_nb) if(acc_is_present(nbprocs_info%srl_nb))
+    !$acc exit data delete (nbprocs_info%course_nb) if(acc_is_present(nbprocs_info%course_nb))
+    !$acc exit data delete (nbprocs_info%fine_nb) if(acc_is_present(nbprocs_info%fine_nb))
+#ifdef _CRAYFTN ! should be a no-op, but hey, its cray...
+    !$acc exit data delete (nbprocs_info) if(acc_is_present(nbprocs_info))
+#endif
+#ifndef _CRAYFTN ! acc_is_present can only be cast on arrays with nvidia (its anyways a no-op)
+    !$acc exit data delete (nbprocs_info)
+#endif
+#endif
 
     call nbprocs_info%reset
 
@@ -596,12 +659,63 @@ module mod_functions_connectivity
       end if
       sendrequest_p=MPI_REQUEST_NULL
     end if
-
+    
     
     !update the neighbor information on the device
     !$acc update device(neighbor, neighbor_type, neighbor_pole, neighbor_child, idphyb)
-    call nbprocs_update_device
+    
+    !$acc enter data copyin (nbprocs_info)
+    !$acc enter data copyin (nbprocs_info%srl_nb, nbprocs_info%course_nb, nbprocs_info%fine_nb)
+#ifdef _OPENACC
+    do inb = 1, nbprocs_info%nbprocs_srl
+       !$acc enter data create( nbprocs_info%srl_nb(inb)%rcv%buffer, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%send%buffer, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info_rcv%buffer, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info_send%buffer )
 
+       !$acc enter data copyin( nbprocs_info%srl_nb(inb)%info%nigrids, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info%igrid, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info%iencode, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info%ibuf_start, &
+       !$acc&                   nbprocs_info%srl_nb(inb)%info%isize )
+    end do
+
+    do inb = 1, nbprocs_info%nbprocs_c
+       !$acc enter data create( nbprocs_info%course_nb(inb)%rcv%buffer, &
+       !$acc&                   nbprocs_info%course_nb(inb)%send%buffer, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info_rcv%buffer, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info_send%buffer )
+
+       !$acc enter data copyin( nbprocs_info%course_nb(inb)%info%nigrids, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%igrid, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%inc1, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%inc2, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%inc3, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%i1, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%i2, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%i3, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%ibuf_start, &
+       !$acc&                   nbprocs_info%course_nb(inb)%info%isize )
+    end do
+
+    do inb = 1, nbprocs_info%nbprocs_f
+       !$acc enter data create( nbprocs_info%fine_nb(inb)%rcv%buffer, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%send%buffer, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info_rcv%buffer, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info_send%buffer )
+
+       !$acc enter data copyin( nbprocs_info%fine_nb(inb)%info%nigrids, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%igrid, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%inc1, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%inc2, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%inc3, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%i1, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%i2, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%i3, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%ibuf_start, &
+       !$acc&                   nbprocs_info%fine_nb(inb)%info%isize )
+    end do
+#endif 
 
   end subroutine build_connectivity
 
