@@ -433,18 +433,6 @@ module mod_global_parameters
   integer :: max_blocks=4000
   !$acc declare copyin(max_blocks)
 
-  !> The maximum number of neighboring processors
-  integer :: max_nb_procs=40
-  !$acc declare copyin(max_nb_procs)
-
-  !> The maximum number of double precision ghostcell buffer storage
-  integer :: max_nb_size=9000000
-  !$acc declare copyin(max_nb_size)
-
-  !> The maximum number of ghostcell exchange events per nb proc (defaulted to 9*max_blocks in IO)
-  integer :: max_nb_igrids=-1
-  !$acc declare copyin(max_nb_igrids)
-
   !> The maximum number of levels in the grid refinement
   integer, parameter :: nlevelshi = 20
 
