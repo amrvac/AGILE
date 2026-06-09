@@ -2,24 +2,6 @@
 ! On non-Cray compilers, these call mpistop with a descriptive message.
 ! On Cray, STOP cannot be inlined into OpenACC kernels, so dummies just return -1. 
 
-#:def get_cs2()
-!> obtain the squared sound speed
-real(dp) function get_cs2(u) result(cs2)
-  !$acc routine seq
-#ifndef _CRAYFTN
-  use mod_comm_lib, only: mpistop
-#endif
-  real(dp), intent(in)  :: u(nw_phys)
-
-#ifndef _CRAYFTN
-  call mpistop("get_cs2 not implemented for this physics module")
-#endif
-  cs2 = -1.0d0
-
-end function get_cs2
-#:enddef
-
-
 #:def estimate_speeds_minmax()
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   !$acc routine seq

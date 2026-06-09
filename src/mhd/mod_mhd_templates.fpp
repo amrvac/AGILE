@@ -586,16 +586,6 @@ pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
 end function get_cmax
 #:enddef  
 
-#:def get_cs2()
-!> obtain the squared sound speed
-pure real(dp) function get_cs2(u) result(cs2)
-  !$acc routine seq
-  real(dp), intent(in)  :: u(nw_phys)
-
-  cs2 = phys_gamma*u(iw_e)/u(iw_rho)
-end function get_cs2
-#:enddef
-
 #:def get_rho()
   pure real(dp) function get_rho(w, x) result(rho)
     !$acc routine seq

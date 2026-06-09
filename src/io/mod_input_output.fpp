@@ -44,7 +44,6 @@ contains
   !> Read the command line arguments passed to agile
   subroutine read_arguments()
     use mod_global_parameters
-    use mod_slice, only: slicenext
 
     integer                          :: len, stat, n, i, ipars
     integer, parameter               :: max_files = 20 !Maximum number of par files
@@ -2191,7 +2190,6 @@ contains
     use mod_forest
     use mod_physics
     use mod_global_parameters
-    use mod_slice, only: slicenext
     use mod_input_output_helper, only: snapshot_write_header1
     integer, intent(in)                       :: fh           !< File handle
     integer(kind=MPI_OFFSET_KIND), intent(in) :: offset_tree !< Offset of tree info
@@ -2208,7 +2206,6 @@ contains
     use mod_forest
     use mod_global_parameters
     use mod_physics, only: physics_type
-    use mod_slice, only: slicenext
     integer, intent(in)                   :: fh           !< File handle
     integer(MPI_OFFSET_KIND), intent(out) :: offset_tree !< Offset of tree info
     integer(MPI_OFFSET_KIND), intent(out) :: offset_block !< Offset of block data
@@ -2576,7 +2573,6 @@ contains
     use mod_input_output_helper, only: count_ix
     use mod_forest
     use mod_global_parameters
-    use mod_slice, only: slicenext
     use mod_amr_solution_node, only: alloc_node
     use mod_functions_forest, only: read_forest
 
