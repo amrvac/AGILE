@@ -12,8 +12,18 @@ endif
 
 ifdef OPENMP
 $(info Enabling OpenMP)
+f90_flags += -Wall -mp=gpu -Minfo=mp
 enabled += OPENMP
-f90_flags += -fopenmp
+ifdef NOGPUDIRECT
+$(info Disabling direct GPU-GPU copies)
+f90_flags += -DNOGPUDIRECT
+enabled += NOGPUDIRECT
+endif
+ifdef DEBUG
+f90_flags += -gpu=debug -Mvect=levels:0 -Mnoinline
+else
+f90_flags += -Mvect=levels:5 -Minline
+endif
 endif
 
 ifdef OPENACC

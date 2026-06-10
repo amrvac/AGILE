@@ -11,12 +11,15 @@ endif
 ifdef OPENACC
   fortdepend_flags += -D_OPENACC
 endif
+ifdef OPENMP
+  fortdepend_flags += -D_OPENMP
+endif
 
 # make sure that config is read first
 ifdef CONFIG_READ
 $(build_dir)/dependencies.mk: $(f90_files) $(build_dir)/f90/agile.h | $(build_dir)
 	@echo "Regenerating depencies"
-	@fortdepend $(fortdepend_flags) -f $(f90_files) -i mpi openacc -b $(build_dir)/obj -w -o $@
+	@fortdepend $(fortdepend_flags) -f $(f90_files) -i mpi openacc omp_lib -b $(build_dir)/obj -w -o $@
 
 # Precompiling and dependency tracking is not needed if we're cleaning.
 ifndef disable_precompile
