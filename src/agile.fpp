@@ -6,9 +6,12 @@ program agile
   integer        :: ierror
   ! Initialize MPI
   call MPI_INIT(ierror)
-  ! The OpenACC device must be set before any data is initialized on the GPU
+  ! The OpenACC/OpenMP device must be set before any data is initialized on the GPU
 #ifdef _OPENACC
   call set_openacc_device()
+#endif
+#ifdef _OPENMP
+  call set_openmp_device()
 #endif
   call main()
 
@@ -33,6 +36,25 @@ contains
     call acc_set_device_num(my_device, dev_type)
 
   end subroutine set_openacc_device
+#endif
+
+#ifdef _OPENMP
+  subroutine set_openmp_device
+    use mpi
+    use omp_lib
+    integer :: local_rank, comm_shared, my_device, num_devices, ierror
+
+    call MPI_COMM_SPLIT_TYPE(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, comm_shared, ierror)
+    call MPI_COMM_RANK(comm_shared, local_rank, ierror)
+
+    num_devices = omp_get_num_devices()
+
+    if (num_devices < 1) error stop "No devices available on host"
+
+    my_device = mod(local_rank, num_devices)
+    call omp_set_default_device(my_device)
+
+  end subroutine set_openmp_device
 #endif
 
   subroutine main
@@ -70,6 +92,7 @@ contains
     time0 = MPI_WTIME()
     time_advance = .false.
     !$acc update device(time_advance)
+    !$omp target update to(time_advance)
     time_bc      = zero
 
     ! read command line arguments first
@@ -290,6 +313,7 @@ contains
 
     time_advance=.true.
     !$acc update device(time_advance)
+    !$omp target update to(time_advance)
 
     time_evol : do
 
@@ -298,7 +322,7 @@ contains
        call nvtxStartRange("setdt");       call setdt()
        call nvtxEndRange
 
-       
+
        ! Optionally call a user method that can modify the grid variables at the
        ! beginning of a time step
        if (associated(usr_process_grid) .or. associated(usr_process_global)) &
@@ -368,7 +392,7 @@ contains
 
        ! solving equations
        call advance(it)
-       
+
        !opedit: FIXME, this seems to take a long time!
        ! if met unphysical values, output the last good status and stop the run
        ! call MPI_ALLREDUCE(crash,crashall,1,MPI_LOGICAL,MPI_LOR,icomm,ierrmpi)
@@ -422,6 +446,7 @@ contains
 
     time_advance=.false.
     !$acc update device(time_advance)
+    !$omp target update to(time_advance)
 
     timeloop=MPI_WTIME()-timeloop0
 

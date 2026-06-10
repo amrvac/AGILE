@@ -18,10 +18,12 @@ module mod_global_parameters
   !> The number of MPI tasks
   integer :: npe
   !$acc declare create(npe)
+  !$omp declare target(npe)
 
   !> The rank of the current MPI task
   integer :: mype
   !$acc declare create(mype)
+  !$omp declare target(mype)
 
   !> The MPI communicator
   integer :: icomm
@@ -52,25 +54,30 @@ module mod_global_parameters
   !> the mesh range of a physical block without ghost cells
   integer :: ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3
   !$acc declare create(ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3)
+  !$omp declare target(ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3)
 
   !> minimum and maximum domain boundaries for each dimension
   double precision  :: xprobmin1,xprobmin2,xprobmin3,xprobmax1,xprobmax2,&
      xprobmax3
- !$acc declare create(xprobmin1,xprobmin2,xprobmin3,xprobmax1,xprobmax2,xprobmax3)
+  !$acc declare create(xprobmin1,xprobmin2,xprobmin3,xprobmax1,xprobmax2,xprobmax3)
+  !$omp declare target(xprobmin1,xprobmin2,xprobmin3,xprobmax1,xprobmax2,xprobmax3)
 
   !> Indices for cylindrical coordinates FOR TESTS, negative value when not used:
   integer :: r_ = -1
   integer :: phi_ = -1
   integer :: z_ = -1
   !$acc declare copyin(r_, phi_, z_)
+  !$omp declare target(r_, phi_, z_)
 
   !> Number of spatial dimensions for grid variables
   integer, parameter :: ndim=3
   !$acc declare copyin(ndim)
+  !$omp declare target(ndim)
 
   !> Number of spatial dimensions (components) for vector variables
   integer :: ndir=ndim
   !$acc declare copyin(ndir)
+  !$omp declare target(ndir)
 
   !> starting dimension for electric field
 
@@ -79,18 +86,22 @@ module mod_global_parameters
   integer, parameter :: sdim=1
 
   !$acc declare copyin(sdim)
+  !$omp declare target(sdim)
 
   !> Cartesian geometry or not
   logical :: slab = .true.
   !$acc declare copyin(slab)
+  !$omp declare target(slab)
 
   !> uniform Cartesian geometry or not (stretched Cartesian)
   logical :: slab_uniform=.true.
   !$acc declare copyin(slab_uniform)
+  !$omp declare target(slab_uniform)
 
   !> each cell has its own timestep or not
   logical :: local_timestep = .false.
   !$acc declare copyin(local_timestep)
+  !$omp declare target(local_timestep)
 
   !> number of grid blocks in domain per dimension, in array over levels
   integer, dimension(:), allocatable :: ng1,ng2,ng3
@@ -103,6 +114,7 @@ module mod_global_parameters
   !> number of cells for each dimension in grid block excluding ghostcells
   integer :: block_nx1,block_nx2,block_nx3
   !$acc declare create(block_nx1,block_nx2,block_nx3)
+  !$omp declare target(block_nx1,block_nx2,block_nx3)
 
   !> Lower index of grid block arrays (always 1)
   integer, parameter :: ixGlo1 = 1, ixGlo2 = 1, ixGlo3 = 1
@@ -110,6 +122,7 @@ module mod_global_parameters
   !> Upper index of grid block arrays
   integer :: ixGhi1,ixGhi2,ixGhi3
   !$acc declare create(ixGhi1,ixGhi2,ixGhi3)
+  !$omp declare target(ixGhi1,ixGhi2,ixGhi3)
 
   !> Lower index of stagger grid block arrays (always 0)
   integer, parameter :: ixGslo1 = 0, ixGslo2 = 0, ixGslo3 = 0
@@ -117,10 +130,12 @@ module mod_global_parameters
   !> Upper index of stagger grid block arrays
   integer :: ixGshi1,ixGshi2,ixGshi3
   !$acc declare create(ixGshi1,ixGshi2,ixGshi3)
+  !$omp declare target(ixGshi1,ixGshi2,ixGshi3)
 
   !> Number of ghost cells surrounding a grid
   integer :: nghostcells = 2
   !$acc declare copyin(nghostcells)
+  !$omp declare target(nghostcells)
 
   integer, parameter :: stretch_none = 0 !< No stretching
   integer, parameter :: stretch_uni  = 1 !< Unidirectional stretching from a side
@@ -154,6 +169,7 @@ module mod_global_parameters
   integer, allocatable :: node(:,:)
   integer, allocatable :: node_sub(:,:)
   !$acc declare create(node)
+  !$omp declare target(node)
 
   !> grid location info (corner coordinates and grid spacing)
   integer, parameter :: rnodehi=3*3
@@ -168,11 +184,13 @@ module mod_global_parameters
   !> Corner coordinates
   double precision, allocatable :: rnode(:,:)
   !$acc declare create(rnode)
+  !$omp declare target(rnode)
   double precision, allocatable :: rnode_sub(:,:)
 
   double precision, allocatable :: dx(:,:)
   double precision :: dxlevel(ndim)
   !$acc declare create(dxlevel)
+  !$omp declare target(dxlevel)
 
   ! IO related quantities
 
@@ -332,6 +350,7 @@ module mod_global_parameters
   !> Save a snapshot before crash a run met unphysical values
   logical :: crash=.false.
   !$acc declare copyin(crash)
+  !$omp declare target(crash)
 
   !> type of physics to build
   character(len=std_len) :: phys
@@ -341,58 +360,72 @@ module mod_global_parameters
   !> Physical scaling factor for length
   double precision :: unit_length=1.d0
   !$acc declare copyin(unit_length)
+  !$omp declare target(unit_length)
 
   !> Physical scaling factor for time
   double precision :: unit_time=1.d0
   !$acc declare copyin(unit_time)
+  !$omp declare target(unit_time)
 
   !> Physical scaling factor for density
   double precision :: unit_density=1.d0
   !$acc declare copyin(unit_density)
+  !$omp declare target(unit_density)
 
   !> Physical scaling factor for velocity
   double precision :: unit_velocity=1.d0
   !$acc declare copyin(unit_velocity)
+  !$omp declare target(unit_velocity)
 
   !> Physical scaling factor for temperature
   double precision :: unit_temperature=1.d0
   !$acc declare copyin(unit_temperature)
+  !$omp declare target(unit_temperature)
 
   !> Physical scaling factor for pressure
   double precision :: unit_pressure=1.d0
   !$acc declare copyin(unit_pressure)
+  !$omp declare target(unit_pressure)
 
   !> Physical scaling factor for magnetic field
   double precision :: unit_magneticfield=1.d0
   !$acc declare copyin(unit_magneticfield)
+  !$omp declare target(unit_magneticfield)
 
   !> Physical scaling factor for number density
   double precision :: unit_numberdensity=1.d0
   !$acc declare copyin(unit_numberdensity)
+  !$omp declare target(unit_numberdensity)
 
   !> Physical scaling factor for charge
   double precision :: unit_charge=1.d0
   !$acc declare copyin(unit_charge)
+  !$omp declare target(unit_charge)
 
   !> Physical scaling factor for mass
   double precision :: unit_mass=1.d0
   !$acc declare copyin(unit_mass)
+  !$omp declare target(unit_mass)
 
   !> Normalised speed of light
   double precision :: c_norm=1.d0
   !$acc declare copyin(c_norm)
+  !$omp declare target(c_norm)
 
   !> Physical scaling factor for Opacity
   double precision :: unit_opacity=1.d0
   !$acc declare copyin(unit_opacity)
+  !$omp declare target(unit_opacity)
 
   !> Physical scaling factor for radiation flux
   double precision :: unit_radflux=1.d0
   !$acc declare copyin(unit_radflux)
+  !$omp declare target(unit_radflux)
 
   !> error handling
   double precision :: small_temperature,small_pressure,small_density
   !$acc declare create(small_temperature,small_pressure,small_density)
+  !$omp declare target(small_temperature,small_pressure,small_density)
 
   !> amplitude of background dipolar, quadrupolar, octupolar, user's field
   double precision :: Bdip=0.d0
@@ -400,17 +433,20 @@ module mod_global_parameters
   double precision :: Boct=0.d0
   double precision :: Busr=0.d0
   !$acc declare copyin(Bdip, Bquad, Boct, Busr)
+  !$omp declare target(Bdip, Bquad, Boct, Busr)
 
   !> check and optionally fix unphysical small values (density, gas pressure)
   logical :: check_small_values=.true.
   logical :: fix_small_values=.false.
   !$acc declare copyin(check_small_values, fix_small_values)
+  !$omp declare target(check_small_values, fix_small_values)
 
   !> split magnetic field as background B0 field
   ! TODO these should be moved in a different file
   logical :: B0field=.false.
   logical :: B0fieldAllocCoarse=.false.
   !$acc declare copyin(B0field, B0fieldAllocCoarse)
+  !$omp declare target(B0field, B0fieldAllocCoarse)
 
   ! number of equilibrium set variables, besides the mag field
   integer :: number_equi_vars = 0
@@ -418,6 +454,7 @@ module mod_global_parameters
   !> Use SI units (.true.) or use cgs units (.false.)
   logical :: SI_unit=.false.
   !$acc declare copyin(SI_unit)
+  !$omp declare target(SI_unit)
 
   !> Use TRAC (Johnston 2019 ApJL, 873, L22) for MHD or 1D HD
   logical :: phys_trac=.false.
@@ -435,6 +472,7 @@ module mod_global_parameters
   !> The maximum number of grid blocks in a processor
   integer :: max_blocks=4000
   !$acc declare copyin(max_blocks)
+  !$omp declare target(max_blocks)
 
   !> The maximum number of levels in the grid refinement
   integer, parameter :: nlevelshi = 20
@@ -442,6 +480,7 @@ module mod_global_parameters
   !> Maximal number of AMR levels
   integer :: refine_max_level
   !$acc declare create(refine_max_level)
+  !$omp declare target(refine_max_level)
 
   !> Specify to use user-defined refinement criterion
   logical :: refine_usr = .false.
@@ -449,6 +488,7 @@ module mod_global_parameters
   !> Weights of variables used to calculate error for mesh refinement
   double precision, allocatable :: w_refine_weight(:)
   !$acc declare create(w_refine_weight)
+  !$omp declare target(w_refine_weight)
 
   !> Fix the AMR grid after this time
   double precision :: tfixgrid
@@ -465,22 +505,26 @@ module mod_global_parameters
   !> refinement: lohner estimate wavefilter setting
   double precision, allocatable :: amr_wavefilter(:)
   !$acc declare create(amr_wavefilter)
+  !$omp declare target(amr_wavefilter)
 
   integer                       :: refine_criterion
   logical                       :: prolongprimitive=.false.
   logical                       :: coarsenprimitive=.false.
   !$acc declare copyin(prolongprimitive, coarsenprimitive)
+  !$omp declare target(prolongprimitive, coarsenprimitive)
 
   !> Error tolerance for refinement decision
   double precision, allocatable :: refine_threshold(:)
   double precision, allocatable :: derefine_ratio(:)
   !$acc declare create(refine_threshold, derefine_ratio)
+  !$omp declare target(refine_threshold, derefine_ratio)
 
   !> If true, rebuild the AMR grid upon restarting
   logical :: reset_grid
   !> True for using stagger grid
   logical :: stagger_grid=.false.
   !$acc declare copyin(stagger_grid)
+  !$omp declare target(stagger_grid)
 
   !> True for record electric field
   logical :: record_electric_field=.false.
@@ -507,13 +551,16 @@ module mod_global_parameters
 
   double precision :: dt
   !$acc declare create(kr,lvc,dt)
+  !$omp declare target(kr,lvc,dt)
 
   logical :: time_advance
   !$acc declare create(time_advance)
+  !$omp declare target(time_advance)
 
   !> The Courant (CFL) number used for the simulation
   double precision :: courantpar
   !$acc declare create(courantpar)
+  !$omp declare target(courantpar)
 
   !> How to compute the CFL-limited time step
   integer :: type_courant=1
@@ -530,10 +577,12 @@ module mod_global_parameters
   !> \f$ dt < dtdiffpar \times dx^2/eta \f$
   double precision :: dtdiffpar
   !$acc declare create(dtdiffpar)
+  !$omp declare target(dtdiffpar)
 
   !> The global simulation time
   double precision :: global_time
   !$acc declare create(global_time)
+  !$omp declare target(global_time)
 
   !> Start time for the simulation
   double precision :: time_init
@@ -569,10 +618,12 @@ module mod_global_parameters
   !> If true, do H-correction to fix the carbuncle problem at grid-aligned shocks
   logical :: H_correction=.false.
   !$acc declare copyin(H_correction)
+  !$omp declare target(H_correction)
 
   !> Number of time steps taken
   integer :: it
   !$acc declare create(it)
+  !$omp declare target(it)
 
   !> Stop the simulation after this many time steps have been taken
   integer :: it_max
@@ -634,15 +685,18 @@ module mod_global_parameters
   !> Type of slope limiter used for reconstructing variables on cell edges
   integer, allocatable :: type_limiter(:)
   !$acc declare create(type_limiter)
+  !$omp declare target(type_limiter)
 
   !> Type of slope limiter used for computing gradients or divergences, when
   !> typegrad or typediv are set to 'limited'
   integer, allocatable :: type_gradient_limiter(:)
   !$acc declare create(type_gradient_limiter)
+  !$omp declare target(type_gradient_limiter)
 
   !> background magnetic field location indicator
   integer :: b0i=0
   !$acc declare copyin(b0i)
+  !$omp declare target(b0i)
 
   !> Limiter used for prolongation to refined grids and ghost cells
   integer :: prolong_limiter=0
@@ -651,19 +705,25 @@ module mod_global_parameters
   character(len=std_len) :: geometry_name='default'
   character(len=std_len) :: typepoly
   !$acc declare copyin(typedimsplit, geometry_name, typepoly)
+  !$omp declare target(typedimsplit, geometry_name, typepoly)
 
   logical, allocatable          :: loglimit(:), logflag(:)
   !$acc declare create(loglimit, logflag)
+  !$omp declare target(loglimit, logflag)
   logical                       :: flatcd,flatsh
   !$acc declare create(flatcd, flatsh)
+  !$omp declare target(flatcd, flatsh)
   !> Use split or unsplit way to add user's source terms, default: unsplit
   logical                       :: source_split_usr
   !$acc declare create(source_split_usr)
+  !$omp declare target(source_split_usr)
   !> if any normal source term is added in split fasion
   logical                       :: any_source_split=.false.
   !$acc declare copyin(any_source_split)
+  !$omp declare target(any_source_split)
   logical                       :: dimsplit
   !$acc declare create(dimsplit)
+  !$omp declare target(dimsplit)
 
   !> RK2(alfa) method parameters from Butcher tableau
   double precision              :: rk_a21,rk_b1,rk_b2
@@ -681,6 +741,9 @@ module mod_global_parameters
  !$acc declare create(rk_beta11,rk_beta22,rk_beta33,rk_beta44,rk_c2,rk_c3,rk_c4)
  !$acc declare create(rk_alfa21,rk_alfa22,rk_alfa31,rk_alfa33,rk_alfa41,rk_alfa44)
  !$acc declare create(rk_beta54,rk_beta55,rk_alfa53,rk_alfa54,rk_alfa55,rk_c5)
+ !$omp declare target(rk_beta11,rk_beta22,rk_beta33,rk_beta44,rk_c2,rk_c3,rk_c4)
+ !$omp declare target(rk_alfa21,rk_alfa22,rk_alfa31,rk_alfa33,rk_alfa41,rk_alfa44)
+ !$omp declare target(rk_beta54,rk_beta55,rk_alfa53,rk_alfa54,rk_alfa55,rk_c5)
   !> RK3 Butcher table
   integer                       :: rk3_switch
   double precision              :: rk3_a21,rk3_a31,rk3_a32,rk3_b1,rk3_b2,&
@@ -697,51 +760,62 @@ module mod_global_parameters
   !> whether IMEX in use or not
   logical                       :: use_imex_scheme
   !$acc declare create(use_imex_scheme)
+  !$omp declare target(use_imex_scheme)
 
   character(len=std_len) :: typediv,typegrad
 
   !> global fastest wave speed needed in fd scheme and glm method
   double precision :: cmax_global
   !$acc declare create(cmax_global)
+  !$omp declare target(cmax_global)
 
   !> global largest a2 for schmid scheme
   double precision :: a2max_global(ndim)
   !$acc declare create(a2max_global)
+  !$omp declare target(a2max_global)
 
   !> need global maximal wave speed
   logical :: need_global_cmax=.false.
   !$acc declare create(need_global_cmax)
+  !$omp declare target(need_global_cmax)
 
   !> global value for schmid scheme
   logical :: need_global_a2max=.false.
   !$acc declare create(need_global_a2max)
+  !$omp declare target(need_global_a2max)
 
   ! Boundary region parameters
 
   !> True for dimensions with periodic boundaries
   logical :: periodB(ndim)
   !$acc declare create(periodB)
+  !$omp declare target(periodB)
 
   !> Indicates whether there is a pole at a boundary
   logical :: poleB(2,ndim)
   !$acc declare create(poleB)
+  !$omp declare target(poleB)
 
   !> True for dimensions with aperiodic boundaries
   logical :: aperiodB(ndim)
   !$acc declare create(aperiodB)
+  !$omp declare target(aperiodB)
 
   !> True for save physical boundary cells in dat files
   logical :: save_physical_boundary
   !$acc declare create(save_physical_boundary)
+  !$omp declare target(save_physical_boundary)
 
   !> True if a block has any physical boundary
   logical, allocatable :: phyboundblock(:)
   !$acc declare create(phyboundblock)
+  !$omp declare target(phyboundblock)
 
   !> Array indicating the type of boundary condition per variable and per
   !> physical boundary
   integer, allocatable :: typeboundary(:, :)
   !$acc declare create(typeboundary)
+  !$omp declare target(typeboundary)
   !> boundary condition types
   integer, parameter :: bc_special=1
   integer, parameter :: bc_cont=2
@@ -756,14 +830,17 @@ module mod_global_parameters
   !> signal to the precompiler that we need special boundaries:
   logical            :: specialboundary = .false.
   !$acc declare copyin(specialboundary)
+  !$omp declare target(specialboundary)
 
   !> whether copy values instead of interpolation in ghost cells of finer blocks
   logical :: ghost_copy=.false.
   !$acc declare create(ghost_copy)
+  !$omp declare target(ghost_copy)
 
   !> if there is an internal boundary
   logical :: internalboundary
   !$acc declare create(internalboundary)
+  !$omp declare target(internalboundary)
 
   !> Base file name for synthetic EUV emission output
   character(len=std_len) :: filename_euv
@@ -809,6 +886,7 @@ module mod_global_parameters
   !> Block pointer for using one block and its previous state
   type(state), pointer :: block
   !$acc declare create(block)
+  !$omp declare target(block)
 
 
 contains

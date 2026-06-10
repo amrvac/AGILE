@@ -1,8 +1,9 @@
-#ifdef _OPENACC
+#if defined(_OPENACC) || defined(_OPENMP)
 !=====================================================================
 ! Transfer wrappers for copy or update if present
 !=====================================================================
 module acc_utils
+  ! there is no openmp equivalent of acc_is_present, but the acc version works for openmp as well: the present table is shared
   use openacc
   implicit none
 
@@ -12,7 +13,7 @@ module acc_utils
   ! Adjust this as needed
   #:set MAXRANK = 6
   #:set TYPES = [("double", "double precision"), ("logical", "logical"), ("integer", "integer")]
-                 
+
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   ! Generic interface for arrays and scalars (non-pointer, non-allocatable)
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -22,14 +23,14 @@ module acc_utils
      module procedure copy_or_update_${tname}$_nonpointer_r${rank}$
   #:endfor
   #:endfor
-     
+
   #:for tname, tdecl in TYPES
     module procedure copy_or_update_${tname}$_nonpointer
   #:endfor
   end interface copy_or_update
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-  
+
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   ! Generic interface for data with pointer attribute
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -39,14 +40,14 @@ module acc_utils
      module procedure copy_or_update_${tname}$_pointer_r${rank}$
   #:endfor
   #:endfor
-     
+
   #:for tname, tdecl in TYPES
     module procedure copy_or_update_${tname}$_pointer
   #:endfor
   end interface copy_or_update_pointer
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
- 
+
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   ! Generic interface for arrays with allocatable attribute
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -69,13 +70,13 @@ contains
     logical, optional, intent(in)     :: no_update
 
     logical                           :: no_update_
-    
+
     if (present(no_update)) then
        no_update_ = no_update
     else
        no_update_ = .false.
     end if
-    
+
     if (.not. associated(scalar)) then
        print *, 'copy_or_update: null-pointer encountered'
        return
@@ -89,7 +90,7 @@ contains
     end if
     call acc_detach(scalar)
     call acc_attach(scalar)
-    
+
   end subroutine copy_or_update_${tname}$_pointer
 
   ! Versions for scalars, non-pointers
@@ -99,30 +100,30 @@ contains
     logical, optional, intent(in)     :: no_update
 
     logical                           :: no_update_
-    
+
     if (present(no_update)) then
        no_update_ = no_update
     else
        no_update_ = .false.
-    end if    
+    end if
 
     if (.not. acc_is_present(scalar, sizeof(scalar))) then
        !$acc enter data copyin(scalar)
     else if (.not. no_update_) then
        !$acc update device(scalar)
     end if
-    
+
   end subroutine copy_or_update_${tname}$_nonpointer
 
   #:endfor
 
   ! Versions for various array ranks
-  
+
   #:for tname, tdecl in TYPES
   ! Generate non-pointer and pointer versions for ranks 1..MAXRANK
   #:for rank in range(1, MAXRANK+1)
   #:set shp = '(' + ','.join([':']*rank) + ')'
-  
+
   !------------------------------
   ! Non-pointer, non-allocatable
   !------------------------------
@@ -132,7 +133,7 @@ contains
     logical, optional, intent(in)     :: no_update
 
     logical                           :: no_update_
-    
+
     if (present(no_update)) then
        no_update_ = no_update
     else
@@ -144,7 +145,7 @@ contains
     else if (.not. no_update_) then
        !$acc update device(array)
     end if
-    
+
   end subroutine copy_or_update_${tname}$_nonpointer_r${rank}$
 
   !-------------
@@ -156,7 +157,7 @@ contains
     logical, optional, intent(in)     :: no_update
 
     logical                           :: no_update_
-    
+
     if (present(no_update)) then
        no_update_ = no_update
     else
@@ -176,7 +177,7 @@ contains
     end if
     call acc_detach(array)
     call acc_attach(array)
-    
+
   end subroutine copy_or_update_${tname}$_pointer_r${rank}$
 
   !----------------
@@ -188,7 +189,7 @@ contains
     logical, optional, intent(in)     :: no_update
 
     logical                           :: no_update_
-    
+
     if (present(no_update)) then
        no_update_ = no_update
     else
@@ -199,13 +200,13 @@ contains
        print *, 'copy_or_update: unallocated allocatable (rank ${rank}$)'
        return
     end if
-    
+
     if (.not. acc_is_present(array)) then
        !$acc enter data copyin(array)
     else if (.not. no_update_) then
        !$acc update device(array)
     end if
-    
+
   end subroutine copy_or_update_${tname}$_alloc_r${rank}$
 
   #:endfor

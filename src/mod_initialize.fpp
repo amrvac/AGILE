@@ -65,10 +65,11 @@ contains
     allocate(ps2(max_blocks))
     allocate(ps3(max_blocks))
     allocate(ps4(max_blocks))
-    
+
     allocate(psc(max_blocks))
     !$acc enter data copyin(ps,ps1,ps2,ps3,ps4,psc)
-    
+    !$omp target enter data map(to:ps,ps1,ps2,ps3,ps4,psc)
+
     allocate(ps_sub(max_blocks))
     allocate(neighbor(2,-1:1,-1:1,-1:1,max_blocks),neighbor_child(2,0:3,0:3,&
        0:3,max_blocks))
@@ -84,12 +85,15 @@ contains
 
     allocate( bg(1:nstep) )
     !$acc enter data copyin(bg)
+    !$omp target enter data map(to:bg)
     do istep = 1 , nstep
        bg(istep)%istep = istep
        allocate( bg(istep)%w(ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3, 1:nw,&
             1:max_blocks) )
        !$acc update device(bg(istep))
        !$acc enter data copyin( bg(istep)%w )
+       !$omp target update to(bg(istep))
+       !$omp target enter data map(to: bg(istep)%w )
     end do
     allocate( bgc(1) )
     ixCoGmin1=1;ixCoGmin2=1;ixCoGmin3=1;
@@ -100,7 +104,9 @@ contains
     allocate ( bgc(1)%w(ixCoGmin1:ixCoGmax1, ixCoGmin2:ixCoGmax2, &
     ixCoGmin3:ixCoGmax3, 1:nw, 1:max_blocks) )
      !$acc update device( bgc(1) )
-     !$acc enter data copyin( bgc(1)%w ) 
+     !$acc enter data copyin( bgc(1)%w )
+     !$omp target update to( bgc(1) )
+     !$omp target enter data map(to: bgc(1)%w )
 
     do igrid = 1, max_blocks
        ps(igrid)%igrid  = igrid; ps(igrid)%istep  = 1
@@ -110,7 +116,7 @@ contains
        ps4(igrid)%igrid = igrid; ps4(igrid)%istep = 5
     end do
 
-    
+
     ! allocate mesh for particles
     if(use_particles) allocate(gridvars(max_blocks))
     if(stagger_grid) then
@@ -134,6 +140,7 @@ contains
     ixMlo3=ixGlo3+nghostcells;ixMhi1=ixGhi1-nghostcells
     ixMhi2=ixGhi2-nghostcells;ixMhi3=ixGhi3-nghostcells;
     !$acc update device(ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3)
+    !$omp target update to(ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3)
 
     if (nbufferx1>(ixMhi1-ixMlo1+1).or.nbufferx2>(ixMhi2-ixMlo2+&
        1).or.nbufferx3>(ixMhi3-ixMlo3+1)) then
@@ -148,7 +155,7 @@ contains
        dx(2,level) = dx(2,level-1) * half
        dx(3,level) = dx(3,level-1) * half  ! refine ratio 2
     end do
-    
+
     ! domain decomposition
     ! physical extent of a grid block at level 1, per dimension
     dg1(1)=dx(1,1)*dble(block_nx1)
@@ -181,10 +188,10 @@ contains
     poleB=.false.
     if (.not.slab) call set_pole
 
-    ! number of grid blocks at level 1 along a dimension, which does not have a pole or periodic boundary, 
+    ! number of grid blocks at level 1 along a dimension, which does not have a pole or periodic boundary,
     ! must be larger than 1 for a rectangular AMR mesh
     if((ng1(1)/=1.or.ng2(1)/=1.or.ng3(1)/=1).and.refine_max_level>1) then
-      
+
       if(ng1(1)==1.and..not.poleB(1,1).and..not.poleB(2,&
          1).and..not.periodB(1).and..not.aperiodB(1)) then
         write(unitterm,"(a,i2,a)")&
@@ -193,8 +200,8 @@ contains
         write(unitterm,"(a,i1)") "increase domain_nx",1
         call mpistop("")
       end if
-      
-      
+
+
       if(ng2(1)==1.and..not.poleB(1,2).and..not.poleB(2,&
          2).and..not.periodB(2).and..not.aperiodB(2)) then
         write(unitterm,"(a,i2,a)")&
@@ -203,8 +210,8 @@ contains
         write(unitterm,"(a,i1)") "increase domain_nx",2
         call mpistop("")
       end if
-      
-      
+
+
       if(ng3(1)==1.and..not.poleB(1,3).and..not.poleB(2,&
          3).and..not.periodB(3).and..not.aperiodB(3)) then
         write(unitterm,"(a,i2,a)")&
@@ -213,7 +220,7 @@ contains
         write(unitterm,"(a,i1)") "increase domain_nx",3
         call mpistop("")
       end if
-      
+
     end if
 
     ! initialize connectivity data
@@ -252,6 +259,7 @@ contains
     allocate(igrid_inuse(max_blocks,0:npe-1))
     igrid_inuse=.false.
     !$acc update device(coarsen, refine, buffer, igrid_inuse)
+    !$omp target update to(coarsen, refine, buffer, igrid_inuse)
 
     allocate(tree_root(1:ng1(1),1:ng2(1),1:ng3(1)))
     do ig3=1,ng3(1)

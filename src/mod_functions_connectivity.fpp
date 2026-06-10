@@ -50,6 +50,7 @@ module mod_functions_connectivity
 
     igridstail=iigrid
     !$acc update device(igrids, igridstail)
+    !$omp target update to(igrids, igridstail)
 
   end subroutine getigrids
 
@@ -59,7 +60,7 @@ module mod_functions_connectivity
     use mod_ghostcells_update
 #ifdef _OPENACC
     use openacc, only: acc_is_present
-#endif    
+#endif
     use mod_amr_neighbors, only: find_neighbor
 
     integer :: iigrid, igrid, i1,i2,i3, my_neighbor_type
@@ -84,8 +85,8 @@ module mod_functions_connectivity
     nbuff_bc_recv_r=0; nbuff_bc_send_r=0
     nbuff_bc_recv_p=0; nbuff_bc_send_p=0
     if(stagger_grid) nrecv_cc=0; nsend_cc=0
-    
-    
+
+
 #ifdef _OPENACC
     do inb = 1, nbprocs_info%nbprocs_srl
        !$acc exit data delete( nbprocs_info%srl_nb(inb)%rcv%buffer,      &
@@ -137,12 +138,67 @@ module mod_functions_connectivity
     !$acc exit data delete (nbprocs_info%srl_nb) if(acc_is_present(nbprocs_info%srl_nb))
     !$acc exit data delete (nbprocs_info%course_nb) if(acc_is_present(nbprocs_info%course_nb))
     !$acc exit data delete (nbprocs_info%fine_nb) if(acc_is_present(nbprocs_info%fine_nb))
-#ifdef _CRAYFTN ! should be a no-op, but hey, its cray...
+#ifdef _CRAYFTN
+    ! should be a no-op, but hey, its cray...
     !$acc exit data delete (nbprocs_info) if(acc_is_present(nbprocs_info))
 #endif
-#ifndef _CRAYFTN ! acc_is_present can only be cast on arrays with nvidia (its anyways a no-op)
+#ifndef _CRAYFTN
+    ! acc_is_present can only be cast on arrays with nvidia (its anyways a no-op)
     !$acc exit data delete (nbprocs_info)
 #endif
+#endif
+#ifdef _OPENMP
+    do inb = 1, nbprocs_info%nbprocs_srl
+       !$omp target exit data map(delete: nbprocs_info%srl_nb(inb)%rcv%buffer, &
+       !$omp&                    nbprocs_info%srl_nb(inb)%info_rcv%buffer, &
+       !$omp&                    nbprocs_info%srl_nb(inb)%send%buffer,     &
+       !$omp&                    nbprocs_info%srl_nb(inb)%info_send%buffer, &
+       !$omp&                    nbprocs_info%srl_nb(inb)%info%nigrids,    &
+       !$omp&                    nbprocs_info%srl_nb(inb)%info%igrid,      &
+       !$omp&                    nbprocs_info%srl_nb(inb)%info%iencode,    &
+       !$omp&                    nbprocs_info%srl_nb(inb)%info%ibuf_start, &
+       !$omp&                    nbprocs_info%srl_nb(inb)%info%isize )
+    end do
+
+    do inb = 1, nbprocs_info%nbprocs_c
+       !$omp target exit data map(delete: nbprocs_info%course_nb(inb)%rcv%buffer, &
+       !$omp&                    nbprocs_info%course_nb(inb)%info_rcv%buffer, &
+       !$omp&                    nbprocs_info%course_nb(inb)%send%buffer,     &
+       !$omp&                    nbprocs_info%course_nb(inb)%info_send%buffer, &
+       !$omp&                    nbprocs_info%course_nb(inb)%info%nigrids,    &
+       !$omp&                    nbprocs_info%course_nb(inb)%info%igrid,      &
+       !$omp&                    nbprocs_info%course_nb(inb)%info%inc1,       &
+       !$omp&                    nbprocs_info%course_nb(inb)%info%inc2,       &
+       !$omp&                    nbprocs_info%course_nb(inb)%info%inc3,       &
+       !$omp&                    nbprocs_info%course_nb(inb)%info%i1,         &
+       !$omp&                    nbprocs_info%course_nb(inb)%info%i2,         &
+       !$omp&                    nbprocs_info%course_nb(inb)%info%i3,         &
+       !$omp&                    nbprocs_info%course_nb(inb)%info%ibuf_start, &
+       !$omp&                    nbprocs_info%course_nb(inb)%info%isize )
+    end do
+
+    do inb = 1, nbprocs_info%nbprocs_f
+       !$omp target exit data map(delete: nbprocs_info%fine_nb(inb)%rcv%buffer, &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info_rcv%buffer, &
+       !$omp&                    nbprocs_info%fine_nb(inb)%send%buffer,     &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info_send%buffer, &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info%nigrids,    &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info%igrid,      &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info%inc1,       &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info%inc2,       &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info%inc3,       &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info%i1,         &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info%i2,         &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info%i3,         &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info%ibuf_start, &
+       !$omp&                    nbprocs_info%fine_nb(inb)%info%isize )
+    end do
+
+    ! Deallocate the top-level objects
+    !$omp target exit data map(delete:nbprocs_info%srl_nb)
+    !$omp target exit data map(delete:nbprocs_info%course_nb)
+    !$omp target exit data map(delete:nbprocs_info%fine_nb)
+    !$omp target exit data map(delete:nbprocs_info)
 #endif
 
     call nbprocs_info%reset
@@ -497,7 +553,7 @@ module mod_functions_connectivity
     end if
     allocate(send_c_nb(nbprocs_info%nbprocs_c*2), sendstatus_c_nb(MPI_STATUS_SIZE,nbprocs_info%nbprocs_c*2))
 
-    
+
     ! allocate space for mpi recieve for siblings and restrict ghost cell filling
     nrecvs=nrecv_bc_srl+nrecv_bc_r
     if (allocated(recvstatus_c_sr)) then
@@ -659,11 +715,11 @@ module mod_functions_connectivity
       end if
       sendrequest_p=MPI_REQUEST_NULL
     end if
-    
-    
+
+
     !update the neighbor information on the device
     !$acc update device(neighbor, neighbor_type, neighbor_pole, neighbor_child, idphyb)
-    
+
     !$acc enter data copyin (nbprocs_info)
     !$acc enter data copyin (nbprocs_info%srl_nb, nbprocs_info%course_nb, nbprocs_info%fine_nb)
 #ifdef _OPENACC
@@ -715,7 +771,7 @@ module mod_functions_connectivity
        !$acc&                   nbprocs_info%fine_nb(inb)%info%ibuf_start, &
        !$acc&                   nbprocs_info%fine_nb(inb)%info%isize )
     end do
-#endif 
+#endif
 
   end subroutine build_connectivity
 

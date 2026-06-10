@@ -37,8 +37,10 @@ contains
     if(slab_uniform) then
        CoFiratio=one/dble(2**ndim)
        !$acc parallel loop gang
+       !$omp target teams loop
        do iw=1,nw
           !$acc loop collapse(3) vector
+          !$omp loop collapse(3)
           do ixCo3 = ixComin3,ixComax3
              do ixCo2 = ixComin2,ixComax2
                 do ixCo1 = ixComin1,ixComax1
@@ -53,8 +55,10 @@ contains
       end do
     else
        !$acc parallel loop gang
+       !$omp target teams loop
        do iw=1,nw
           !$acc loop collapse(3) vector
+          !$omp loop collapse(3)
           do ixCo3 = ixComin3,ixComax3
              do ixCo2 = ixComin2,ixComax2
                 do ixCo1 = ixComin1,ixComax1

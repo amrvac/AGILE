@@ -32,8 +32,9 @@ contains
 
     if (dtpar<=zero) then
        dtmin_mype=bigdouble
-       
+
        !$acc parallel loop PRIVATE(igrid,dxinv) REDUCTION(min:dtmin_mype) gang
+       !$omp target teams loop private(igrid,dxinv) reduction(min:dtmin_mype)
        do iigrid=1,igridstail_active; igrid=igrids_active(iigrid)
 
           dx1=rnode(rpdx1_,igrid);dx2=rnode(rpdx2_,igrid)
@@ -42,15 +43,17 @@ contains
           dxinv(1)=one/dx1;dxinv(2)=one/dx2;dxinv(3)=one/dx3;
 
           !$acc loop vector collapse(ndim) REDUCTION(min:dtmin_mype) private(u, xloc)
-          do ix3=ixMlo3,ixMhi3 
-             do ix2=ixMlo2,ixMhi2 
-                do ix1=ixMlo1,ixMhi1 
+          !$omp loop collapse(ndim) reduction(min:dtmin_mype) private(u, xloc)
+          do ix3=ixMlo3,ixMhi3
+             do ix2=ixMlo2,ixMhi2
+                do ix1=ixMlo1,ixMhi1
                    u = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
                    call to_primitive(u)
                    xloc(1:ndim) = ps(igrid)%x(ix1, ix2, ix3, 1:ndim)
 
                    cmaxtot = 0.0d0
                    !$acc loop seq
+                   !$omp loop bind(thread)
                    do idims = 1, ndim
                       cmax = get_cmax(u, xloc, idims)
                       cmaxtot = cmaxtot + cmax * dxinv(idims)
@@ -75,22 +78,25 @@ contains
        dtmin_mype=dtpar
     end if
 
-    
+
     if (need_global_cmax) then
        cmax_mype=-bigdouble
 
        !$acc parallel loop PRIVATE(igrid) REDUCTION(max:cmax_mype) gang
+       !$omp target teams loop private(igrid) reduction(max:cmax_mype)
        do iigrid=1,igridstail_active; igrid=igrids_active(iigrid)
 
           !$acc loop vector collapse(ndim) REDUCTION(max:cmax_mype) private(u, xloc)
-          do ix3=ixMlo3,ixMhi3 
-             do ix2=ixMlo2,ixMhi2 
+          !$omp loop collapse(ndim) reduction(max:cmax_mype) private(u, xloc)
+          do ix3=ixMlo3,ixMhi3
+             do ix2=ixMlo2,ixMhi2
                 do ix1=ixMlo1,ixMhi1
 
                    u(1:nw_phys) = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
                    call to_primitive(u)
                    xloc(1:ndim) = ps(igrid)%x(ix1, ix2, ix3, 1:ndim)
                    !$acc loop seq
+                   !$omp loop bind(thread)
                    do idims = 1, ndim
                       cmax = get_cmax(u, xloc, idims)
                       cmax_mype = max( cmax_mype, cmax )
@@ -134,6 +140,7 @@ contains
       call MPI_ALLREDUCE(cmax_mype, cmax_global, 1, MPI_DOUBLE_PRECISION, MPI_MAX, icomm, &
              ierrmpi)
       !$acc update device(cmax_global)
+      !$omp target update to(cmax_global)
     end if
 
     if(any(dtsave(1:nfile)<bigdouble).or.any(tsave(isavet(1:nfile),&
@@ -159,5 +166,6 @@ contains
     endif
 
     !$acc update device(dt)
+    !$omp target update to(dt)
   end subroutine setdt
 end module mod_dt

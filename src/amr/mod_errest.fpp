@@ -22,6 +22,7 @@ contains
     case (3)
        ! Error estimation is based on Lohner's scheme
        !$acc parallel loop gang private(igrid)
+       !$omp target teams loop private(igrid)
        do iigrid=1,igridstail; igrid=igrids(iigrid);
           call lohner_grid(igrid)
        end do
@@ -31,17 +32,20 @@ contains
 
     if ( refine_usr ) then
        !$acc parallel loop gang private(igrid)
+       !$omp target teams loop private(igrid)
        do iigrid=1,igridstail; igrid=igrids(iigrid);
           call forcedrefine_grid(igrid)
        end do
     end if
 
     !$acc update host(refine, coarsen)
+    !$omp target update from(refine, coarsen)
 
   end subroutine errest
 
   subroutine lohner_grid(igrid)
     !$acc routine vector
+    !$omp declare target
     use mod_forest, only: coarsen, refine
     use mod_global_parameters
 
@@ -59,18 +63,21 @@ contains
       refineflag  = .false.
       coarsenflag = .true.
       !$acc loop vector collapse(3) reduction(.or.:refineflag) reduction(.and.:coarsenflag)
+      !$omp loop bind(parallel) collapse(3) reduction(.or.:refineflag) reduction(.and.:coarsenflag)
       do ix3 = ixMlo3, ixMhi3
          do ix2 = ixMlo2, ixMhi2
             do ix1 = ixMlo1, ixMhi1
 
                error = zero
                !$acc loop seq reduction(+:error)
+               !ToDo: check if omp is needed here?
                do iflag = 1, nw
                   if(w_refine_weight(iflag)==0.d0) cycle
 
                   numerator   = zero
                   denominator = zero
                   !$acc loop seq reduction(+:numerator, denominator)
+                  !$omp loop bind(thread) reduction(+:numerator, denominator)
                   do idims1 = 1, ndim
                      do idims2 = 1, ndim
 
@@ -140,12 +147,13 @@ contains
   end subroutine lohner_grid
 
   subroutine forcedrefine_grid(igrid)
-    !$acc routine vector
     #:if defined('REFINE_USR')
     use mod_usr, only: usr_refine_grid
     #:endif
     use mod_forest, only: coarsen, refine, buffer
     use mod_global_parameters
+    !$acc routine vector
+    !$omp declare target
 
     integer, intent(in) :: igrid
 

@@ -8,11 +8,11 @@ module mod_radiative_cooling
 
 ! For the interpolatable tables: these tables contain log_10 temperature values and corresponding
 ! log_10 luminosity values. The simulation-dependent temperature and luminosity
-! scaling parameters are supposed to be provided in the user file. 
-! All tables have been extended to at least T=10^9 K using a pure Bremsstrahlung 
-! relationship of Lambda~sqrt(T). This to ensure that a purely explicit calculation 
-! without timestep check is only used for extremely high temperatures. 
-! (Except for the SPEX curve, which is more complicated and therefore simply stops  
+! scaling parameters are supposed to be provided in the user file.
+! All tables have been extended to at least T=10^9 K using a pure Bremsstrahlung
+! relationship of Lambda~sqrt(T). This to ensure that a purely explicit calculation
+! without timestep check is only used for extremely high temperatures.
+! (Except for the SPEX curve, which is more complicated and therefore simply stops
 ! at the official upper limit of log(T) = 8.16)
 
   use mod_global_parameters
@@ -35,6 +35,7 @@ module mod_radiative_cooling
   double precision, private :: invgam
 
   !$acc declare create(rc_gamma_1, invgam)
+  !$omp declare target(rc_gamma_1, invgam)
 
   type rc_fluid
 
@@ -78,6 +79,7 @@ module mod_radiative_cooling
 
   type(rc_fluid)   :: rc_fl
   !$acc declare create(rc_fl)
+  !$omp declare target(rc_fl)
 
   ! Interpolatable tables
 
@@ -123,12 +125,12 @@ module mod_radiative_cooling
                  , 1.84, 1.88, 1.92, 1.96, 2.00 &
                  , 2.04, 2.08, 2.12, 2.16, 2.20 &
                  , 2.24, 2.28, 2.32, 2.36, 2.40 &
-                 , 2.44, 2.48, 2.52, 2.56, 2.60 & 
+                 , 2.44, 2.48, 2.52, 2.56, 2.60 &
                  , 2.64, 2.68, 2.72, 2.76, 2.80 &
                  , 2.84, 2.88, 2.92, 2.96, 3.00 &
                  , 3.04, 3.08, 3.12, 3.16, 3.20 &
                  , 3.24, 3.28, 3.32, 3.36, 3.40 &
-                 , 3.44, 3.48, 3.52, 3.56, 3.60 & 
+                 , 3.44, 3.48, 3.52, 3.56, 3.60 &
                  , 3.64, 3.68, 3.72, 3.76, 3.80 &
                  , 3.84, 3.88, 3.92, 3.96, 4.00 /
 
@@ -158,7 +160,7 @@ module mod_radiative_cooling
                      6.39795738, 6.50906805, 6.62017771, 6.73129054, 6.84240328, 6.95351325, &
                      7.06460772, 7.17574368, 7.28683805, 7.39795738, 7.50906805, 7.62017771, &
                      7.73129054, 7.84240328, 7.95351325, 8.06460772, 8.17574368, 8.28683805, &
-                     8.39795738, 8.50906805, 8.62017771, 8.73129054, 8.84240328, 8.95351325, & 
+                     8.39795738, 8.50906805, 8.62017771, 8.73129054, 8.84240328, 8.95351325, &
                      9.06460772                                                              /
 
   data    l_Colgan / -22.18883401, -21.78629635, -21.60383554, -21.68480662, -21.76444630, &
@@ -294,7 +296,7 @@ module mod_radiative_cooling
       use mod_global_parameters
 
       type(rc_fluid), intent(inout) :: fl
-  
+
       double precision, dimension(:), allocatable :: t_table
       double precision, dimension(:), allocatable :: L_table
       double precision :: ratt, fact1, fact2, fact3, dL1, dL2
@@ -378,23 +380,23 @@ module mod_radiative_cooling
           if(fl%tcool(i) < t_table(j+1)) then
             if(j.eq. ntable-1 )then
               fact1 = (fl%tcool(i)-t_table(j+1))     &
-                    /(t_table(j)-t_table(j+1)) 
+                    /(t_table(j)-t_table(j+1))
               fact2 = (fl%tcool(i)-t_table(j))       &
-                    /(t_table(j+1)-t_table(j)) 
-              fl%Lcool(i) = L_table(j)*fact1 + L_table(j+1)*fact2 
+                    /(t_table(j+1)-t_table(j))
+              fl%Lcool(i) = L_table(j)*fact1 + L_table(j+1)*fact2
               exit
-            else 
+            else
               dL1 = L_table(j+1)-L_table(j)
               dL2 = L_table(j+2)-L_table(j+1)
               jump =(max(dabs(dL1),dabs(dL2)) > 2*min(dabs(dL1),dabs(dL2)))
             end if
             if( jump ) then
               fact1 = (fl%tcool(i)-t_table(j+1))     &
-                    /(t_table(j)-t_table(j+1)) 
+                    /(t_table(j)-t_table(j+1))
               fact2 = (fl%tcool(i)-t_table(j))       &
-                    /(t_table(j+1)-t_table(j)) 
+                    /(t_table(j+1)-t_table(j))
               fl%Lcool(i) = L_table(j)*fact1 + L_table(j+1)*fact2
-              exit          
+              exit
             else
               fact1 = ((fl%tcool(i)-t_table(j+1))     &
                     * (fl%tcool(i)-t_table(j+2)))   &
@@ -425,7 +427,7 @@ module mod_radiative_cooling
 
       ! Scale both T and Lambda
       fl%tcool(1:fl%ncool) = fl%tcool(1:fl%ncool) / unit_temperature
-      fl%Lcool(1:fl%ncool) = fl%Lcool(1:fl%ncool) * unit_numberdensity**2 * unit_time / unit_pressure * (1.d0+2.d0*He_abundance_rc) 
+      fl%Lcool(1:fl%ncool) = fl%Lcool(1:fl%ncool) * unit_numberdensity**2 * unit_time / unit_pressure * (1.d0+2.d0*He_abundance_rc)
 
       fl%tcoolmin       = fl%tcool(1)+smalldouble  ! avoid pointless interpolation
       ! smaller value for lowest temperatures from cooling table and user's choice
@@ -455,6 +457,7 @@ module mod_radiative_cooling
       rc_gamma_1=rc_gamma-1.d0
       invgam = 1.d0/rc_gamma_1
       !$acc update device(rc_gamma_1, invgam)
+      !$omp target update(to:rc_gamma_1, invgam)
 
     contains
 
@@ -466,19 +469,19 @@ module mod_radiative_cooling
         integer                      :: n
         integer :: ncool = 4000
         double precision :: cfrac=0.1d0
-    
+
         !> Name of cooling curve
         character(len=std_len)  :: coolcurve='JCcorona'
-    
+
         !> Name of cooling method
         character(len=std_len)  :: coolmethod='exact'
-    
+
         !> Fixed temperature not lower than tlow
         logical    :: Tfix=.false.
-    
+
         !> Lower limit of temperature
         double precision   :: tlow=bigdouble
-    
+
         logical    :: rad_cut=.false.
         double precision :: rad_cut_hgt=0.5d0
         double precision :: rad_cut_dey=0.15d0
@@ -508,6 +511,7 @@ module mod_radiative_cooling
 
     subroutine radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
       !$acc routine seq
+      !$omp declare target
 
     ! w[iw]=w[iw]+qdt*S[wCT,x] where S is the source based on wCT within ixO
       double precision, intent(in) :: qdt, wCT(nw_phys), wCTprim(nw_phys)
@@ -528,8 +532,8 @@ module mod_radiative_cooling
       type(rc_fluid), intent(in) :: fl
       double precision :: etherm, rho, emin, Rfactor
 
-      etherm = get_pthermal(wCT,x)  
-      rho = get_rho(wCT,x)  
+      etherm = get_pthermal(wCT,x)
+      rho = get_rho(wCT,x)
       Rfactor = get_Rfactor()
       emin = rho*fl%tlow*Rfactor
       if(etherm < emin) then
@@ -607,7 +611,7 @@ module mod_radiative_cooling
     end subroutine calc_l_extended
 
     subroutine findL (tpoint,Lpoint,fl)
-    !  Fast search option to find correct point 
+    !  Fast search option to find correct point
     !  in cooling curve
       !$acc routine seq
 
@@ -647,7 +651,7 @@ module mod_radiative_cooling
     end subroutine findY
 
     subroutine findT (tpoint,Ypoint,fl)
-    !  Fast search option to find correct temperature 
+    !  Fast search option to find correct temperature
     !  from temporal evolution function. Only possible this way because T is a monotonously
     !  decreasing function for the interpolated tables
     !  Uses eq. A7 from Townsend 2009 for piecewise power laws
@@ -690,7 +694,7 @@ module mod_radiative_cooling
       ! for usage in eg. source_terms subroutine.
       ! The TEF must be known, so this routine can only be used
       ! together with the "exact" cooling method.
-  
+
       use mod_global_parameters
       double precision, intent(in)    :: qdt, wCT(nw_phys), w(nw_phys), x(1:ndim)
       double precision, intent(inout) :: coolrate
@@ -745,7 +749,7 @@ module mod_radiative_cooling
       end if
       coolrate = de/qdt
       end subroutine getvar_cooling_exact
-    
+
 #:endif
 
 end module mod_radiative_cooling

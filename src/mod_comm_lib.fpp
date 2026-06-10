@@ -27,6 +27,7 @@ contains
     call MPI_COMM_SIZE(MPI_COMM_WORLD,npe,ierrmpi)
 
     !$acc update device(mype,npe)
+    !$omp target update to(mype,npe)
 
     ! Use the default communicator, which contains all the processes
     icomm = MPI_COMM_WORLD
@@ -226,17 +227,18 @@ contains
   !> Exit MPI-AMRVAC with an error message
   ! cray does not allow char type on the GPU
   subroutine mpistop(message)
+    use mod_global_parameters
 #ifndef _CRAYFTN
     !$acc routine
+    !$omp declare target
 #endif
-    use mod_global_parameters
 
     character(len=*), intent(in) :: message !< The error message
     integer                      :: ierrcode
 
     write(*, *) "ERROR for processor", mype, ":"
 
-#ifdef _OPENACC
+#if defined(_OPENACC) || defined(_OPENMP)
     write(*, *) message
     STOP
 #else
@@ -247,8 +249,9 @@ contains
   end subroutine mpistop
 
   subroutine mpistop_gpu()
-    !$acc routine seq
     use mod_global_parameters
+    !$acc routine seq
+    !$omp declare target
 
     integer                      :: ierrcode
 

@@ -118,12 +118,13 @@ end subroutine finite_volume_local
 
     ! batch-launch the kernels (oom issue when many ~30000 blocks):
     nbatches = (igridstail_active + max_batch - 1) / max_batch ! ceiling division
-    
+
     do ibatch = 1, nbatches
        igrid_beg = (ibatch-1) * max_batch + 1
        igrid_end = min(ibatch * max_batch, igridstail_active)
 
        !$acc parallel loop gang private(uprim, inv_dr, dr, n) default(present)
+       !$omp target teams loop private(uprim, inv_dr, dr, n)
        do iigrid = igrid_beg, igrid_end
           n = igrids_active(iigrid)
 
@@ -132,9 +133,10 @@ end subroutine finite_volume_local
           typelim = type_limiter(node(plevel_, n))
 
           !$acc loop collapse(ndim) vector
-          do ix3=ixImin3,ixImax3 
-             do ix2=ixImin2,ixImax2 
-                do ix1=ixImin1,ixImax1 
+          !$omp loop collapse(ndim)
+          do ix3=ixImin3,ixImax3
+             do ix2=ixImin2,ixImax2
+                do ix1=ixImin1,ixImax1
                    ! Convert to primitive
                    uprim(1:nw_phys, ix1,ix2,ix3) = bga%w(ix1,ix2,ix3, 1:nw_phys, n)
                    call to_primitive(uprim(1:nw_phys, ix1,ix2,ix3))
@@ -143,9 +145,10 @@ end subroutine finite_volume_local
           end do
 
        !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
-       do ix3=ixOmin3,ixOmax3 
-          do ix2=ixOmin2,ixOmax2 
-             do ix1=ixOmin1,ixOmax1 
+       !$omp loop collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
+       do ix3=ixOmin3,ixOmax3
+          do ix2=ixOmin2,ixOmax2
+             do ix1=ixOmin1,ixOmax1
                 ! Compute fluxes in all dimensions
 
                 tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
@@ -185,7 +188,7 @@ end subroutine finite_volume_local
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, wCT,&
                         wprim, qt, wnew, xloc, dr, .false. )
                    bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
-#:endif             
+#:endif
 
 #:if defined('SOURCE_NONLOCAL')
                    ! Add non-local (gradient) source terms:
@@ -207,8 +210,8 @@ end subroutine finite_volume_local
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp,&
                         qt, wnew, xloc, dr, 3, .false. )
 
-                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)           
-#:endif                
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
+#:endif
 
 #:if defined('SOURCE_COMPACT')
                    ! Add non-local compact source terms:
@@ -220,8 +223,8 @@ end subroutine finite_volume_local
                    call addsource_compact(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp1,tmp2,tmp3, &
                         qt, wnew, xloc, dr, .false. )
-                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)           
-#:endif                
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
+#:endif
                 end do
              end do
           end do
@@ -241,8 +244,9 @@ end subroutine finite_volume_local
   !> MUSCL reconstruction in primitive variables for two faces using a 5-point stencil.
   !> Returns uL(:,iface), uR(:,iface) for iface=1 (between cells 2-3) and iface=2 (between 3-4).
   pure subroutine muscl_reconstruct_prim(u, typelim, uL, uR)
-    !$acc routine seq
     use mod_limiter, only: limiter_minmod, limiter_vanleer
+    !$acc routine seq
+    !$omp declare target
     real(dp), intent(in)  :: u(nw_phys,5)
     integer,  intent(in)  :: typelim
     real(dp), intent(out) :: uL(nw_phys,2), uR(nw_phys,2)
@@ -284,6 +288,7 @@ end subroutine finite_volume_local
   !> One-face LLF/Rusanov numerical flux from primitive L/R states.
   subroutine riemann_llf_prim(uL, uR, xC, flux_dim, F)
     !$acc routine seq
+    !$omp declare target
     real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
     real(dp), intent(in)    :: xC(ndim)
     integer,  intent(in)    :: flux_dim
@@ -309,6 +314,7 @@ end subroutine finite_volume_local
   !> One-face HLL numerical flux from primitive L/R states.
   subroutine riemann_hll_prim(uL, uR, xC, flux_dim, F)
     !$acc routine seq
+    !$omp declare target
     real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
     real(dp), intent(in)    :: xC(ndim)
     integer,  intent(in)    :: flux_dim
@@ -347,6 +353,7 @@ end subroutine finite_volume_local
   !> Reference: Toro (2010), chapter 10 (Variant 2)
   subroutine riemann_hllc_prim(uL, uR, xC, flux_dim, F)
     !$acc routine seq
+    !$omp declare target
     real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
     real(dp), intent(in)    :: xC(ndim)
     integer,  intent(in)    :: flux_dim
@@ -431,6 +438,7 @@ end subroutine finite_volume_local
   !> Uses estimated left/right signal speeds (Davis (1988)) for less diffusion than LLF, no contact resolution.
   subroutine reconflux_muscl_hll_prim(u, xlocC, flux_dim, flux, typelim)
     !$acc routine seq
+    !$omp declare target
     real(dp), intent(in)  :: u(nw_phys, 5)
     real(dp), intent(in)  :: xlocC(1:ndim, 2)
     integer, intent(in)   :: flux_dim, typelim
@@ -451,6 +459,7 @@ end subroutine finite_volume_local
   !> Robust and diffusive; uses local max wavespeed for upwinding.
   subroutine reconflux_muscl_llf_prim(u, xlocC, flux_dim, flux, typelim)
     !$acc routine seq
+    !$omp declare target
     real(dp), intent(in)  :: u(nw_phys, 5)
     real(dp), intent(in)  :: xlocC(1:ndim, 2)
     integer, intent(in)   :: flux_dim, typelim
@@ -465,13 +474,14 @@ end subroutine finite_volume_local
       call riemann_llf_prim(uL(:,iface), uR(:,iface), xlocC(:,iface), flux_dim, flux(:,iface))
     end do
 
-  end subroutine reconflux_muscl_llf_prim  
+  end subroutine reconflux_muscl_llf_prim
 
 
   !> MUSCL (primitive-variable) reconstruction with slope limiter; HLLC approximate Riemann flux at faces.
   !> Restores the contact wave (and shear in Euler/HD), typically sharper than HLL for similar cost.
   subroutine reconflux_muscl_hllc_prim(u, xlocC, flux_dim, flux, typelim)
     !$acc routine seq
+    !$omp declare target
     real(dp), intent(in)  :: u(nw_phys, 5)
     real(dp), intent(in)  :: xlocC(1:ndim, 2)
     integer, intent(in)   :: flux_dim, typelim
@@ -489,6 +499,7 @@ end subroutine finite_volume_local
 
   pure real(dp) function vanleer(a, b) result(phi)
     !$acc routine seq
+    !$omp declare target
     real(dp), intent(in) :: a, b
     real(dp)             :: ab
 
@@ -502,6 +513,7 @@ end subroutine finite_volume_local
 
   pure real(dp) function minmod(a, b)
     !$acc routine seq
+    !$omp declare target
     real(dp), intent(in) :: a, b
 
     if (a * b <= 0) then

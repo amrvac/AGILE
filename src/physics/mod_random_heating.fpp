@@ -20,6 +20,7 @@ module mod_random_heating
   double precision, allocatable :: va1(:), va2(:), va3(:)
   double precision, allocatable :: dtimearr(:),timearray(:)
   !$acc declare create(va1,va2,va3,dtimearr,timearray)
+  !$omp declare target(va1,va2,va3,dtimearr,timearray)
 
   double precision :: periods=300.d0
   double precision :: variation=75.d0
@@ -34,6 +35,8 @@ module mod_random_heating
   double precision :: tramp=5.d0
   !$acc declare create(vlim1,vlim2,vlim3)
   !$acc declare create(trelax,tramp,ntimes)
+  !$omp declare target(vlim1,vlim2,vlim3)
+  !$omp declare target(trelax,tramp,ntimes)
 
 
   contains
@@ -60,12 +63,14 @@ module mod_random_heating
 
     call rh_read_params(par_files)
     !$acc update device(trelax,tramp,ntimes,vlim1,vlim2,vlim3)
+    !$omp target update to(trelax,tramp,ntimes,vlim1,vlim2,vlim3)
 
   end subroutine rh_init
 
   subroutine rh_source(qt,lQgrid,x)
-    !$acc routine seq
     use mod_global_parameters
+    !$acc routine seq
+    !$omp declare target
 
     double precision, intent(in)    :: qt
     double precision, intent(inout) :: lQgrid
@@ -77,7 +82,7 @@ module mod_random_heating
     integer                         :: iip1,iip2,iip3,i
 
     tshift = qt - trelax
-    
+
     if(qt .lt. trelax) then
       tr=zero
       lQgrid=zero
@@ -116,45 +121,46 @@ module mod_random_heating
                         +tl3 * pulse3 +  tl4 *pulse4  &
                         +tl5 * pulse5 +  tl6 *pulse6
           exit
-      endif 
-    enddo 
+      endif
+    enddo
 
     lQgrid=tr*lQgrid
-  
+
   end subroutine rh_source
 
   subroutine generateTV()
 
     integer                      :: i,vx1,vx2,vx3,j
-    ! generate random T, typically 300s +/- 75s   
+    ! generate random T, typically 300s +/- 75s
     call rh_init()
 
-    allocate(dtimearr(ntimes))  
-    allocate(timearray(ntimes)) 
+    allocate(dtimearr(ntimes))
+    allocate(timearray(ntimes))
 
-    if (mype==0) then 
-      call randomT(timearray)  
+    if (mype==0) then
+      call randomT(timearray)
       dtimearr = timearray
       do i = 2, ntimes
         dtimearr(i) = timearray(i) - timearray(i-1)
       enddo
-    endif   
+    endif
     call MPI_BARRIER(icomm,ierrmpi)
     if (npe>1) then
       call MPI_BCAST(timearray,ntimes,MPI_DOUBLE_PRECISION,0,icomm,ierrmpi)
       call MPI_BCAST(dtimearr,ntimes,MPI_DOUBLE_PRECISION,0,icomm,ierrmpi)
     endif
     !$acc update device(timearray,dtimearr)
+    !$omp target update to(timearray,dtimearr)
 
     ! spatial distribution
-  
+
     vx1=ntimes*vlim1
     vx2=ntimes*vlim2
     vx3=ntimes*vlim3
     allocate(va1(vx1))
     allocate(va2(vx2))
     allocate(va3(vx3))
-    if (mype==0) then 
+    if (mype==0) then
        call randomV(1,va1)
        call randomV(2,va2)
        call randomV(3,va3)
@@ -164,8 +170,9 @@ module mod_random_heating
       call MPI_BCAST(va1,vx1,MPI_DOUBLE_PRECISION,0,icomm,ierrmpi)
       call MPI_BCAST(va2,vx2,MPI_DOUBLE_PRECISION,0,icomm,ierrmpi)
       call MPI_BCAST(va3,vx3,MPI_DOUBLE_PRECISION,0,icomm,ierrmpi)
-    endif 
+    endif
     !$acc update device(va1,va2,va3)
+    !$omp target update to(va1,va2,va3)
 
   contains
 
@@ -178,17 +185,17 @@ module mod_random_heating
 
         tt = 0.d0
         do i = 1, ntimes
-        call random_number(mm)  
+        call random_number(mm)
         tt1 = periods + variation * 2. * (mm - 0.5)
         tt = tt + tt1
         tb(i) = tt / unit_time
         end do
-    
+
         write(filename,"(a)") "randomtimes.dat"
         open(unit=21,file=filename,form='formatted',status='replace')
         write(21,'(es12.4)') tb
         close(21)
-        
+
     end subroutine randomT
 
     subroutine randomV(ival,va)
@@ -201,7 +208,7 @@ module mod_random_heating
         double precision, allocatable   :: vn(:,:),vm(:)
         double precision                :: lambda,ampl,lambda_min,lambda_max,rms,phase
         integer                         :: i, j, kk, vlim
-    
+
         select case (ival)
         case (1)
             vlim = vlim1
@@ -211,34 +218,34 @@ module mod_random_heating
             vlim = vlim3
         end select
 
-        allocate(vn(nwaves, vlim)) 
+        allocate(vn(nwaves, vlim))
         allocate(vm(vlim))
         lambda_min = 1.d0/dble(vlim)
         lambda_max = 1.d0
         do kk = 1, ntimes
             do i = 1, nwaves
             lambda = (dble(i-1)/dble(nwaves-1))*(lambda_max-lambda_min)+lambda_min
-            ampl = lambda**si 
-            call random_number(phase)        
+            ampl = lambda**si
+            call random_number(phase)
             ! phase to vary between -2pi-->+2pi
             phase=4.0d0*dpi*(phase-0.5d0)
-            do j = 1, vlim  
+            do j = 1, vlim
                 vn(i,j) = ampl*dsin(2.d0*dpi*(dble(j-1)/dble(vlim-1))/lambda+phase)
             end do
-            end do     
+            end do
             rms = 0.d0
-            vm = 0.d0    
-            do j = 1, vlim  
+            vm = 0.d0
+            do j = 1, vlim
             ! sum all the waves in grid point j
             do i = 1, nwaves
-                vm(j) = vm(j) + vn(i, j) 
+                vm(j) = vm(j) + vn(i, j)
             end do
             rms = rms + vm(j)**2
-            end do         
-            vm = vm / dsqrt(rms/vlim)    ! normalization        
+            end do
+            vm = vm / dsqrt(rms/vlim)    ! normalization
             do j = 1, vlim
             va(vlim*(kk-1)+j) = vm(j)**2
-            end do       
+            end do
         end do
 
         write(xdirection,'(I2.2)') ival

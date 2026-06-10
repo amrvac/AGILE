@@ -17,6 +17,7 @@ module mod_load_balance
   double precision, allocatable, dimension(:,:,:,:,:)  :: snd_buff_lb, rcv_buff_lb
   integer, allocatable, dimension(:)  :: rcv_info_lb
   !$acc declare create(snd_buff_lb,rcv_buff_lb,rcv_info_lb)
+  !$omp declare target(snd_buff_lb,rcv_buff_lb,rcv_info_lb)
   !> maximum number of blocks to send
   integer, parameter :: max_buff=1024
 
@@ -68,6 +69,7 @@ contains
             rcv_buff_lb(block_nx1, block_nx2, block_nx3, nw, max_buff), &
             rcv_info_lb(max_buff) )
        !$acc update device(snd_buff_lb, rcv_buff_lb, rcv_info_lb)
+       !$omp target update to(snd_buff_lb, rcv_buff_lb, rcv_info_lb)
     end if
 
     do ipe=0,npe-1; do Morton_no=Morton_start(ipe),Morton_stop(ipe)
@@ -109,12 +111,16 @@ contains
     ! unpack the receive buffers on GPU
 #ifdef NOGPUDIRECT
    !$acc update device(rcv_buff_lb(:,:,:,:,1:irecv))
+   !$omp target update to(rcv_buff_lb(:,:,:,:,1:irecv))
 #endif
     !$acc update device(rcv_info_lb(1:irecv))
     !$acc parallel loop gang
+    !$omp target update to(rcv_info_lb(1:irecv))
+    !$omp target teams loop
     do ibuff = 1, irecv
        recv_igrid = rcv_info_lb(ibuff)
        !$acc loop collapse(4) vector
+       !$omp loop collapse(4)
        do iw = 1, nw
           do ix3 = 1, block_nx3
              do ix2 = 1, block_nx2
@@ -164,6 +170,7 @@ contains
     end if
 #ifndef NOGPUDIRECT
     !$acc host_data use_device(rcv_buff_lb)
+    !$omp target data use_device_addr(rcv_buff_lb)
 #endif
     call mpi_irecv_wrapper(rcv_buff_lb(:,:,:,:,irecv), &
                    block_nx1*block_nx2*block_nx3*nw, MPI_DOUBLE_PRECISION, &
@@ -171,6 +178,7 @@ contains
           recvrequest(irecv),ierrmpi)
 #ifndef NOGPUDIRECT
     !$acc end host_data
+    !$omp end target data
 #endif
     rcv_info_lb(irecv) = recv_igrid
     if(stagger_grid) then
@@ -192,8 +200,10 @@ contains
        call mpistop('load_balance: max_buff too small in send')
     end if
     !$acc parallel loop gang default(present)
+    !$omp target teams loop
     do iw = 1, nw
        !$acc loop collapse(3) vector
+       !$omp loop collapse(3)
        do ix3 = 1, block_nx3
           do ix2 = 1, block_nx2
              do ix1 = 1, block_nx1
@@ -206,14 +216,17 @@ contains
 
 #ifndef NOGPUDIRECT
     !$acc host_data use_device(snd_buff_lb)
+    !$omp target data use_device_addr(snd_buff_lb)
 #else
     !$acc update host(snd_buff_lb(:,:,:,:,isend))
+    !$omp target update from(snd_buff_lb(:,:,:,:,isend))
 #endif
     call mpi_isend_wrapper(snd_buff_lb(:,:,:,:,isend), &
                    block_nx1*block_nx2*block_nx3*nw, MPI_DOUBLE_PRECISION, &
           recv_ipe,itag, icomm, sendrequest(isend),ierrmpi)
 #ifndef NOGPUDIRECT
     !$acc end host_data
+    !$omp end target data
 #endif
     if(stagger_grid) then
        itag=recv_igrid+max_blocks

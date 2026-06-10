@@ -65,7 +65,7 @@ module mod_physicaldata
      integer :: igrid=-1
      !> Variables, normally center
      double precision, dimension(:,:,:), allocatable :: w
-     !> Variables for the cornerpositions on the slice 
+     !> Variables for the cornerpositions on the slice
      double precision, dimension(:,:,:), allocatable :: wC
      !> Variables, normally center, one level coarser representative
      double precision, dimension(:,:,:), allocatable :: wcoarse
@@ -85,7 +85,7 @@ module mod_physicaldata
      double precision, dimension(:,:), allocatable :: dvolume
      !> Volumes of a cell, one level coarser representative
      double precision, dimension(:,:), allocatable :: dvolumecoarse
-     !> Areas of cell-center surfaces 
+     !> Areas of cell-center surfaces
      double precision, dimension(:,:,:), allocatable :: surface
      !> Areas of cell-face surfaces
      double precision, dimension(:,:,:), allocatable :: surfaceC
@@ -114,10 +114,12 @@ module mod_physicaldata
   !> array of physical blocks, one level coarser representative
   type(state), dimension(:), allocatable, target :: psc
   !$acc declare create(ps, ps1, ps2, ps3, ps4, psc)
+  !$omp declare target(ps, ps1, ps2, ps3, ps4, psc)
 
   !> one block grid to rule them all
   type(block_grid_t), dimension(:), allocatable, target   :: bg, bgc
   !$acc declare create(bg, bgc)
+  !$omp declare target(bg, bgc)
 
   !> array of physical blocks in reduced dimension
   type(state_sub), dimension(:), allocatable, target :: ps_sub

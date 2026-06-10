@@ -1,13 +1,14 @@
 ! Dummy routines which can be overwritten by a physics-dependent implementation
 ! On non-Cray compilers, these call mpistop with a descriptive message.
-! On Cray, STOP cannot be inlined into OpenACC kernels, so dummies just return -1. 
+! On Cray, STOP cannot be inlined into OpenACC kernels, so dummies just return -1.
 
 #:def estimate_speeds_minmax()
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
-  !$acc routine seq
 #ifndef _CRAYFTN
   use mod_comm_lib, only: mpistop
 #endif
+  !$acc routine seq
+  !$omp declare target
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
@@ -25,10 +26,11 @@ end subroutine estimate_speeds_minmax
 
 #:def estimate_speeds_toro_pvrs()
 subroutine estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
-  !$acc routine seq
 #ifndef _CRAYFTN
   use mod_comm_lib, only: mpistop
 #endif
+  !$acc routine seq
+  !$omp declare target
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer,  intent(in)  :: flux_dim
@@ -48,6 +50,7 @@ end subroutine estimate_speeds_toro_pvrs
 subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir, &
      qsourcesplit)
   !$acc routine seq
+  !$omp declare target
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim(nw_phys,5)
@@ -64,6 +67,7 @@ end subroutine addsource_nonlocal
 subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, x, dx, &
      qsourcesplit)
   !$acc routine seq
+  !$omp declare target
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim1(nw_phys,3),wCTprim2(nw_phys,3),wCTprim3(nw_phys,3)

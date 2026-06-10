@@ -43,7 +43,7 @@ module mod_forest
    integer, dimension(:,:), allocatable, save :: sfc
 
    !> Space filling curve for level 1 grid. sfc_iglevel1(^D, MN) gives ig^D (the
-   !> spatial index of the grid) 
+   !> spatial index of the grid)
    integer, dimension(:,:), allocatable, save :: sfc_iglevel1
 
    !> iglevel1_sfc(ig^D) gives the Morton number for grid ig^D
@@ -67,10 +67,11 @@ module mod_forest
    integer, dimension(:), allocatable, save :: Morton_sub_start,&
        Morton_sub_stop
 
-   !> AMR flags and grids-in-use identifier per processor (igrid,ipe) 
+   !> AMR flags and grids-in-use identifier per processor (igrid,ipe)
    logical, dimension(:,:), allocatable, save :: coarsen, refine, buffer,&
         igrid_inuse
    !$acc declare create(coarsen, refine, buffer, igrid_inuse)
+   !$omp declare target(coarsen, refine, buffer, igrid_inuse)
 
    !> Number of parent blocks
    integer, save :: nparents

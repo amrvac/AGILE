@@ -571,6 +571,7 @@ contains
        enddo
     enddo
     !$acc update device(kr,lvc)
+    !$omp target update to(kr,lvc)
 
     ! These are used to construct file and log names from multiple par files
     basename_full = ''
@@ -643,7 +644,7 @@ contains
 
     base_filename = basename_full
 
-    
+
     ! Check whether output directory is writable
     if(mype==0) then
       dummy_file = trim(base_filename)//"DUMMY"
@@ -1582,6 +1583,7 @@ contains
       nghostcells=nghostcells+1
    end if
    !$acc update device(nghostcells)
+   !$omp target update to(nghostcells)
 
       select case (coordinate)
 
@@ -2042,6 +2044,17 @@ contains
     !$acc update device(refine_threshold, derefine_ratio)
     !$acc update device(block_nx1, block_nx2, block_nx3)
     !$acc update device(courantpar, dtdiffpar)
+    !$omp target update to(ixGhi1,ixGhi2,ixGhi3,ixGshi1,ixGshi2,ixGshi3,schmid_rad1,schmid_rad2,schmid_rad3,cada3_radius)
+    !$omp target update to(fix_small_values,H_correction,type_limiter, max_blocks)
+    !$omp target update to(rk_beta11,rk_beta22,rk_beta33,rk_beta44,rk_c2,rk_c3,rk_c4)
+    !$omp target update to(rk_alfa21,rk_alfa22,rk_alfa31,rk_alfa33,rk_alfa41,rk_alfa44)
+    !$omp target update to(rk_beta54,rk_beta55,rk_alfa53,rk_alfa54,rk_alfa55,rk_c5)
+    !$omp target update to(typeboundary, specialboundary, refine_max_level)
+    !$omp target update to(slab, slab_uniform)
+    !$omp target update to(w_refine_weight, amr_wavefilter)
+    !$omp target update to(refine_threshold, derefine_ratio)
+    !$omp target update to(block_nx1, block_nx2, block_nx3)
+    !$omp target update to(courantpar, dtdiffpar)
 
   end subroutine read_par_files
 
@@ -2114,6 +2127,7 @@ contains
 
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        !$acc update host(ps(igrid)%w)
+       !$omp target update from(ps(igrid)%w)
     end do
 
     select case (ifile)
@@ -2743,6 +2757,7 @@ contains
                  1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
             end if
             !$acc update device(bg(1)%w(:,:,:,:,igrid))
+            !$omp target update to(bg(1)%w(:,:,:,:,igrid))
           else
             call mpi_send_wrapper([ ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,&
                 n_values ], 2*ndim+1, MPI_INTEGER, ipe, itag, icomm, ierrmpi)
@@ -2821,6 +2836,7 @@ contains
              1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
         end if
         !$acc update device(bg(1)%w(:,:,:,:,igrid))
+        !$omp target update to(bg(1)%w(:,:,:,:,igrid))
       end do
     end if
 

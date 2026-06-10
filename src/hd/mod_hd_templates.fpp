@@ -1,5 +1,5 @@
 #:if PHYS == 'hd'
- 
+
 #:if defined('N_TRACER')
 #:set N_TRACER_ = N_TRACER
 #:else
@@ -15,64 +15,79 @@
   !> Whether an energy equation is used
   logical, public                         :: hd_energy = .true.
   !$acc declare copyin(hd_energy)
+  !$omp declare target(hd_energy)
 
   !> Index of the density (in the w array)
   integer, public                         :: rho_
   !$acc declare create(rho_)
+  !$omp declare target(rho_)
 
   !> Indices of the momentum density
   integer, allocatable, public            :: mom(:)
   !$acc declare create(mom)
+  !$omp declare target(mom)
 
 #:if defined('N_TRACER')
   !> Indices of the tracers
   integer, public                         :: tracer(${N_TRACER_}$)
   !$acc declare create(tracer)
+  !$omp declare target(tracer)
 #:endif
 
   !> Index of the energy density (-1 if not present)
   integer, public                         :: e_
   !$acc declare create(e_)
+  !$omp declare target(e_)
 
   !> Index of the gas pressure (-1 if not present) should equal e_
   integer, public                         :: p_
   !$acc declare create(p_)
+  !$omp declare target(p_)
 
   !> The adiabatic index
   double precision, public                :: hd_gamma = 5.d0/3.0d0
   !$acc declare copyin(hd_gamma)
+  !$omp declare target(hd_gamma)
 
   !> The adiabatic constant
   double precision, public                :: hd_adiab = 1.0d0
   !$acc declare copyin(hd_adiab)
+  !$omp declare target(hd_adiab)
 
   !> The helium abundance
   double precision, public                :: He_abundance=0.1d0
   !$acc declare copyin(He_abundance)
+  !$omp declare target(He_abundance)
 
   !> Number of tracer species
   integer, public                         :: hd_n_tracer = 0
   !$acc declare copyin(hd_n_tracer)
+  !$omp declare target(hd_n_tracer)
 
   !> Whether plasma is partially ionized
   logical, public                         :: hd_partial_ionization = .false.
   !$acc declare copyin(hd_partial_ionization)
-  
+  !$omp declare target(hd_partial_ionization)
+
   !> Whether to use gravity
   logical, public                         :: hd_gravity = .false.
   !$acc declare copyin(hd_gravity)
+  !$omp declare target(hd_gravity)
 
   !> switch for radiative cooling
   logical, public                         :: hd_radiative_cooling = .false.
   !$acc declare copyin(hd_radiative_cooling)
+  !$omp declare target(hd_radiative_cooling)
 
   !> Allows overruling default corner filling (for debug mode, since otherwise corner primitives fail)
   logical, public                         :: hd_force_diagonal = .true.
   !$acc declare copyin(hd_force_diagonal)
+  !$omp declare target(hd_force_diagonal)
 
   !> Whether particles module is added
   logical, public                         :: hd_particles = .false.
   !$acc declare copyin(hd_particles)
+  !$omp declare target(hd_particles)
 
 #:enddef
 
@@ -97,11 +112,16 @@
     !$acc&     hd_partial_ionization, hd_force_diagonal, hd_particles, &
     !$acc&     hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance)
 #endif
+#ifdef _OPENMP
+    !$omp target update to(hd_energy, hd_gamma, hd_adiab, &
+    !$omp&     hd_partial_ionization, hd_force_diagonal, hd_particles, &
+    !$omp&     hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance)
+#endif
 
   end subroutine read_params
 #:enddef
 
-#:def phys_activate() 
+#:def phys_activate()
   subroutine phys_activate()
     call phys_init()
   end subroutine phys_activate
@@ -186,9 +206,10 @@
     unit_mass=unit_density*unit_length**3
 
     !$acc update device(unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass)
+    !$omp target update to(unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass)
   end subroutine phys_units
 #:enddef
-  
+
 #:def phys_init()
     !> Initialize the module
   subroutine phys_init()
@@ -206,17 +227,20 @@
     phys_internal_e = .false.
     phys_gamma = hd_gamma
     phys_partial_ionization=hd_partial_ionization
- !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization)
+    !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization)
+    !$omp target update to(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization)
 
     use_particles = hd_particles
 
     ! Determine flux variables
     rho_ = var_set_rho()
     !$acc update device(rho_)
+    !$omp target update to(rho_)
 
     allocate(mom(ndir))
     mom(:) = var_set_momentum(ndir)
     !$acc update device(mom)
+    !$omp target update to(mom)
 
     ! Set index of energy variable
     if (hd_energy) then
@@ -227,6 +251,7 @@
        p_ = -1
     end if
     !$acc update device(e_,p_)
+    !$omp target update to(e_,p_)
 
     ! Whether diagonal ghost cells are required for the physics
     phys_req_diagonal = .false.
@@ -242,13 +267,15 @@
         tracer(${i}$) = var_set_fluxvar("trc", "trp", ${i}$, need_bc=.false.)
     #:endfor
     !$acc update device(tracer)
+    !$omp target update to(tracer)
 #:endif
 
     ! set number of variables which need update ghostcells
     nwgc=nwflux
     !$acc update device(nwgc)
+    !$omp target update to(nwgc)
 
-! use cycle, needs to be dealt with:    
+! use cycle, needs to be dealt with:
 !    ! Initialize particles module
 !    if (hd_particles) then
 !       call particles_init()
@@ -260,12 +287,16 @@
     iw_vector(1) = mom(1) - 1
     !$acc update device(nvector, iw_vector)
     !$acc update device(phys_req_diagonal)
+    !$omp target update to(nvector, iw_vector)
+    !$omp target update to(phys_req_diagonal)
 
 #:if defined('COOLING')
     call radiative_cooling_init_params(phys_gamma,He_abundance)
     call radiative_cooling_init(rc_fl)
     !$acc update device(rc_fl)
     !$acc enter data copyin(rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc)
+    !$omp target update to(rc_fl)
+    !$omp target enter data map(to:rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc)
 #:endif
 
   end subroutine phys_init
@@ -273,10 +304,11 @@
 
 #:def phys_get_dt()
   subroutine phys_get_dt(w, x, dx, dtnew)
-  !$acc routine seq
 #:if defined('GRAVITY')
   use mod_usr, only: gravity_field
-#:endif    
+#:endif
+  !$acc routine seq
+  !$omp declare target
     real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
     real(dp), intent(out)  :: dtnew
     ! .. local ..
@@ -284,28 +316,29 @@
     real(dp)               :: field
 
     dtnew = huge(1.0d0)
-    
+
 #:if defined('GRAVITY')
     do idim = 1, ndim
        field = gravity_field(w, x, idim)
        field = max( abs(field), epsilon(1.0d0) )
        dtnew = min( dtnew, 1_dp / sqrt( field/dx(idim) ) )
     end do
-#:endif    
-    
+#:endif
+
   end subroutine phys_get_dt
-#:enddef  
+#:enddef
 
 #:def addsource_local()
 subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
     qsourcesplit)
-  !$acc routine seq
 #:if defined('GRAVITY')
   use mod_usr, only: gravity_field
-#:endif    
+#:endif
 #:if defined('COOLING')
   use mod_radiative_cooling, only: rc_fl, radiative_cooling_add_source
 #:endif
+  !$acc routine seq
+  !$omp declare target
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCT(nw_phys), wCTprim(nw_phys)
@@ -316,7 +349,7 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
   integer                  :: idim
   real(dp)                 :: field
 
-  if (.not. qsourcesplit) then 
+  if (.not. qsourcesplit) then
      !---------------------------------
      ! unsplit sources
      !---------------------------------
@@ -327,7 +360,7 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
         wnew(iw_mom(idim)) = wnew(iw_mom(idim)) + qdt * field * wCT(iw_rho)
         wnew(iw_e)         = wnew(iw_e) + qdt * field * wCT(iw_mom(idim))
      end do
-#:endif  
+#:endif
 
 #:if defined('COOLING')
      call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
@@ -335,7 +368,7 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 
   else
      !---------------------------------
-     ! split sources     
+     ! split sources
      !---------------------------------
 
      ! Not yet implemented
@@ -348,6 +381,7 @@ end subroutine addsource_local
 #:def to_primitive()
 pure subroutine to_primitive(u)
   !$acc routine seq
+  !$omp declare target
   real(dp), intent(inout) :: u(nw_phys)
 
   ! Compute velocity from momentum
@@ -362,9 +396,10 @@ pure subroutine to_primitive(u)
 end subroutine to_primitive
 #:enddef
 
-#:def to_conservative()  
+#:def to_conservative()
 pure subroutine to_conservative(u)
   !$acc routine seq
+  !$omp declare target
   real(dp), intent(inout) :: u(nw_phys)
   real(dp)                :: inv_gamma_m1
 
@@ -385,6 +420,7 @@ end subroutine to_conservative
 #:def get_flux()
 subroutine get_flux(u, xC, flux_dim, flux)
   !$acc routine seq
+  !$omp declare target
   real(dp), intent(in)  :: u(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
@@ -397,11 +433,11 @@ subroutine get_flux(u, xC, flux_dim, flux)
   flux(iw_rho) = u(iw_rho) * u(iw_mom(flux_dim))
 
   ! Momentum flux with pressure term
-  
+
        flux(iw_mom(1)) = u(iw_rho) * u(iw_mom(1)) * u(iw_mom(flux_dim))
        flux(iw_mom(2)) = u(iw_rho) * u(iw_mom(2)) * u(iw_mom(flux_dim))
        flux(iw_mom(3)) = u(iw_rho) * u(iw_mom(3)) * u(iw_mom(flux_dim))
-  
+
   flux(iw_mom(flux_dim)) = flux(iw_mom(flux_dim)) + u(iw_e)
 
   ! Energy flux
@@ -418,9 +454,10 @@ subroutine get_flux(u, xC, flux_dim, flux)
 end subroutine get_flux
 #:enddef
 
-#:def get_cmax()  
+#:def get_cmax()
 pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
   !$acc routine seq
+  !$omp declare target
   real(dp), intent(in)  :: u(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
   integer, intent(in)   :: flux_dim
@@ -428,14 +465,15 @@ pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
   wC = sqrt(hd_gamma * u(iw_e) / u(iw_rho)) + abs(u(iw_mom(flux_dim)))
 
 end function get_cmax
-#:enddef  
+#:enddef
 
 
 #:def estimate_speeds_minmax()
-!> Wave speed estimates: min/max acoustic bounds (Davis 1988) 
+!> Wave speed estimates: min/max acoustic bounds (Davis 1988)
 !> Reference: Toro 2010, Chapter 10.
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   !$acc routine seq
+  !$omp declare target
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
@@ -458,6 +496,7 @@ end subroutine estimate_speeds_minmax
 !> Implements Eq. (10.67)-(10.69)
 subroutine estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
   !$acc routine seq
+  !$omp declare target
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer,  intent(in)  :: flux_dim
@@ -509,6 +548,7 @@ end subroutine estimate_speeds_toro_pvrs
 #:def get_rho()
   pure real(dp) function get_rho(w, x) result(rho)
     !$acc routine seq
+    !$omp declare target
     real(dp), intent(in)  :: w(nw_phys)
     real(dp), intent(in)  :: x(1:ndim)
 
@@ -519,6 +559,7 @@ end subroutine estimate_speeds_toro_pvrs
 #:def get_pthermal()
 pure double precision function get_pthermal(w, x) result(pth)
   !$acc routine seq
+  !$omp declare target
   double precision, intent(in)  :: w(nw_flux)
   double precision, intent(in)  :: x(1:ndim)
 
@@ -529,6 +570,7 @@ end function get_pthermal
 #:def get_Rfactor()
 pure double precision function get_Rfactor() result(Rfactor)
   !$acc routine seq
+  !$omp declare target
   Rfactor = 1.0d0
 end function get_Rfactor
 #:enddef

@@ -9,7 +9,7 @@ module mod_source
   use mod_variables
   use mod_physics_vars
   use mod_global_parameters, only: ndim
-  
+
   implicit none
   public
 
@@ -18,6 +18,7 @@ module mod_source
   !> defaulting to sfs
   integer :: sourcesplit = 0
   !$acc declare copyin(sourcesplit)
+  !$omp declare target(sourcesplit)
   integer, parameter :: sourcesplit_sfs    = 0
   integer, parameter :: sourcesplit_sf     = 1
   integer, parameter :: sourcesplit_ssf    = 2
@@ -47,9 +48,9 @@ contains
     integer                :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     real(dp)               :: wprim(nw_phys), wnew(nw_phys), wCT(nw_phys)
     logical                :: src_active
-    
+
     src_active = .false.
-    
+
     if ((.not.prior).and.(sourcesplit==sourcesplit_sf .or. &
        sourcesplit==sourcesplit_ssf)) return
 
@@ -61,7 +62,7 @@ contains
 
     if(any_source_split) then
        ! add split source terms
-       
+
        ixOmin1=ixGlo1+nghostcells;ixOmin2=ixGlo2+nghostcells
        ixOmin3=ixGlo3+nghostcells;ixOmax1=ixGhi1-nghostcells
        ixOmax2=ixGhi2-nghostcells;ixOmax3=ixGhi3-nghostcells;
@@ -69,15 +70,17 @@ contains
       select case (sourcesplit)
       case (sourcesplit_sfs)
          !$acc parallel loop gang private(n, dr) default(present)
+         !$omp target teams loop private(n, dr)
          do iigrid=1,igridstail_active
-            n = igrids_active(iigrid)            
+            n = igrids_active(iigrid)
             dr  = rnode(rpdx1_:rnodehi, n)
-            
+
             !$acc loop collapse(ndim) vector private(xloc, wprim, wnew, wCT)
-            do ix3=ixOmin3,ixOmax3 
-               do ix2=ixOmin2,ixOmax2 
+            !$omp loop collapse(ndim) private(xloc, wprim, wnew, wCT)
+            do ix3=ixOmin3,ixOmax3
+               do ix2=ixOmin2,ixOmax2
                   do ix1=ixOmin1,ixOmax1
-                     
+
                      xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                      wCT   = bg(1)%w(ix1,ix2,ix3, 1:nw_phys, n)
                      wnew  = wCT
@@ -90,12 +93,12 @@ contains
                      bg(1)%w(ix1,ix2,ix3, 1:nw_phys, n) = wnew(1:nw_phys)
 
 #:if defined('SOURCE_NONLOCAL')
-                     ! TBD             
+                     ! TBD
 #:endif
-                     
+
 #:if defined('SOURCE_COMPACT')
                      ! TBD
-#:endif                
+#:endif
                 end do
              end do
           end do
@@ -113,8 +116,8 @@ contains
       if (src_active) then
          call getbc(qt,0.d0,ps,iwstart,nwgc,phys_req_diagonal)
       end if
-      
-   end if 
+
+   end if
 
   end subroutine add_split_source
 

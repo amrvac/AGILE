@@ -14,22 +14,26 @@ module mod_connectivity
    logical, dimension(:,:,:,:), allocatable :: neighbor_active
    integer, dimension(:,:,:,:), allocatable :: neighbor_pole
    !$acc declare create(neighbor, neighbor_type, neighbor_pole, neighbor_child)
+   !$omp declare target(neighbor, neighbor_type, neighbor_pole, neighbor_child)
 
    ! grid number array per processor
    integer, dimension(:), allocatable :: igrids
    integer, dimension(:), allocatable :: igrids_active
    integer, dimension(:), allocatable :: igrids_passive
    !$acc declare create(igrids, igrids_active, igrids_passive)
+   !$omp declare target(igrids, igrids_active, igrids_passive)
 
    ! phys boundary indices
    integer, dimension(:,:), allocatable :: idphyb
    !$acc declare create(idphyb)
+   !$omp declare target(idphyb)
 
    ! number of grids on current processor
    integer :: igridstail
    integer :: igridstail_active
    integer :: igridstail_passive
    !$acc declare create(igridstail, igridstail_active, igridstail_passive)
+   !$omp declare target(igridstail, igridstail_active, igridstail_passive)
 
    integer, dimension(3) :: nrecv_fc, nsend_fc
    ! cc for corner coarse
@@ -210,7 +214,7 @@ module mod_connectivity
      integer               :: i
 
      do i=1, self%nbprocs_srl
-        
+
         if ( allocated(self%srl_nb(i)%rcv%buffer) ) then
            deallocate(self%srl_nb(i)%rcv%buffer)
            deallocate(self%srl_nb(i)%send%buffer)
@@ -222,7 +226,7 @@ module mod_connectivity
      end do
 
      do i=1, self%nbprocs_c
-        
+
         if ( allocated(self%course_nb(i)%rcv%buffer) ) then
            deallocate(self%course_nb(i)%rcv%buffer)
            deallocate(self%course_nb(i)%send%buffer)
@@ -234,7 +238,7 @@ module mod_connectivity
      end do
 
      do i=1, self%nbprocs_f
-        
+
         if ( allocated(self%fine_nb(i)%rcv%buffer) ) then
            deallocate(self%fine_nb(i)%rcv%buffer)
            deallocate(self%fine_nb(i)%send%buffer)

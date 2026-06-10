@@ -16,9 +16,11 @@ module mod_coarsen_refine
   double precision, allocatable, dimension(:,:,:,:,:)  :: snd_buff_cf, rcv_buff_cf
   integer, allocatable, dimension(:,:)  :: rcv_info_cf
   !$acc declare create(snd_buff_cf,rcv_buff_cf,rcv_info_cf)
+  !$omp declare target(snd_buff_cf,rcv_buff_cf,rcv_info_cf)
   !> maximum number of coarse blocks that can be sent after coarsening
   integer, parameter :: max_buff=1024
   !$acc declare copyin(max_buff)
+  !$omp declare target(max_buff)
   !> MPI recv send variables for staggered-variable AMR
   integer :: itag_stg
   integer, dimension(:), allocatable :: recvrequest_stg, sendrequest_stg
@@ -86,6 +88,7 @@ contains
             rcv_buff_cf(block_nx1/2, block_nx2/2, block_nx3/2, nw, max_buff), &
             rcv_info_cf(4, max_buff) )
        !$acc update device(snd_buff_cf, rcv_buff_cf, rcv_info_cf)
+       !$omp target update to(snd_buff_cf, rcv_buff_cf, rcv_info_cf)
     end if
 
     do ipe=0,npe-1
@@ -140,16 +143,20 @@ contains
     ! unpack the receive buffers on GPU
 #ifdef NOGPUDIRECT
     !$acc update device(rcv_buff_cf(:,:,:,:,1:irecv))
+    !$omp target update to(rcv_buff_cf(:,:,:,:,1:irecv))
 #endif
     !$acc update device(rcv_info_cf(:,1:irecv))
+    !$omp target update to(rcv_info_cf(:,1:irecv))
 
     !$acc parallel loop gang
+    !$omp target teams loop
     do ibuff = 1, irecv
        igrid = rcv_info_cf(1,ibuff)
        ic1   = rcv_info_cf(2,ibuff)
        ic2   = rcv_info_cf(3,ibuff)
        ic3   = rcv_info_cf(4,ibuff)
        !$acc loop collapse(4) vector
+       !$omp loop collapse(4)
        do iw = 1, nw
           do ix3 = 1, block_nx3/2
              do ix2 = 1, block_nx2/2
@@ -247,6 +254,7 @@ contains
     end if
 
     !$acc update device(coarsen, refine)
+    !$omp target update to(coarsen, refine)
 
   end subroutine amr_coarsen_refine
 
@@ -502,8 +510,10 @@ contains
                       call mpistop('coarsen_grid_siblings: max_buff too small in send')
                    end if
                    !$acc parallel loop gang
+                   !$omp target teams loop
                    do iw = 1, nw
                       !$acc loop collapse(3) vector
+                      !$omp loop collapse(3)
                       do ix3 = 1, block_nx3/2
                          do ix2 = 1, block_nx2/2
                             do ix1 = 1, block_nx1/2
@@ -516,14 +526,17 @@ contains
 
 #ifndef NOGPUDIRECT
                    !$acc host_data use_device(snd_buff_cf)
+                   !$omp target data use_device_addr(snd_buff_cf)
 #else
                    !$acc update host(snd_buff_cf(:,:,:,:,isend))
+                   !$omp target update from(snd_buff_cf(:,:,:,:,isend))
 #endif
                    call mpi_isend_wrapper(snd_buff_cf(:,:,:,:,isend), &
                         block_nx1*block_nx2*block_nx3/8*nw,MPI_DOUBLE_PRECISION,ipe,itag, icomm,&
                         sendrequest(isend),ierrmpi)
 #ifndef NOGPUDIRECT
                    !$acc end host_data
+                   !$omp end target data
 #endif
                    if(stagger_grid) then
                       do idir=1,ndim
@@ -543,12 +556,14 @@ contains
                    end if
 #ifndef NOGPUDIRECT
                    !$acc host_data use_device(rcv_buff_cf)
+                   !$omp target data use_device_addr(rcv_buff_cf)
 #endif
                    call mpi_irecv_wrapper(rcv_buff_cf(:,:,:,:,irecv), &
                         block_nx1*block_nx2*block_nx3/8*nw,MPI_DOUBLE_PRECISION,ipeFi, &
                         itag, icomm,recvrequest(irecv),ierrmpi)
 #ifndef NOGPUDIRECT
                    !$acc end host_data
+                   !$omp end target data
 #endif
                    rcv_info_cf(:,irecv) = [igrid, ic1, ic2, ic3]
                    if(stagger_grid) then

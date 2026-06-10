@@ -5,9 +5,9 @@ module mod_amr_solution_node
   private
 
   public :: getnode, putnode
-  public :: alloc_node, alloc_state 
-  public :: dealloc_node 
- 
+  public :: alloc_node, alloc_state
+  public :: dealloc_node
+
 contains
 
 
@@ -18,16 +18,16 @@ contains
 
     integer, intent(in) :: ipe
     integer :: igrid, igrid_available
-  
+
     igrid_available=0
-  
+
     do igrid=1,max_blocks
        if (igrid_inuse(igrid,ipe)) cycle
-  
+
        igrid_available=igrid
        exit
     end do
-  
+
     if (igrid_available == 0) then
        getnode = -1
        print *, "Current maximum number of grid blocks:", max_blocks
@@ -37,42 +37,44 @@ contains
        getnode=igrid_available
        igrid_inuse(igrid,ipe)=.true.
     end if
-  
+
     if (ipe==mype) then
        ! initialize node on host and device
        node(1:nodehi,getnode) = 0
        !$acc update device(node(1:nodehi,getnode))
+       !$omp target update to(node(1:nodehi,getnode))
        rnode(1:rnodehi,getnode) = zero
        !$acc update device(rnode(1:rnodehi,getnode))
+       !$omp target update to(rnode(1:rnodehi,getnode))
     end if
-  
+
   end function getnode
-  
+
   ! put igrid on processor ipe to be not in use
   subroutine putnode(igrid,ipe)
     use mod_forest
     implicit none
-  
+
     integer, intent(in) :: igrid, ipe
-  
+
     igrid_inuse(igrid,ipe)=.false.
-  
+
   end subroutine putnode
-  
+
   !> allocate arrays on igrid node
   subroutine alloc_node(igrid)
-#ifdef _OPENACC
+#if defined(_OPENACC) || defined(_OPENMP)
     use acc_utils
-#endif    
+#endif
     use mod_forest
     use mod_global_parameters
     use mod_geometry
     use mod_usr_methods, only: usr_set_surface
     use mod_physics, only: phys_set_equi_vars
-    use mod_b0, only: set_B0_grid 
-    
+    use mod_b0, only: set_B0_grid
+
     integer, intent(in) :: igrid
-  
+
     integer :: level, ig1,ig2,ig3, ign1,ign2,ign3, ixCoGmin1,ixCoGmin2,&
        ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3, ix, i1,i2,i3
     integer :: imin, imax, index, igCo1,igCo2,igCo3, ixshift, offset, ifirst
@@ -95,7 +97,7 @@ contains
     ixCoGmax1=(ixGhi1-2*nghostcells)/2+2*nghostcells
     ixCoGmax2=(ixGhi2-2*nghostcells)/2+2*nghostcells
     ixCoGmax3=(ixGhi3-2*nghostcells)/2+2*nghostcells;
-  
+
     icase=mod(nghostcells,2)
     if(stagger_grid) icase=1
     select case(icase)
@@ -111,12 +113,12 @@ contains
       case default
         call mpistop("no such case")
     end select
-  
+
     ! set level information
     level=igrid_to_node(igrid,mype)%node%level
-  
+
     if(.not. associated(ps(igrid)%w)) then
-       
+
        ! allocate arrays for solution and space
        call alloc_state(igrid, ps(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,&
           ixGhi3, ixGextmin1,ixGextmin2,ixGextmin3,ixGextmax1,ixGextmax2,&
@@ -156,7 +158,7 @@ contains
              ixGextmax2,ixGextmax3, .false.)
         end select
       end if
-  
+
     end if
 
     ! avoid dividing by zero rho in skipped corner ghostcells when phys_req_diagonal=F
@@ -190,14 +192,16 @@ contains
     node(pig1_,igrid)=ig1
     node(pig2_,igrid)=ig2
     node(pig3_,igrid)=ig3
- !$acc update device(node(plevel_,igrid),node(pig1_,igrid),node(pig2_,igrid),node(pig3_,igrid))
-    
+    !$acc update device(node(plevel_,igrid),node(pig1_,igrid),node(pig2_,igrid),node(pig3_,igrid))
+    !$omp target update to(node(plevel_,igrid),node(pig1_,igrid),node(pig2_,igrid),node(pig3_,igrid))
+
     ! set dx information
     rnode(rpdx1_,igrid)=dx(1,level)
     rnode(rpdx2_,igrid)=dx(2,level)
     rnode(rpdx3_,igrid)=dx(3,level)
     dxlevel(:)=dx(:,level)
- !$acc update device(rnode(rpdx1_,igrid),rnode(rpdx2_,igrid),rnode(rpdx3_,igrid), dxlevel)
+    !$acc update device(rnode(rpdx1_,igrid),rnode(rpdx2_,igrid),rnode(rpdx3_,igrid), dxlevel)
+    !$omp target update to(rnode(rpdx1_,igrid),rnode(rpdx2_,igrid),rnode(rpdx3_,igrid), dxlevel)
 
     ! uniform cartesian case as well as all unstretched coordinates
     ! determine the minimal and maximal corners
@@ -211,8 +215,9 @@ contains
    if(rnode(rpxmax2_,igrid)>xprobmax2) rnode(rpxmax2_,igrid)=xprobmax2
    if(rnode(rpxmax3_,igrid)>xprobmax3) rnode(rpxmax3_,igrid)=xprobmax3
 
- !$acc update device( rnode(rpxmax1_,igrid),rnode(rpxmax2_,igrid),rnode(rpxmax3_,igrid), rnode(rpxmin1_,igrid),rnode(rpxmin2_,igrid),rnode(rpxmin3_,igrid) )
-   
+    !$acc update device( rnode(rpxmax1_,igrid),rnode(rpxmax2_,igrid),rnode(rpxmax3_,igrid), rnode(rpxmin1_,igrid),rnode(rpxmin2_,igrid),rnode(rpxmin3_,igrid) )
+    !$omp target update to( rnode(rpxmax1_,igrid),rnode(rpxmax2_,igrid),rnode(rpxmax3_,igrid), rnode(rpxmin1_,igrid),rnode(rpxmin2_,igrid),rnode(rpxmin3_,igrid) )
+
     dx1=rnode(rpdx1_,igrid)
     dx2=rnode(rpdx2_,igrid)
     dx3=rnode(rpdx3_,igrid)
@@ -241,7 +246,7 @@ contains
       ps(igrid)%x(ixGlo1:ixGhi1,ixGlo2:ixGhi2,ix,3)=rnode(rpxmax3_,&
          igrid)+(dble(ix-ixMhi3)-half)*dx3
     end do
-  
+
     dx1=2.0d0*rnode(rpdx1_,igrid)
     dx2=2.0d0*rnode(rpdx2_,igrid)
     dx3=2.0d0*rnode(rpdx3_,igrid)
@@ -257,7 +262,7 @@ contains
       psc(igrid)%x(ixCoGmin1:ixCoGmax1,ixCoGmin2:ixCoGmax2,ix,&
          3)=rnode(rpxmin3_,igrid)+(dble(ix-nghostcells)-half)*dx3
     end do
-  
+
     ps(igrid)%dx(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
        ixGextmin3:ixGextmax3,1)=rnode(rpdx1_,igrid)
     ps(igrid)%dx(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
@@ -285,7 +290,7 @@ contains
       xext(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,ix,3)=rnode(rpxmin3_,&
          igrid)+(dble(ix-nghostcells)-half)*dx3
     end do
-  
+
     if(any(stretched_dim)) then
      if(stretch_type(1) == stretch_uni)then
         imin=(ig1-1)*block_nx1
@@ -1341,7 +1346,7 @@ contains
          end select
        endif
     endif
-  
+
     ! calculate area of cell surfaces for standard block
     call get_surface_area(ps(igrid),ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3)
     ! calculate area of cell surfaces for coarser representative block
@@ -1389,7 +1394,7 @@ contains
            ixCoGmin3:ixCoGmax3,1:ndim)=psc(igrid)%dx(ixCoGmin1:ixCoGmax1,&
            ixCoGmin2:ixCoGmax2,ixCoGmin3:ixCoGmax3,1:ndim)
       case (Cartesian_expansion)
-        
+
       case (spherical)
         ps(igrid)%dvolume(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
            ixGextmin3:ixGextmax3)=(xext(ixGextmin1:ixGextmax1,&
@@ -1447,7 +1452,7 @@ contains
              2)+half*ps(igrid)%dx(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
              ixGextmin3:ixGextmax3,2))
         end if
-       
+
          ps(igrid)%dsC(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
             ixGextmin3:ixGextmax3,3)=(xext(ixGextmin1:ixGextmax1,&
             ixGextmin2:ixGextmax2,ixGextmin3:ixGextmax3,&
@@ -1513,14 +1518,14 @@ contains
       case default
         call mpistop("Sorry, coordinate unknown")
     end select
-  
+
     ! initialize background non-evolving solution
     if (B0field) call set_B0_grid(igrid)
     if (number_equi_vars>0) call phys_set_equi_vars(igrid)
-  
+
     ! find the blocks on the boundaries
     ps(igrid)%is_physical_boundary=.false.
-    
+
     do i1=-1,1
       if(i1==0) cycle
       ign1=ig1+i1
@@ -1543,7 +1548,7 @@ contains
          end if
       end if
     end do
-    
+
     do i2=-1,1
       if(i2==0) cycle
       ign2=ig2+i2
@@ -1566,8 +1571,8 @@ contains
          end if
       end if
     end do
-    
-    
+
+
     do i3=-1,1
       if(i3==0) cycle
       ign3=ig3+i3
@@ -1590,7 +1595,7 @@ contains
          end if
       end if
     end do
-    
+
     if(any(ps(igrid)%is_physical_boundary)) then
       phyboundblock(igrid)=.true.
     else
@@ -1598,9 +1603,10 @@ contains
    end if
 
    !$acc update device( phyboundblock(igrid) )
-#ifdef _OPENACC
-   call copy_or_update(ps(igrid)%igrid) 
-   call copy_or_update(ps1(igrid)%igrid) 
+   !$omp target update to( phyboundblock(igrid) )
+#if defined(_OPENACC) || defined(_OPENMP)
+   call copy_or_update(ps(igrid)%igrid)
+   call copy_or_update(ps1(igrid)%igrid)
    call copy_or_update(ps2(igrid)%igrid)
 
    call copy_or_update_pointer(ps(igrid)%w, no_update=.true.)
@@ -1619,7 +1625,7 @@ contains
 #endif
 
  end subroutine alloc_node
-  
+
   !> allocate memory to physical state of igrid node
   subroutine alloc_state(igrid, s, ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&
      ixGmax3, ixGextmin1,ixGextmin2,ixGextmin3,ixGextmax1,ixGextmax2,&
@@ -1632,7 +1638,7 @@ contains
     logical, intent(in) :: alloc_once_for_ps
     integer             :: ixGsmin1,ixGsmin2,ixGsmin3,ixGsmax1,ixGsmax2,&
        ixGsmax3
-  
+
     !allocate(s%w(ixG^S,1:nw))
     s%w => bg(s%istep)%w(:,:,:,:,igrid)
     s%igrid=igrid
@@ -1674,7 +1680,7 @@ contains
       if(local_timestep) then
         allocate(s%dt(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3))
       endif
-  
+
       if(B0field) then
         allocate(s%B0(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:ndir,&
            0:ndim))
@@ -1685,7 +1691,7 @@ contains
         allocate(s%equi_vars(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
            1:number_equi_vars,0:ndim))
       endif
-  
+
       ! allocate space for special values for each block state
       if(phys_trac) then
         ! special_values(1) Tcoff local
@@ -1715,7 +1721,7 @@ contains
    end if
 
   end subroutine alloc_state
-  
+
   !> allocate memory to one-level coarser physical state of igrid node
   subroutine alloc_state_coarse(igrid, s, ixGmin1,ixGmin2,ixGmin3,ixGmax1,&
      ixGmax2,ixGmax3, ixGextmin1,ixGextmin2,ixGextmin3,ixGextmax1,ixGextmax2,&
@@ -1727,7 +1733,7 @@ contains
        ixGextmax3
     integer             :: ixGsmin1,ixGsmin2,ixGsmin3,ixGsmax1,ixGsmax2,&
        ixGsmax3
-  
+
 !    allocate(s%w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:nw))
     s%w => bgc(1)%w(:,:,:,:,igrid)
 
@@ -1771,7 +1777,7 @@ contains
     integer, intent(in) :: igrid
     type(state) :: s
     logical, intent(in) :: dealloc_x
-  
+
     deallocate(s%w)
     if(stagger_grid) then
       deallocate(s%ws)
@@ -1802,12 +1808,12 @@ contains
       if(nw_extra>0) nullify(s%wextra)
     end if
   end subroutine dealloc_state
-  
+
   subroutine dealloc_state_coarse(igrid, s)
     use mod_global_parameters
     integer, intent(in) :: igrid
     type(state) :: s
-  
+
     deallocate(s%w)
     if(stagger_grid) then
       deallocate(s%ws)
@@ -1822,16 +1828,16 @@ contains
     deallocate(s%surfaceC,s%surface)
     deallocate(s%is_physical_boundary)
   end subroutine dealloc_state_coarse
-  
+
   subroutine dealloc_node(igrid)
     use mod_global_parameters
-  
+
     integer, intent(in) :: igrid
-  
+
     if (igrid==0) then
        call mpistop("trying to delete a non-existing grid in dealloc_node")
     end if
-  
+
     call dealloc_state(igrid, ps(igrid),.true.)
     call dealloc_state_coarse(igrid, psc(igrid))
     if(.not.convert) then
@@ -1849,7 +1855,7 @@ contains
         call dealloc_state(igrid, ps4(igrid),.false.)
       end select
     end if
-  
+
   end subroutine dealloc_node
 
 end module mod_amr_solution_node
