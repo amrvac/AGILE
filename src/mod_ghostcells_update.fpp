@@ -1190,7 +1190,7 @@ contains
     ! fill physical-boundary ghost cells before internal ghost-cell values exchange
     if(bcphys.and. .not.stagger_grid) then
        !$acc parallel loop gang default(present)
-       !$omp target teams loop
+       !$omp target teams distribute parallel do
        do iigrid = 1, igridstail; igrid=igrids(iigrid);
           if (.not.phyboundblock(igrid)) cycle
           call fill_boundary_before_gc(psb(igrid),igrid,time,qdt)
