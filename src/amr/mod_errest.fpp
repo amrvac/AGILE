@@ -44,10 +44,10 @@ contains
   end subroutine errest
 
   subroutine lohner_grid(igrid)
-    !$acc routine vector
-    !$omp declare target
     use mod_forest, only: coarsen, refine
     use mod_global_parameters
+    !$acc routine vector
+    !$omp declare target
 
     integer, intent(in) :: igrid
 

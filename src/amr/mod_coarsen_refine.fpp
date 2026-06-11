@@ -19,8 +19,6 @@ module mod_coarsen_refine
   !$omp declare target(snd_buff_cf,rcv_buff_cf,rcv_info_cf)
   !> maximum number of coarse blocks that can be sent after coarsening
   integer, parameter :: max_buff=1024
-  !$acc declare copyin(max_buff)
-  !$omp declare target(max_buff)
   !> MPI recv send variables for staggered-variable AMR
   integer :: itag_stg
   integer, dimension(:), allocatable :: recvrequest_stg, sendrequest_stg
