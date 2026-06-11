@@ -62,7 +62,6 @@ module mod_variables
   !> Maximum number of variables
   integer, parameter :: max_nw = 50
   !$acc declare copyin(max_nw)
-  !$omp declare target(max_nw)
 
   !> Primitive variable names
   character(len=name_len) :: prim_wnames(max_nw)

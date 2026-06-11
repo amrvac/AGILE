@@ -71,8 +71,6 @@ module mod_global_parameters
 
   !> Number of spatial dimensions for grid variables
   integer, parameter :: ndim=3
-  !$acc declare copyin(ndim)
-  !$omp declare target(ndim)
 
   !> Number of spatial dimensions (components) for vector variables
   integer :: ndir=ndim
@@ -84,9 +82,6 @@ module mod_global_parameters
 
 
   integer, parameter :: sdim=1
-
-  !$acc declare copyin(sdim)
-  !$omp declare target(sdim)
 
   !> Cartesian geometry or not
   logical :: slab = .true.

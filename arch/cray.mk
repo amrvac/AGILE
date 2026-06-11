@@ -21,6 +21,8 @@ $(info Disabling direct GPU-GPU copies)
 f90_flags += -DNOGPUDIRECT
 enabled += NOGPUDIRECT
 endif
+else
+f90_flags += -hnoacc
 endif
 
 ifdef USE_MPIWRAPPERS
