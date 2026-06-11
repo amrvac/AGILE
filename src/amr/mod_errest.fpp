@@ -22,7 +22,7 @@ contains
     case (3)
        ! Error estimation is based on Lohner's scheme
        !$acc parallel loop gang private(igrid)
-       !$omp target teams loop private(igrid)
+       !$omp target teams distribute private(igrid)
        do iigrid=1,igridstail; igrid=igrids(iigrid);
           call lohner_grid(igrid)
        end do
@@ -32,7 +32,7 @@ contains
 
     if ( refine_usr ) then
        !$acc parallel loop gang private(igrid)
-       !$omp target teams loop private(igrid)
+       !$omp target teams distribute parallel do private(igrid)
        do iigrid=1,igridstail; igrid=igrids(iigrid);
           call forcedrefine_grid(igrid)
        end do

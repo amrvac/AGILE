@@ -1200,13 +1200,13 @@ contains
 
     ! prepare coarse values to send to coarser neighbors
     !$acc parallel loop gang default(present)
-    !$omp target teams loop
+    !$omp target teams distribute
     do iigrid = 1, igridstail; igrid=igrids(iigrid);
        if (any(neighbor_type(:,:,:,igrid)==neighbor_coarse)) then
 
           CoFiratio=one/dble(2**ndim)
           !$acc loop collapse(4) vector
-          !$omp loop collapse(4)
+          !$omp parallel do collapse(4)
           do iw = nwhead, nwtail
              do ixCo3 = ixCoMmin3,ixCoMmax3
                 do ixCo2 = ixCoMmin2,ixCoMmax2
@@ -1291,7 +1291,7 @@ contains
     ! fill the SRL send buffers on GPU
     do inb = 1, nbprocs_info%nbprocs_srl
        !$acc parallel loop default(present) gang private(igrid, ienc, ibuf_start, i1, i2, i3, ixSmin1, ixSmin2, ixSmin3, Nx1)
-       !$omp target teams loop private(igrid, ienc, ibuf_start, i1, i2, i3, ixSmin1, ixSmin2, ixSmin3, Nx1)
+       !$omp target teams distribute private(igrid, ienc, ibuf_start, i1, i2, i3, ixSmin1, ixSmin2, ixSmin3, Nx1)
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
              igrid = nbprocs_info%srl_nb(inb)%info%igrid(i)
              ienc = nbprocs_info%srl_nb(inb)%info%iencode(i)
@@ -1306,7 +1306,7 @@ contains
              Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
              !$acc loop collapse(4) vector independent
-             !$omp loop collapse(4)
+             !$omp parallel do collapse(4)
              do iw = nwhead, nwtail
                 do ix3 = ixSmin3, ixSmax3
                    do ix2 = ixSmin2, ixSmax2
@@ -1330,7 +1330,7 @@ contains
     ! fill the C send buffers on GPU (send_restrict)
     do inb = 1, nbprocs_info%nbprocs_c
        !$acc parallel loop gang default(present) private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3)
-       !$omp target teams loop private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3)
+       !$omp target teams distribute private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3)
        do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%course_nb(inb)%info%igrid(i)
@@ -1357,7 +1357,7 @@ contains
           Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
           !$acc loop collapse(4) vector independent
-          !$omp loop collapse(4)
+          !$omp parallel do collapse(4)
           do iw = nwhead, nwtail
              do ix3 = ixSmin3, ixSmax3
                 do ix2 = ixSmin2, ixSmax2
@@ -1441,7 +1441,7 @@ contains
     ! fill ghost-cell values of sibling blocks and if neighbor is coarser (f2c)
     ! same process case
     !$acc parallel loop gang collapse(2) default(present)
-    !$omp target teams loop collapse(2)
+    !$omp target teams distribute collapse(2)
     do iigrid = 1, igridstail
        do i = 1, 27
           call idecode( i1, i2, i3, i)
@@ -1465,7 +1465,7 @@ contains
                    ixRmax2=ixR_srl_max2(iib2,n_i2); ixRmax3=ixR_srl_max3(iib3,n_i3)
 
                    !$acc loop collapse(ndim+1) independent vector
-                   !$omp loop collapse(ndim+1)
+                   !$omp parallel do collapse(ndim+1)
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
@@ -1496,7 +1496,7 @@ contains
                    ixRmax2=ixR_r_max2(iib2,n_inc2);ixRmax3=ixR_r_max3(iib3,n_inc3);
 
                    !$acc loop collapse(ndim+1) independent vector
-                   !$omp loop collapse(ndim+1)
+                   !$omp parallel do collapse(ndim+1)
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
@@ -1530,7 +1530,7 @@ contains
     ! unpack the MPI buffers
     do inb = 1, nbprocs_info%nbprocs_srl
        !$acc parallel loop gang default(present) independent private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, ixRmin1, ixRmin2, ixRmin3, Nx1)
-       !$omp target teams loop private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, ixRmin1, ixRmin2, ixRmin3, Nx1)
+       !$omp target teams distribute private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, ixRmin1, ixRmin2, ixRmin3, Nx1)
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%srl_nb(inb)%info_rcv%buffer( 3 * (i - 1) + 1 )
@@ -1548,7 +1548,7 @@ contains
           Nx1=ixRmax1-ixRmin1+1; Nx2=ixRmax2-ixRmin2+1; Nx3=ixRmax3-ixRmin3+1
 
           !$acc loop collapse(4) vector independent private(tempval)
-          !$omp loop collapse(4) private(tempval)
+          !$omp parallel do collapse(4) private(tempval)
           do iw = nwhead, nwtail
              do ix3 = ixRmin3, ixRmax3
                 do ix2 = ixRmin2, ixRmax2
@@ -1586,7 +1586,7 @@ contains
     ! unpack the MPI buffers, fine neighbor, (f_recv), recv_restrict
     do inb = 1, nbprocs_info%nbprocs_f
        !$acc parallel loop gang default(present)
-       !$omp target teams loop
+       !$omp target teams distribute
        do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%fine_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 1 )
@@ -1603,7 +1603,7 @@ contains
           Nx1=ixRmax1-ixRmin1+1; Nx2=ixRmax2-ixRmin2+1; Nx3=ixRmax3-ixRmin3+1
 
           !$acc loop collapse(4) vector independent
-          !$omp loop collapse(4)
+          !$omp parallel do collapse(4)
           do iw = nwhead, nwtail
              do ix3 = ixRmin3, ixRmax3
                 do ix2 = ixRmin2, ixRmax2
@@ -1651,7 +1651,7 @@ contains
     ! fill the F (neighbor is finer) send buffer on GPU (send_prolong)
     do inb = 1, nbprocs_info%nbprocs_f
        !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3) default(present)
-       !$omp target teams loop private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3)
+       !$omp target teams distribute private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3)
        do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%fine_nb(inb)%info%igrid(i)
@@ -1669,7 +1669,7 @@ contains
           Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
           !$acc loop collapse(4) vector independent
-          !$omp loop collapse(4)
+          !$omp parallel do collapse(4)
           do iw = nwhead, nwtail
              do ix3 = ixSmin3, ixSmax3
                 do ix2 = ixSmin2, ixSmax2
@@ -1731,7 +1731,7 @@ contains
 
     ! fill coarse ghost-cell values of finer neighbors in the same processor
     !$acc parallel loop gang collapse(4) private(iib1,iib2,iib3,igrid) default(present)
-    !$omp target teams loop collapse(4) private(iib1,iib2,iib3,igrid)
+    !$omp target teams distribute collapse(4) private(iib1,iib2,iib3,igrid)
     do iigrid=1,igridstail
        do i3=-1,1
           do i2=-1,1
@@ -1766,7 +1766,7 @@ contains
                                ixRmax3=ixR_p_max3(iib3,n_inc3)
 
                                !$acc loop collapse(4) vector independent
-                               !$omp loop collapse(4)
+                               !$omp parallel do collapse(4)
                                do iw = nwhead, nwtail
                                   do ix3 =0, ixRmax3-ixRmin3
                                      do ix2 = 0, ixRmax2-ixRmin2
@@ -1809,7 +1809,7 @@ contains
     ! unpack the MPI buffers, coarse neighbor, (c_recv), recv_prolong
     do inb = 1, nbprocs_info%nbprocs_c
        !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3) default(present)
-       !$omp target teams loop private(Nx1,Nx2,Nx3,inc1,inc2,inc3)
+       !$omp target teams distribute private(Nx1,Nx2,Nx3,inc1,inc2,inc3)
        do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%course_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 1 )
@@ -1826,7 +1826,7 @@ contains
           Nx1=ixRmax1-ixRmin1+1; Nx2=ixRmax2-ixRmin2+1; Nx3=ixRmax3-ixRmin3+1
 
           !$acc loop collapse(4) vector independent
-          !$omp loop collapse(4)
+          !$omp parallel do collapse(4)
           do iw = nwhead, nwtail
              do ix3 = ixRmin3, ixRmax3
                 do ix2 = ixRmin2, ixRmax2
@@ -1851,7 +1851,7 @@ contains
 
     ! do prolongation on the ghost-cell values based on the received coarse values from coarser neighbors (f2c)
     !$acc parallel loop gang collapse(4) default(present)
-    !$omp target teams loop collapse(4)
+    !$omp target teams distribute collapse(4)
     do iigrid=1, igridstail
        !      inline variant of call gc_prolong(igrid)
        do i3 = -1, 1
@@ -1883,7 +1883,7 @@ contains
                    xComin3=rnode(rpxmin3_,igrid)-dble(nghostcells)*dxCo3;
 
                    !$acc loop collapse(3) vector independent private(slope)
-                   !$omp loop collapse(3) private(slope)
+                   !$omp parallel do collapse(3) private(slope)
                    do ixFi3 = ixFimin3,ixFimax3
                       do ixFi2 = ixFimin2,ixFimax2
                          do ixFi1 = ixFimin1,ixFimax1

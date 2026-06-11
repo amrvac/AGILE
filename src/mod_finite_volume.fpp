@@ -116,7 +116,7 @@ end subroutine finite_volume_local
        igrid_end = min(ibatch * max_batch, igridstail_active)
 
        !$acc parallel loop gang private(uprim, inv_dr, dr, n) default(present)
-       !$omp target teams loop private(uprim, inv_dr, dr, n)
+       !$omp target teams distribute private(uprim, inv_dr, dr, n)
        do iigrid = igrid_beg, igrid_end
           n = igrids_active(iigrid)
 
@@ -125,7 +125,7 @@ end subroutine finite_volume_local
           typelim = type_limiter(node(plevel_, n))
 
           !$acc loop collapse(ndim) vector
-          !$omp loop collapse(ndim)
+          !$omp parallel do collapse(ndim)
           do ix3=ixImin3,ixImax3
              do ix2=ixImin2,ixImax2
                 do ix1=ixImin1,ixImax1
@@ -137,7 +137,7 @@ end subroutine finite_volume_local
           end do
 
        !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
-       !$omp loop collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
+       !$omp parallel do collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
        do ix3=ixOmin3,ixOmax3
           do ix2=ixOmin2,ixOmax2
              do ix1=ixOmin1,ixOmax1

@@ -137,7 +137,7 @@ contains
     ixCgmax2=ixComax2;ixCgmax3=ixComax3;
 
     !$acc parallel loop collapse(3) private(slope)
-    !$omp target teams loop collapse(3) private(slope)
+    !$omp target teams distribute parallel do collapse(3) private(slope)
     do ixCo3 = ixCgmin3,ixCgmax3
        do ixCo2 = ixCgmin2,ixCgmax2
           do ixCo1 = ixCgmin1,ixCgmax1
@@ -253,7 +253,7 @@ contains
     integer :: ixFimin1,ixFimin2,ixFimin3,ixFimax1,ixFimax2,ixFimax3
 
     !$acc parallel loop collapse(3)
-    !$omp target teams loop collapse(3)
+    !$omp target teams distribute parallel do collapse(3)
     do ixCo3 = ixComin3,ixComax3
        do ixCo2 = ixComin2,ixComax2
           do ixCo1 = ixComin1,ixComax1

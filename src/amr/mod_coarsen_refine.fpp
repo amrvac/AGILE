@@ -147,14 +147,14 @@ contains
     !$omp target update to(rcv_info_cf(:,1:irecv))
 
     !$acc parallel loop gang
-    !$omp target teams loop
+    !$omp target teams distribute
     do ibuff = 1, irecv
        igrid = rcv_info_cf(1,ibuff)
        ic1   = rcv_info_cf(2,ibuff)
        ic2   = rcv_info_cf(3,ibuff)
        ic3   = rcv_info_cf(4,ibuff)
        !$acc loop collapse(4) vector
-       !$omp loop collapse(4)
+       !$omp parallel do collapse(4)
        do iw = 1, nw
           do ix3 = 1, block_nx3/2
              do ix2 = 1, block_nx2/2
@@ -508,10 +508,10 @@ contains
                       call mpistop('coarsen_grid_siblings: max_buff too small in send')
                    end if
                    !$acc parallel loop gang
-                   !$omp target teams loop
+                   !$omp target teams distribute
                    do iw = 1, nw
                       !$acc loop collapse(3) vector
-                      !$omp loop collapse(3)
+                      !$omp parallel do collapse(3)
                       do ix3 = 1, block_nx3/2
                          do ix2 = 1, block_nx2/2
                             do ix1 = 1, block_nx1/2

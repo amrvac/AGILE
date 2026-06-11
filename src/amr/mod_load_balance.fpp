@@ -116,11 +116,11 @@ contains
     !$acc update device(rcv_info_lb(1:irecv))
     !$acc parallel loop gang
     !$omp target update to(rcv_info_lb(1:irecv))
-    !$omp target teams loop
+    !$omp target teams distribute
     do ibuff = 1, irecv
        recv_igrid = rcv_info_lb(ibuff)
        !$acc loop collapse(4) vector
-       !$omp loop collapse(4)
+       !$omp parallel do collapse(4)
        do iw = 1, nw
           do ix3 = 1, block_nx3
              do ix2 = 1, block_nx2
@@ -200,10 +200,10 @@ contains
        call mpistop('load_balance: max_buff too small in send')
     end if
     !$acc parallel loop gang default(present)
-    !$omp target teams loop
+    !$omp target teams distribute
     do iw = 1, nw
        !$acc loop collapse(3) vector
-       !$omp loop collapse(3)
+       !$omp parallel do collapse(3)
        do ix3 = 1, block_nx3
           do ix2 = 1, block_nx2
              do ix1 = 1, block_nx1

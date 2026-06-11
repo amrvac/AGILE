@@ -70,13 +70,13 @@ contains
       select case (sourcesplit)
       case (sourcesplit_sfs)
          !$acc parallel loop gang private(n, dr) default(present)
-         !$omp target teams loop private(n, dr)
+         !$omp target teams distribute private(n, dr)
          do iigrid=1,igridstail_active
             n = igrids_active(iigrid)
             dr  = rnode(rpdx1_:rnodehi, n)
 
             !$acc loop collapse(ndim) vector private(xloc, wprim, wnew, wCT)
-            !$omp loop collapse(ndim) private(xloc, wprim, wnew, wCT)
+            !$omp parallel do collapse(ndim) private(xloc, wprim, wnew, wCT)
             do ix3=ixOmin3,ixOmax3
                do ix2=ixOmin2,ixOmax2
                   do ix1=ixOmin1,ixOmax1

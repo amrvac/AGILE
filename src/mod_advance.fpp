@@ -74,10 +74,10 @@ contains
 
     ! copy w instead of wold because of potential use of dimsplit or sourcesplit
     !$acc parallel loop present(bg, bg(1), bg(2)) private(igrid)
-    !$omp target teams loop private(igrid)
+    !$omp target teams distribute private(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        !$acc loop collapse(ndim+1)
-       !$omp loop collapse(ndim+1)
+       !$omp parallel do collapse(ndim+1)
        do iw = 1, nw
           do ix3 = ixGlo3, ixGhi3
              do ix2 = ixGlo2, ixGhi2
@@ -91,10 +91,10 @@ contains
 
     if(stagger_grid) then
        !$acc parallel loop present(ps1, ps) private(igrid)
-       !$omp target teams loop private(igrid)
+       !$omp target teams distribute private(igrid)
        do iigrid=1,igridstail; igrid=igrids(iigrid);
           !$acc loop collapse(ndim+1)
-          !$omp loop collapse(ndim+1)
+          !$omp parallel do collapse(ndim+1)
           do iw = 1, nws
              do ix3 = ps(igrid)%ixGsmin3, ps(igrid)%ixGsmax3
                 do ix2 = ps(igrid)%ixGsmin2, ps(igrid)%ixGsmax2
@@ -121,10 +121,10 @@ contains
                bg(1),global_time,ps1,bg(2))
 
           !$acc parallel loop present(bg, ps2, ps1, ps) private(igrid)
-          !$omp target teams loop private(igrid)
+          !$omp target teams distribute private(igrid)
           do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
              !$acc loop collapse(ndim+1)
-             !$omp loop collapse(ndim+1)
+             !$omp parallel do collapse(ndim+1)
              do iw = 1, nw
                 do ix3 = ixGlo3, ixGhi3
                    do ix2 = ixGlo2, ixGhi2
@@ -144,10 +144,10 @@ contains
                bg(3))
 
           !$acc parallel loop present(bg, ps2, ps) private(igrid)
-          !$omp target teams loop private(igrid)
+          !$omp target teams distribute private(igrid)
           do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
              !$acc loop collapse(ndim+1)
-             !$omp loop collapse(ndim+1)
+             !$omp parallel do collapse(ndim+1)
              do iw = 1, nw
                 do ix3 = ixGlo3, ixGhi3
                    do ix2 = ixGlo2, ixGhi2
