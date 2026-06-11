@@ -3,8 +3,13 @@
 ! Transfer wrappers for copy or update if present
 !=====================================================================
 module acc_utils
-  ! there is no openmp equivalent of acc_is_present, but the acc version works for openmp as well: the present table is shared
+#ifdef _OPENACC
   use openacc
+#endif
+#ifdef _OPENMP
+  use omp_lib
+  use, intrinsic :: iso_c_binding, only : c_loc
+#endif
   implicit none
 
   private
@@ -82,6 +87,7 @@ contains
        return
     end if
 
+#ifdef _OPENACC
     if (.not. acc_is_present(scalar, sizeof(scalar))) then
        !$acc enter data copyin(scalar)
        !$acc enter data attach(scalar)
@@ -90,6 +96,14 @@ contains
     end if
     call acc_detach(scalar)
     call acc_attach(scalar)
+#endif
+#ifdef _OPENMP
+    if (omp_target_is_present(c_loc(scalar), omp_get_default_device()) /= 0) then
+       !$omp target enter data map(to:scalar)
+    else if (.not. no_update_) then
+       !$omp target update to(scalar)
+    end if
+#endif
 
   end subroutine copy_or_update_${tname}$_pointer
 
@@ -107,11 +121,20 @@ contains
        no_update_ = .false.
     end if
 
+#ifdef _OPENACC
     if (.not. acc_is_present(scalar, sizeof(scalar))) then
        !$acc enter data copyin(scalar)
     else if (.not. no_update_) then
        !$acc update device(scalar)
     end if
+#endif
+#ifdef _OPENMP
+    if (omp_target_is_present(c_loc(scalar), omp_get_default_device()) /= 0) then
+       !$omp target enter data map(to:scalar)
+    else if (.not. no_update_) then
+       !$omp target update to(scalar)
+    end if
+#endif
 
   end subroutine copy_or_update_${tname}$_nonpointer
 
@@ -140,11 +163,20 @@ contains
        no_update_ = .false.
     end if
 
+#ifdef _OPENACC
     if (.not. acc_is_present(array)) then
        !$acc enter data copyin(array)
     else if (.not. no_update_) then
        !$acc update device(array)
     end if
+#endif
+#ifdef _OPENMP
+    if (omp_target_is_present(c_loc(array), omp_get_default_device()) /= 0) then
+       !$omp target enter data map(to:array)
+    else if (.not. no_update_) then
+       !$omp target update to(array)
+    end if
+#endif
 
   end subroutine copy_or_update_${tname}$_nonpointer_r${rank}$
 
@@ -169,6 +201,7 @@ contains
        return
     end if
 
+#ifdef _OPENACC
     if (.not. acc_is_present(array)) then
        !$acc enter data copyin(array)
        !$acc enter data attach(array)
@@ -177,6 +210,14 @@ contains
     end if
     call acc_detach(array)
     call acc_attach(array)
+#endif
+#ifdef _OPENMP
+    if (omp_target_is_present(c_loc(array), omp_get_default_device()) /= 0) then
+       !$omp target enter data map(to:array)
+    else if (.not. no_update_) then
+       !$omp target update to(array)
+    end if
+#endif
 
   end subroutine copy_or_update_${tname}$_pointer_r${rank}$
 
@@ -201,11 +242,20 @@ contains
        return
     end if
 
+#ifdef _OPENACC
     if (.not. acc_is_present(array)) then
        !$acc enter data copyin(array)
     else if (.not. no_update_) then
        !$acc update device(array)
     end if
+#endif
+#ifdef _OPENMP
+    if (omp_target_is_present(c_loc(array), omp_get_default_device()) /= 0) then
+       !$omp target enter data map(to:array)
+    else if (.not. no_update_) then
+       !$omp target update to(array)
+    end if
+#endif
 
   end subroutine copy_or_update_${tname}$_alloc_r${rank}$
 
