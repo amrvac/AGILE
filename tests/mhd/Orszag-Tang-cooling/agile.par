@@ -1,0 +1,99 @@
+
+ &filelist
+   base_filename    = 'output/otcool3d'
+   saveprim         = T
+   nwauxio          = 1
+ /
+
+ &savelist
+   itsave(1,1)      = 0
+   itsave(1,2)      = 0
+   itsave(1,3)      = 0
+   dtsave_log       = 0.05d0
+   dtsave_dat       = 0.02d0
+   dtsave_slice     = 0.01d0
+   nslices          = 5
+   slicedir(1)      = 1
+   slicecoord(1)    = 0.5d0
+   slicedir(2)      = 2
+   slicecoord(2)    = 0.5d0
+   slicedir(3)      = 3
+   slicecoord(3)    = 0.25d0
+   slicedir(4)      = 3
+   slicecoord(4)    = 0.5d0
+   slicedir(5)      = 3
+   slicecoord(5)    = 0.75d0
+
+ /
+
+ &stoplist
+   time_max = 2.5
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'tvdlf'
+   limiter         = 20*'minmod'
+   small_values_method = 'ignore'
+   phys            = 'mhd'
+ /
+
+ &boundlist
+   typeboundary_min1 = 8*'periodic'
+   typeboundary_max1 = 8*'periodic'
+   typeboundary_min2 = 8*'periodic'
+   typeboundary_max2 = 8*'periodic'
+   typeboundary_min3 = 8*'periodic'
+   typeboundary_max3 = 8*'periodic'
+ /
+
+ &meshlist
+   max_blocks         = 8192
+   refine_criterion = 3
+   refine_max_level = 2
+   refine_threshold = 20*0.4d0
+   w_refine_weight(1)=0.5d0
+   w_refine_weight(4)=0.5d0
+   block_nx1          = 10
+   block_nx2          = 10
+   block_nx3          = 10
+   domain_nx1         = 100
+   domain_nx2         = 100
+   domain_nx3         = 100
+   xprobmin1       = 0.0d0
+   xprobmax1       = 1.0d0
+   xprobmin2       = 0.0d0
+   xprobmax2       = 1.0d0
+   xprobmin3       = 0.0d0
+   xprobmax3       = 1.0d0
+ /
+
+
+ &paramlist
+   slowsteps        = 1000
+   courantpar       = 0.4d0
+   typecourant      = 'maxsum'
+ /
+
+ &mhd_list
+   mhd_gravity = .false.
+   mhd_radiative_cooling=.true.
+   mhd_gamma = 1.6666667d0
+   He_abundance= 0.1d0
+   mhd_source_usr=.true.
+ /
+
+ &rc_list
+        ncool      = 4000
+        coolcurve  = 'Colgan_DM'
+        coolmethod = 'exact'
+        Tfix       = T
+ /
+
+ &usr_list
+        mach0=1.0d0
+        T0=0.25d0
+        pbeta0=3.0d0
+        rho0=4.0d0
+ /
+
