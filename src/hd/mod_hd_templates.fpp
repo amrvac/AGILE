@@ -196,7 +196,7 @@
 !    use mod_particles, only: particles_init
     #:if defined('COOLING')
     use mod_radiative_cooling, only: rc_fl, radiative_cooling_init_params, radiative_cooling_init
-    #:endif
+#:endif
 
     call read_params(par_files)
     call phys_units()
@@ -248,6 +248,15 @@
     nwgc=nwflux
     !$acc update device(nwgc)
 
+    ! Define custom flux types:
+    if (.not. allocated(flux_type)) then
+       allocate(flux_type(ndir, nw_flux))
+       flux_type = flux_default
+    else if (any(shape(flux_type) /= [ndir, nw_flux])) then
+       call mpistop("phys_check error: flux_type has wrong shape")
+    end if
+
+    
 ! use cycle, needs to be dealt with:    
 !    ! Initialize particles module
 !    if (hd_particles) then

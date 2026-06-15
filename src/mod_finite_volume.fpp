@@ -317,6 +317,7 @@ end subroutine finite_volume_local
     real(dp) :: flux_l(nw_flux), flux_r(nw_flux)
     real(dp) :: sL, sR, ds, wmax
     real(dp), parameter :: eps = 1e-14_dp
+    integer  :: iw
 
     call get_flux(uL, xC, flux_dim, flux_l)
     call get_flux(uR, xC, flux_dim, flux_r)
@@ -327,18 +328,28 @@ end subroutine finite_volume_local
     call to_conservative(uL)
     call to_conservative(uR)
 
-    if (sL .ge. 0._dp) then
-      F = flux_l
-    else if (sR .le. 0._dp) then
-      F = flux_r
-    else
-      ds = sR - sL
-      if (ds > eps * (abs(sL) + abs(sR))) then
-        F = (sR*flux_l - sL*flux_r + sL*sR*(uR(1:nw_flux) - uL(1:nw_flux))) / ds
-      else  ! Fall back to LLF
-        F = 0.5_dp * ((flux_l + flux_r) - wmax * (uR(1:nw_flux) - uL(1:nw_flux)))
-      end if
-    end if
+    do iw = 1, nw_flux
+       if (flux_type(flux_dim,iw) == flux_default) then
+          
+          if (sL .ge. 0._dp) then
+             F(iw) = flux_l(iw)
+          else if (sR .le. 0._dp) then
+             F(iw) = flux_r(iw)
+          else
+             ds = sR - sL
+             if (ds > eps * (abs(sL) + abs(sR))) then
+                F(iw) = (sR*flux_l(iw) - sL*flux_r(iw) + sL*sR*(uR(iw) - uL(iw))) / ds
+             else  ! Fall back to LLF
+                F(iw) = 0.5_dp * ((flux_l(iw) + flux_r(iw)) - wmax * (uR(iw) - uL(iw)))
+             end if
+          end if
+          
+       else if (flux_type(flux_dim,iw) == flux_tvdlf) then
+          F(iw) = 0.5_dp * ((flux_l(iw) + flux_r(iw)) - wmax * (uR(iw) - uL(iw)))
+       end if
+       
+    end do
+   
   end subroutine riemann_hll_prim
 
 
@@ -396,33 +407,37 @@ end subroutine finite_volume_local
 
     ! pressure-like term (Eq. 10.76)
     PLR = 0.5_dp * (pL + pR + dL*(s_star - unL) + dR*(s_star - unR))
+    
+    do i = 1, nw_flux
+       if (flux_type(flux_dim,i) == flux_default) then
 
-    ! HLLC flux (Eq. 10.71) + variant 2 (Eq. 10.75)
-    if (0._dp .le. sL) then
-      F = flux_l
-      return
-    elseif (0._dp .ge. sR) then
-      F = flux_r
-      return
-    end if
+          ! HLLC flux (Eq. 10.71) + variant 2 (Eq. 10.75)
+          if (0._dp .le. sL) then
+             F(i) = flux_l(i)
+          else if (0._dp .ge. sR) then
+             F(i) = flux_r(i)
+          else if (0._dp .le. s_star) then
+             ! F_*L
+             Dstar = 0._dp
+             if (i .eq. iw_mom(flux_dim)) Dstar = 1._dp
+             if (i .eq. iw_e)             Dstar = s_star
+             F(i) = (s_star*(sL*uL(i) - flux_l(i)) + sL*PLR*Dstar) / (sL - s_star)
+          else if (0._dp .ge. s_star) then
+             ! F_*R
+             Dstar = 0._dp
+             if (i .eq. iw_mom(flux_dim)) Dstar = 1._dp
+             if (i .eq. iw_e)             Dstar = s_star
+             F(i) = (s_star*(sR*uR(i) - flux_r(i)) + sR*PLR*Dstar) / (sR - s_star)
+          else ! should not occur (tvdlf for symmetry)
+             wmax = max(abs(sL), abs(sR))
+             F(i) = 0.5_dp * ((flux_l(i) + flux_r(i)) - wmax * (uR(i) - uL(i)))
+          end if
 
-    if (0._dp .le. s_star) then
-      ! F_*L
-      do i = 1, nw_flux
-        Dstar = 0._dp
-        if (i .eq. iw_mom(flux_dim)) Dstar = 1._dp
-        if (i .eq. iw_e)             Dstar = s_star
-        F(i) = (s_star*(sL*uL(i) - flux_l(i)) + sL*PLR*Dstar) / (sL - s_star)
-      end do
-    else
-      ! F_*R
-      do i = 1, nw_flux
-        Dstar = 0._dp
-        if (i .eq. iw_mom(flux_dim)) Dstar = 1._dp
-        if (i .eq. iw_e)             Dstar = s_star
-        F(i) = (s_star*(sR*uR(i) - flux_r(i)) + sR*PLR*Dstar) / (sR - s_star)
-      end do
-    end if
+       else if (flux_type(flux_dim,i) == flux_tvdlf) then
+          wmax = max(abs(sL), abs(sR))
+          F(i) = 0.5_dp * ((flux_l(i) + flux_r(i)) - wmax * (uR(i) - uL(i)))
+       end if
+    end do
 
   end subroutine riemann_hllc_prim
 
