@@ -1,0 +1,73 @@
+ &filelist
+   base_filename    = 'output/WoodwardCollela_6l_big_'
+   saveprim         = T
+   nwauxio    = 1
+ /
+   slice_type='dat'
+
+ &savelist
+   itsave(1,1)      = 0
+   itsave(1,2)      = 0
+   itsave(1,3)      = 0
+   dtsave_log       = 0.001
+   dtsave_dat       = 0.05
+   dtsave_slice     = 0.005
+   nslices          = 3
+   slicedir(1)      = 1
+   slicecoord(1)    = 4.0d0
+   slicedir(2)      = 2
+   slicecoord(2)    = 0.5d0
+   slicedir(3)      = 3
+   slicecoord(3)    = 0.25d0
+ /
+
+ &stoplist
+   time_max         = 0.9d0
+ /
+
+ &methodlist
+   time_stepper        = 'threestep'
+   flux_scheme         = 20*'hllc'
+   limiter             = 20*'vanleer'
+   small_values_method = 'ignore'
+   phys                = 'hd'
+ /
+
+ &boundlist
+   specialboundary   = T
+   typeboundary_min1 = 5*'special'
+   typeboundary_max1 = 5*'cont'
+   typeboundary_min2 = 5*'special'
+   typeboundary_max2 = 5*'special'
+   typeboundary_min3 = 'symm','symm','symm','asymm','symm'
+   typeboundary_max3 = 'symm','symm','symm','asymm','symm'
+ /
+
+ &meshlist
+   refine_max_level   = 6
+   max_blocks         = 5000
+   block_nx1          = 12
+   block_nx2          = 12
+   block_nx3          = 12
+   domain_nx1         = 240
+   domain_nx2         = 48
+   domain_nx3         = 24
+   xprobmin1          = 0.0d0
+   xprobmax1          = 10.0d0
+   xprobmin2          = 0.0d0
+   xprobmax2          = 2.0d0
+   xprobmin3          = 0.0d0
+   xprobmax3          = 1.0d0
+ /
+
+ &paramlist
+   slowsteps        = 10
+   courantpar       = 0.8d0
+   typecourant      = 'maxsum'
+ /
+
+ &hd_list
+   He_abundance         = 0.0d0
+   hd_radiative_cooling = F
+ /
+
