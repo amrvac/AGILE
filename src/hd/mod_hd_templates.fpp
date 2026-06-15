@@ -255,7 +255,7 @@
     else if (any(shape(flux_type) /= [ndir, nw_flux])) then
        call mpistop("phys_check error: flux_type has wrong shape")
     end if
-
+    !$acc update device(flux_type)
     
 ! use cycle, needs to be dealt with:    
 !    ! Initialize particles module
