@@ -1,7 +1,7 @@
 
  &filelist
    base_filename    = 'output/3d'
-   autoconvert      = F
+   autoconvert      = T
  /
 
  &savelist
