@@ -10,6 +10,19 @@ module mod_usr
 
 contains
 
+  subroutine params_read_usr(files)
+    implicit none
+    character(len=*), dimension(:), intent(in) :: files
+    integer :: n
+    namelist /usr_list/&
+      rho0, p0, b0
+    do n = 1, size(files)
+      open(unitpar, file=trim(files(n)), status='old')
+      read(unitpar, usr_list, end=111)
+111   close(unitpar)
+    end do
+  end subroutine params_read_usr
+
   subroutine usr_init()
 
     usr_init_one_grid => initonegrid_usr
@@ -21,10 +34,14 @@ contains
 
     call phys_activate()
 
+    ! Default parameters
     rho0 = 25.0_dp / (36.0_dp * dpi)
     p0   =  5.0_dp / (12.0_dp * dpi)
     b0   =  1.0_dp / sqrt(4.0_dp * dpi)
 
+    ! User might overwrite
+    call params_read_usr(par_files)
+    
     ! Save B-field indices on host (mag becomes device-only after phys_activate)
     ib1 = mag(1); ib2 = mag(2); ib3 = mag(3)
 

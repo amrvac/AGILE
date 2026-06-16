@@ -20,6 +20,16 @@ module mod_physics_vars
   integer :: phys_wider_stencil = 0
   !$acc declare copyin(phys_wider_stencil)
 
+  !> Array per direction per variable, which can be used to specify that certain
+  !> fluxes have to be treated differently
+  integer, allocatable :: flux_type(:, :)
+  !$acc declare create(flux_type)
+
+  !> Indicates a normal flux
+  integer, parameter   :: flux_default        = 0
+  !> Indicates the flux should be treated with tvdlf
+  integer, parameter   :: flux_tvdlf          = 1
+  
   !> Whether the physics routines require diagonal ghost cells, for example for
   !> computing a curl.
   logical :: phys_req_diagonal = .true.

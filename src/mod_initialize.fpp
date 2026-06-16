@@ -69,7 +69,7 @@ contains
     allocate(psc(max_blocks))
     !$acc enter data copyin(ps,ps1,ps2,ps3,ps4,psc)
     
-    allocate(ps_sub(max_blocks))
+    allocate(ps_sub(max_blocks+1)) ! since we reserve one for communication
     allocate(neighbor(2,-1:1,-1:1,-1:1,max_blocks),neighbor_child(2,0:3,0:3,&
        0:3,max_blocks))
     allocate(neighbor_type(-1:1,-1:1,-1:1,max_blocks),neighbor_active(-1:1,&

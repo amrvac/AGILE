@@ -307,6 +307,7 @@ end subroutine finite_volume_local
 
 
   !> One-face HLL numerical flux from primitive L/R states.
+  !> takes flux_type(flux_dim,nw_flux) into account (fallback to LLF for selected variables)
   subroutine riemann_hll_prim(uL, uR, xC, flux_dim, F)
     !$acc routine seq
     real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
@@ -317,6 +318,7 @@ end subroutine finite_volume_local
     real(dp) :: flux_l(nw_flux), flux_r(nw_flux)
     real(dp) :: sL, sR, ds, wmax
     real(dp), parameter :: eps = 1e-14_dp
+    integer  :: iw
 
     call get_flux(uL, xC, flux_dim, flux_l)
     call get_flux(uR, xC, flux_dim, flux_r)
@@ -328,23 +330,34 @@ end subroutine finite_volume_local
     call to_conservative(uR)
 
     if (sL .ge. 0._dp) then
-      F = flux_l
+       F = flux_l
     else if (sR .le. 0._dp) then
-      F = flux_r
+       F = flux_r
     else
-      ds = sR - sL
-      if (ds > eps * (abs(sL) + abs(sR))) then
-        F = (sR*flux_l - sL*flux_r + sL*sR*(uR(1:nw_flux) - uL(1:nw_flux))) / ds
-      else  ! Fall back to LLF
-        F = 0.5_dp * ((flux_l + flux_r) - wmax * (uR(1:nw_flux) - uL(1:nw_flux)))
-      end if
+       ds = sR - sL
+       if (ds > eps * (abs(sL) + abs(sR))) then
+          F = (sR*flux_l - sL*flux_r + sL*sR*(uR(1:nw_flux) - uL(1:nw_flux))) / ds
+       else  ! Fall back to LLF
+          F = 0.5_dp * ((flux_l + flux_r) - wmax * (uR(1:nw_flux) - uL(1:nw_flux)))
+       end if
     end if
+    
+    ! overwrite with tvdlf flux if requested (faster this way)
+    if ( any(flux_type(flux_dim,:) == flux_tvdlf) ) then
+       do iw = 1, nw_flux
+          if (flux_type(flux_dim,iw) == flux_tvdlf) then
+             F(iw) = 0.5_dp * ((flux_l(iw) + flux_r(iw)) - wmax * (uR(iw) - uL(iw)))
+          end if
+       end do
+    end if
+
   end subroutine riemann_hll_prim
 
 
   !> One-face HLLC numerical flux from primitive L/R states (HD only).
   !> Uses scalar pressure assumption; not valid for MHD (use HLLD instead).
   !> Reference: Toro (2010), chapter 10 (Variant 2)
+  !> does not yet take flux_type(flux_dim,nw_flux) into account
   subroutine riemann_hllc_prim(uL, uR, xC, flux_dim, F)
     !$acc routine seq
     real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
