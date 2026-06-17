@@ -145,6 +145,12 @@ flags = ["fypp", "hash"]
 default = false
 implies = ["components.source_local"]
 
+[srhd_list.srhd_n_tracer]
+type = "value"
+name = "N_TRACER"
+dtype = "int"
+flags = ["fypp", "hash"]
+
 [meshlist]
 [meshlist.refine_usr]
 type = "flag"
