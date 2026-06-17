@@ -24,9 +24,10 @@
 
  &methodlist
    time_stepper    = 'threestep'
-   flux_scheme     = 20*'tvdlf'
-   limiter         = 20*'vanleer'
-   phys            = 'mhd'
+   flux_scheme          = 20*'tvdlf'
+   limiter              = 20*'minmod'
+   small_values_method  = 'ignore'
+   phys                 = 'mhd'
  /
 
  &boundlist
@@ -41,7 +42,7 @@
  &meshlist
    max_blocks         = 13000
    refine_criterion   = 3
-   refine_max_level   = 4
+   refine_max_level   = 2
    refine_threshold   = 20*0.4d0
    block_nx1          = 16
    block_nx2          = 16
@@ -58,19 +59,23 @@
  /
 
  &paramlist
-   slowsteps        = 10
-   courantpar       = 0.8d0
+   slowsteps        = 1000
+   courantpar       = 0.4d0
    typecourant      = 'maxsum'
  /
 
  &mhd_list
+   mhd_gravity           = .false.
    mhd_radiative_cooling = .true.
    mhd_source_usr        = .true.
+   mhd_gamma             = 1.6666667d0
+   He_abundance          = 0.1d0
  /
 
  &rc_list
    ncool      = 4000
    coolcurve  = 'Colgan_DM'
+   coolmethod = 'exact'
    Tfix       = .true.
    tlow       = 1.0d-4
  /
