@@ -25,7 +25,7 @@
  /
 
  &stoplist
-   time_max         = 200.0d0
+   time_max         = 1000.0d0
  /
 
  &methodlist
@@ -49,8 +49,9 @@
  &meshlist
    refine_usr         = .true.
    refine_criterion   = 3
-   max_blocks         = 2048
+   max_blocks         = 2400
    refine_max_level   = 3
+   ditregrid          = 4
    block_nx1          = 20
    block_nx2          = 20
    block_nx3          = 20
