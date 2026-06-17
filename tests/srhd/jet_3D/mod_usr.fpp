@@ -89,7 +89,7 @@ contains
        do itr=1,srhd_n_tracer
           where(x_(:,:,:,3)<zjet.and.(x_(:,:,:,1)**2+x_(:,:,:,2)**2)<rjet**2)
            ! apparently tracer(itr) not known on device???
-            w_(:,:,:,iw_e+itr) = 1.0d0
+            w_(:,:,:,iw_e+itr) = w_(:,:,:,iw_rho)
           elsewhere
             w_(:,:,:,iw_e+itr) = 0.0d0
           endwhere
@@ -208,85 +208,87 @@ contains
 
 ! NOTE: This must be named exactly `specialbound_usr` in AGILE since during
 !   compilation it deals with this function.
-! NOTE: This is ran on the GPU.
+  ! NOTE: This is ran on the GPU.
   subroutine specialbound_usr(&
-      qt,&
-      ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3,&
-      ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3,&
-      iB, w, x)
-!$acc routine vector
-    ! use mod_physics, only: to_conservative, to_primitive
+       qt,&
+       ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3,&
+       ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3,&
+       iB, w, x)
+    !$acc routine vector
     use mod_global_parameters
-    use mod_physics
+    use mod_physics_vars
     implicit none
     integer, intent(in) :: ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3
     integer, intent(in) :: ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3
     integer, intent(in) :: iB
     double precision, intent(in) :: qt
     double precision, intent(inout),&
-      dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:nw_phys) :: w
+         dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:nw_phys) :: w
     double precision, intent(in),&
-      dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:ndim) :: x
-    integer :: itr,ix1, ix2, ix3,ixIntmin1,ixIntmin2,ixIntmin3,ixIntmax1,ixIntmax2,ixIntmax3
+         dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:ndim) :: x
+    integer              :: ix1, ix2, ix3, iw
 
     select case(iB)
     case(5)
-      ! select the first grid-internal layer above the boundary
-      ixIntmin1=ixOmin1
-      ixIntmin2=ixOmin2
-      ixIntmin3=ixOmin3+1
-      ixIntmax1=ixOmax1
-      ixIntmax2=ixOmax2
-      ixIntmax3=ixOmax3+1
-      ! switch to primitives on internal layer 
-      call phys_to_primitive(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
-       ixIntmin1,ixIntmin2,ixIntmin3,ixIntmax1,ixIntmax2,ixIntmax3,w,x)
-!$acc loop collapse(3) vector
+       ! select the first grid-internal layer above the boundary
+      !$acc loop collapse(3) vector
       do ix3 = ixOmin3, ixOmax3
-      do ix2 = ixOmin2, ixOmax2
-      do ix1 = ixOmin1, ixOmax1
-        if(x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2<rjet**2)then
-           w(ix1,ix2,ix3,iw_rho)    = rhojet
-           w(ix1,ix2,ix3,iw_mom(1)) = zero
-           w(ix1,ix2,ix3,iw_mom(2)) = zero
-           w(ix1,ix2,ix3,iw_mom(3)) = vjet*lfacjet
-           w(ix1,ix2,ix3,iw_e)      = pjet
-        else
-           w(ix1,ix2,ix3,iw_rho)    = w(ix1,ix2,ixOmax3+1,iw_rho)
-           w(ix1,ix2,ix3,iw_mom(1)) = w(ix1,ix2,ixOmax3+1,iw_mom(1))
-           w(ix1,ix2,ix3,iw_mom(2)) = w(ix1,ix2,ixOmax3+1,iw_mom(2))
-           w(ix1,ix2,ix3,iw_mom(3)) = w(ix1,ix2,ixOmax3+1,iw_mom(3))
-           w(ix1,ix2,ix3,iw_e)      = w(ix1,ix2,ixOmax3+1,iw_e)
-        endif
+         do ix2 = ixOmin2, ixOmax2
+            do ix1 = ixOmin1, ixOmax1
+               if (x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2 < rjet**2) then
+                  w(ix1,ix2,ix3,iw_rho)    = rhojet*lfacjet
+                  w(ix1,ix2,ix3,iw_mom(1)) = 0.0d0
+                  w(ix1,ix2,ix3,iw_mom(2)) = 0.0d0
+                  w(ix1,ix2,ix3,iw_mom(3)) = (rhojet + gamma_to_gamma_1 * pjet) * lfacjet**2 * vjet
+                  w(ix1,ix2,ix3,iw_e)      = &
+                       (rhojet + gamma_to_gamma_1 * pjet) * lfacjet**2 - pjet - rhojet * lfacjet
+               else
+! Calling primitive here is somehow broken.  To fix!!!!                  
+!                  call to_primitive(u)
+                  w(ix1,ix2,ix3,iw_rho)    = w(ix1,ix2,ixOmax3+1,iw_rho)
+                  w(ix1,ix2,ix3,iw_mom(1)) = w(ix1,ix2,ixOmax3+1,iw_mom(1))
+                  w(ix1,ix2,ix3,iw_mom(2)) = w(ix1,ix2,ixOmax3+1,iw_mom(2))
+                  w(ix1,ix2,ix3,iw_mom(3)) = w(ix1,ix2,ixOmax3+1,iw_mom(3))
+                  w(ix1,ix2,ix3,iw_e)      = w(ix1,ix2,ixOmax3+1,iw_e)
+               endif
+            end do
+         end do
       end do
-      end do
-      end do
-
+      
       if(srhd_n_tracer>0)then
-        do itr=1,srhd_n_tracer
-!$acc loop collapse(3) vector
-      do ix3 = ixOmin3, ixOmax3
-      do ix2 = ixOmin2, ixOmax2
-      do ix1 = ixOmin1, ixOmax1
-        if(x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2<rjet**2)then
-           ! apparently tracer(itr) not known on device???
-           w(ix1,ix2,ix3,iw_e+itr)    = 1.0d0
-        else
-           w(ix1,ix2,ix3,iw_e+itr)    = 0.0d0
-        endif
-      end do
-      end do
-      end do
-        enddo
+         do iw=1,srhd_n_tracer
+            !$acc loop collapse(3) vector
+            do ix3 = ixOmin3, ixOmax3
+               do ix2 = ixOmin2, ixOmax2
+                  do ix1 = ixOmin1, ixOmax1
+                     if (x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2<rjet**2) then
+                        ! apparently tracer(itr) not known on device???
+                        w(ix1,ix2,ix3,iw_e+iw)    = w(ix1,ix2,ix3,iw_rho)
+                     else
+                        w(ix1,ix2,ix3,iw_e+iw)    = 0.0d0
+                     endif
+                  end do
+               end do
+            end do
+         enddo
       endif
 
-      ! switch to conserved on internal layer 
-      call phys_to_conserved(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
-       ixIntmin1,ixIntmin2,ixIntmin3,ixIntmax1,ixIntmax2,ixIntmax3,w,x)
-      ! switch to conserved in ghost cells
-      call phys_to_conserved(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
-       ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,w,x)
-
+! Curently broken, cannot call anything here.      
+      ! ! switch to conserved in ghost cells
+      ! !$acc loop collapse(3) vector
+      ! do ix3 = ixOmin3, ixOmax3
+      !    do ix2 = ixOmin2, ixOmax2
+      !       do ix1 = ixOmin1, ixOmax1
+      !          do iw = 1, nw_phys
+      !             u(iw) = w(ix1,ix2,ix3,iw)
+      !          end do
+      !          call to_conservative(u)
+      !          do iw = 1, nw_phys
+      !             w(ix1,ix2,ix3,iw) = u(iw)
+      !          end do
+      !       end do
+      !    end do
+      ! end do
 
    end select
 

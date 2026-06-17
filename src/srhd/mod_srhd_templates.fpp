@@ -338,26 +338,25 @@ end subroutine addsource_local
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim
     real(dp), intent(out) :: flux(nw_flux)
-    real(dp)              :: ptotal
 
     real(dp) :: pth,vel(1:ndim)
 
-    pth=u(iw_e)
-    vel(1)=u(iw_mom(1))/u(lfac_)
-    vel(2)=u(iw_mom(2))/u(lfac_)
-    vel(3)=u(iw_mom(3))/u(lfac_)
+    pth    = u(iw_e)
+    vel(1) = u(iw_mom(1)) / u(lfac_)
+    vel(2) = u(iw_mom(2)) / u(lfac_)
+    vel(3) = u(iw_mom(3)) / u(lfac_)
 
     ! Density flux
-    flux(iw_rho)=u(iw_rho)*u(lfac_)*vel(flux_dim)
+    flux(iw_rho) = u(iw_rho) * u(lfac_) * vel(flux_dim)
 
     ! Momentum flux with pressure term
-    flux(iw_mom(1))=u(xi_)*u(iw_mom(1))*vel(flux_dim)
-    flux(iw_mom(2))=u(xi_)*u(iw_mom(2))*vel(flux_dim)
-    flux(iw_mom(3))=u(xi_)*u(iw_mom(3))*vel(flux_dim)
-    flux(iw_mom(flux_dim))=flux(iw_mom(flux_dim))+pth
+    flux(iw_mom(1))        = u(xi_) * vel(1) * vel(flux_dim)
+    flux(iw_mom(2))        = u(xi_) * vel(2) * vel(flux_dim)
+    flux(iw_mom(3))        = u(xi_) * vel(3) * vel(flux_dim)
+    flux(iw_mom(flux_dim)) = flux(iw_mom(flux_dim)) + pth
 
     ! Energy flux
-    flux(iw_e)=vel(flux_dim)*(u(xi_)-u(iw_rho))
+    flux(iw_e) = vel(flux_dim) * ( u(xi_) - u(iw_rho) * u(lfac_) )
 
     ! Tracer flux. Note that tracers stay conservative.
 #:if defined('N_TRACER')
@@ -384,7 +383,7 @@ pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
     ! input u is in primitive form
     ! auxiliaries are filled here
     rho=u(iw_rho)
-    rhoh=u(xi_)/u(lfac_)**2.0d0
+    rhoh=u(xi_)/u(lfac_)**2
     pth=u(iw_e)
     !!tmp1=u(iw_rho)
     !!tmp2=u(xi_)/u(lfac_)**2.0d0
@@ -401,14 +400,14 @@ pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
     end if
     !! end call srhd_get_csound2_prim_eos(tmp1,tmp2,v2,csound2)
 
-    v2=1.0d0-1.0d0/u(lfac_)**2
+    v2    = 1.0d0-1.0d0/u(lfac_)**2
     vidim = u(iw_mom(flux_dim))/u(lfac_)
-    tmp2=vidim**2.0d0
-    tmp1=1.0d0-v2*csound2-tmp2*(1.0d0-csound2)
-    tmp2=dsqrt(csound2*(1.0_dp-v2)*tmp1)
-    tmp1=vidim*(1.0_dp-csound2)
-    cmax=(tmp1+tmp2)/(1.0_dp-v2*csound2)
-    cmin=(tmp1-tmp2)/(1.0_dp-v2*csound2)
+    tmp2  = vidim**2
+    tmp1  = 1.0d0-v2*csound2-tmp2*(1.0d0-csound2)
+    tmp2  = dsqrt(csound2*(1.0_dp-v2)*tmp1)
+    tmp1  = vidim*(1.0_dp-csound2)
+    cmax  = (tmp1+tmp2)/(1.0_dp-v2*csound2)
+    cmin  = (tmp1-tmp2)/(1.0_dp-v2*csound2)
     ! Limit by speed of light
     cmin = max(cmin, - 1.0d0)
     cmin = min(cmin,   1.0d0)
