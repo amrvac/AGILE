@@ -36,6 +36,7 @@ contains
     call params_read_usr(par_files)
     usr_set_parameters => set_parameters_usr
     usr_init_one_grid => initonegrid_usr
+    usr_print_log     => log_usr
 
     call phys_activate()
 
@@ -245,5 +246,154 @@ contains
        ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,w,x)
 
   end subroutine initonegrid_usr
+
+
+  subroutine log_usr()
+    use mod_timing, only: itTimeLast, timeLast
+    use mod_forest, only: nleafs_active, nleafs_level
+    use mod_functions_bfield, only: get_current
+    use mod_global_parameters
+
+    logical, save       :: opened = .false.
+    integer             :: iigrid, igrid, amode, istatus(MPI_STATUS_SIZE)
+    integer, parameter  :: my_unit = 20
+    integer             :: level, i, idirmin
+    character(len=80)   :: filename
+    character(len=40)   :: fmt_string
+    character(len=1024) :: line
+
+    double precision :: dvolume, domain_volume
+    double precision :: local_ME, local_IE, local_heating
+    double precision :: local_maxJ, local_maxv
+    double precision :: local_sums(3), global_sums(3)
+    double precision :: local_maxs(2), global_maxs(2)
+    double precision :: current&
+      (ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3,7-2*ndir:3)
+
+    integer          :: nx1, nx2, nx3, nc, ncells, dit
+    double precision :: time, dtTimeLast, cellupdatesPerSecond
+    double precision :: wctPerCodeTime, timeToFinish
+
+    local_ME      = 0d0
+    local_IE      = 0d0
+    local_heating = 0d0
+    local_maxJ    = 0d0
+    local_maxv    = 0d0
+    domain_volume = (xprobmax1-xprobmin1)*&
+                    (xprobmax2-xprobmin2)*&
+                    (xprobmax3-xprobmin3)
+
+    do iigrid = 1, igridstail
+       igrid = igrids(iigrid)
+       block => ps(igrid)
+       dvolume = ps(igrid)%dvolume(ixMlo1, ixMlo2, ixMlo3)
+       call get_current(ps(igrid)%w, ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,&
+          ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3, idirmin, current)
+       call compute_block_stats(ps(igrid)%w, current, dvolume,&
+          local_ME, local_IE, local_heating, local_maxJ, local_maxv)
+    end do
+
+    local_sums = (/ local_ME, local_IE, local_heating /)
+    local_maxs = (/ local_maxJ, local_maxv /)
+    call MPI_ALLREDUCE(local_sums, global_sums, size(local_sums),&
+       MPI_DOUBLE_PRECISION, MPI_SUM, icomm, ierrmpi)
+    call MPI_ALLREDUCE(local_maxs, global_maxs, size(local_maxs),&
+       MPI_DOUBLE_PRECISION, MPI_MAX, icomm, ierrmpi)
+
+    if (mype == 0) then
+
+! average cell updates / rank / second
+       nx1 = ixMhi1-ixMlo1+1
+       nx2 = ixMhi2-ixMlo2+1
+       nx3 = ixMhi3-ixMlo3+1
+       nc     = nx1*nx2*nx3 ! per block
+       ncells = nc*nleafs_active
+       time       = MPI_WTIME()
+       dit        = it-itTimeLast
+       dtTimeLast = time-timeLast
+       itTimeLast = it
+       timeLast   = time
+       cellupdatesPerSecond = dble(ncells)*dble(nstep)*dble(dit)/&
+          (max(dtTimeLast, epsilon(1.0d0))*dble(npe))
+
+! time to finish in hours
+       wctPerCodeTime = dtTimeLast / max(dble(dit) * dt, epsilon(1.0d0))
+       timeToFinish   = (time_max - global_time) * wctPerCodeTime / 3600.0d0
+
+       filename = trim(base_filename)//".log"
+
+       if (.not. opened) then
+          if (restart_from_file == undefined) then
+             open(unit=my_unit, file=trim(filename), status='replace')
+             close(my_unit, status='delete')
+          end if
+
+          amode = ior(MPI_MODE_CREATE, MPI_MODE_WRONLY)
+          amode = ior(amode, MPI_MODE_APPEND)
+          call MPI_FILE_OPEN(MPI_COMM_SELF, filename, amode, MPI_INFO_NULL,&
+             log_fh, ierrmpi)
+          opened = .true.
+
+          if (restart_from_file == undefined .or. reset_time) then
+             line = 'it global_time dt'
+             do level = 1, refine_max_level
+                i = len_trim(line)+2
+                write(line(i:), '(a,i0)') 'n', level
+             end do
+             line = trim(line)//' ME IE maxJ maxv heating'//&
+                " 'cell updates/s/rank' 'time to finish [hrs]'"
+             call MPI_FILE_WRITE(log_fh, trim(line)//new_line('a'),&
+                len_trim(line)+1, MPI_CHARACTER, istatus, ierrmpi)
+          end if
+       end if
+
+       write(line, '(i8,2ES13.4)') it, global_time, dt
+       i = len_trim(line)+2
+       write(fmt_string, '(a,i0,a)') '(', refine_max_level, 'i10)'
+       write(line(i:), fmt_string) nleafs_level(1:refine_max_level)
+       i = len_trim(line)+2
+       write(line(i:), '(7ES13.4)')&
+          global_sums(1), global_sums(2),& ! ME, IE
+          global_maxs(1), global_maxs(2),& ! maxJ, maxv
+          global_sums(3)/domain_volume,&   ! heating
+          cellupdatesPerSecond, timeToFinish
+
+       call MPI_FILE_WRITE(log_fh, trim(line)//new_line('a'),&
+          len_trim(line)+1, MPI_CHARACTER, istatus, ierrmpi)
+    end if
+
+  contains
+
+    subroutine compute_block_stats(w, current, dvolume,&
+        bME, bIE, bheating, bmaxJ, bmaxv)
+      double precision, intent(in)    :: w&
+        (ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3,1:nw)
+      double precision, intent(in)    :: current&
+        (ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3,7-2*ndir:3)
+      double precision, intent(in)    :: dvolume
+      double precision, intent(inout) :: bME, bIE, bheating, bmaxJ, bmaxv
+      integer :: i1, i2, i3
+      double precision :: v2, B2, pth, J2
+
+      do i3 = ixMlo3, ixMhi3
+      do i2 = ixMlo2, ixMhi2
+      do i1 = ixMlo1, ixMhi1
+         associate(rho => w(i1,i2,i3,rho_))
+         v2 = sum(w(i1,i2,i3,mom(:))**2)/rho**2
+         B2 = sum(w(i1,i2,i3,mag(:))**2)
+         pth   = (mhd_gamma-1d0)*(w(i1,i2,i3,e_)-0.5d0*rho*v2-0.5d0*B2)
+         J2 = sum(current(i1,i2,i3,:)**2)
+         bME    = bME+0.5d0*B2*dvolume
+         bIE    = bIE+pth/(mhd_gamma-1d0)*dvolume
+         bheating = bheating+mhd_eta*J2*dvolume
+         bmaxJ = max(bmaxJ, sqrt(J2))
+         bmaxv = max(bmaxv, sqrt(v2))
+         end associate
+      end do
+      end do
+      end do
+    end subroutine compute_block_stats
+
+  end subroutine log_usr
 
 end module mod_usr

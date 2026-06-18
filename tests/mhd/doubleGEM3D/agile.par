@@ -4,6 +4,7 @@
    autoconvert      = F
    convert_type     = 'vtuBCCmpi'
    saveprim         = T
+   typefilelog      = 'special'
  /
 
  &savelist
