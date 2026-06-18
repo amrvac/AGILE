@@ -49,7 +49,7 @@
  &meshlist
    refine_usr         = .true.
    refine_criterion   = 3
-   max_blocks         = 2400
+   max_blocks         = 2048
    refine_max_level   = 3
    ditregrid          = 4
    block_nx1          = 20

@@ -88,10 +88,9 @@ contains
      if(srhd_n_tracer>0)then
        do itr=1,srhd_n_tracer
           where(x_(:,:,:,3)<zjet.and.(x_(:,:,:,1)**2+x_(:,:,:,2)**2)<rjet**2)
-           ! apparently tracer(itr) not known on device???
-            w_(:,:,:,iw_e+itr) = w_(:,:,:,iw_rho)
+            w_(:,:,:,tracer(itr)) = w_(:,:,:,iw_rho)*lfacjet
           elsewhere
-            w_(:,:,:,iw_e+itr) = 0.0d0
+            w_(:,:,:,tracer(itr)) = 0.0d0
           endwhere
        enddo
      endif
@@ -227,6 +226,7 @@ contains
     double precision, intent(in),&
          dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:ndim) :: x
     integer              :: ix1, ix2, ix3, iw
+    double precision     :: rhoh, E_th, E
 
     select case(iB)
     case(5)
@@ -236,25 +236,36 @@ contains
          do ix2 = ixOmin2, ixOmax2
             do ix1 = ixOmin1, ixOmax1
                if (x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2 < rjet**2) then
+                                 
+                  if(srhd_eos) then
+                     E_th = pjet * inv_gamma_1
+                     E    = E_th + dsqrt(E_th**2+rhojet**2)
+                     ! writing rho/E on purpose, for numerics 
+                     rhoh = 0.5_dp * ((srhd_gamma+1.0_dp) * E &
+                          - gamma_1 * rhojet * (rhojet/E))
+                  else
+                     rhoh = rhojet + gamma_to_gamma_1*pjet
+                  end if
+
                   w(ix1,ix2,ix3,iw_rho)    = rhojet*lfacjet
                   w(ix1,ix2,ix3,iw_mom(1)) = 0.0d0
                   w(ix1,ix2,ix3,iw_mom(2)) = 0.0d0
-                  w(ix1,ix2,ix3,iw_mom(3)) = (rhojet + gamma_to_gamma_1 * pjet) * lfacjet**2 * vjet
+                  w(ix1,ix2,ix3,iw_mom(3)) = rhoh * lfacjet**2 * vjet
                   w(ix1,ix2,ix3,iw_e)      = &
-                       (rhojet + gamma_to_gamma_1 * pjet) * lfacjet**2 - pjet - rhojet * lfacjet
+                       rhoh * lfacjet**2 - pjet - rhojet * lfacjet
                else
 ! Calling primitive here is somehow broken.  To fix!!!!                  
 !                  call to_primitive(u)
-                  w(ix1,ix2,ix3,iw_rho)    = w(ix1,ix2,ixOmax3+1,iw_rho)
-                  w(ix1,ix2,ix3,iw_mom(1)) = w(ix1,ix2,ixOmax3+1,iw_mom(1))
-                  w(ix1,ix2,ix3,iw_mom(2)) = w(ix1,ix2,ixOmax3+1,iw_mom(2))
-                  w(ix1,ix2,ix3,iw_mom(3)) = w(ix1,ix2,ixOmax3+1,iw_mom(3))
-                  w(ix1,ix2,ix3,iw_e)      = w(ix1,ix2,ixOmax3+1,iw_e)
+                  w(ix1,ix2,ix3,iw_rho)    =   w(ix1,ix2,2*ixOmax3-ix3+1,iw_rho)
+                  w(ix1,ix2,ix3,iw_mom(1)) =   w(ix1,ix2,2*ixOmax3-ix3+1,iw_mom(1))
+                  w(ix1,ix2,ix3,iw_mom(2)) =   w(ix1,ix2,2*ixOmax3-ix3+1,iw_mom(2))
+                  w(ix1,ix2,ix3,iw_mom(3)) = - w(ix1,ix2,2*ixOmax3-ix3+1,iw_mom(3))
+                  w(ix1,ix2,ix3,iw_e)      =   w(ix1,ix2,2*ixOmax3-ix3+1,iw_e)
                endif
             end do
          end do
       end do
-      
+
       if(srhd_n_tracer>0)then
          do iw=1,srhd_n_tracer
             !$acc loop collapse(3) vector
@@ -262,10 +273,9 @@ contains
                do ix2 = ixOmin2, ixOmax2
                   do ix1 = ixOmin1, ixOmax1
                      if (x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2<rjet**2) then
-                        ! apparently tracer(itr) not known on device???
-                        w(ix1,ix2,ix3,iw_e+iw)    = w(ix1,ix2,ix3,iw_rho)
+                        w(ix1,ix2,ix3,tracer(iw))    = w(ix1,ix2,ix3,iw_rho)
                      else
-                        w(ix1,ix2,ix3,iw_e+iw)    = 0.0d0
+                        w(ix1,ix2,ix3,tracer(iw))    = 0.0d0
                      endif
                   end do
                end do
