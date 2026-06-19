@@ -10,6 +10,7 @@
 HD_DIRS := hd/KH3D hd/RT3D hd/KH3D-SMR hd/KH3D_tracer hd/sphere_advection hd/TRML hd/cloud_crushing
 MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D
 FFHD_DIRS := ffhd/TI3D
+SRHD_DIRS := srhd/shockTube
 
 TEST_DIRS := $(HD_DIRS) $(MHD_DIRS) $(FFHD_DIRS)
 
