@@ -22,6 +22,7 @@ contains
 @:addsource_local()
 @:addsource_nonlocal()
 @:addsource_compact()
+@:addsource_nonlocal_full()
 @:to_primitive()
 @:to_conservative()
 @:get_cmax()
@@ -105,6 +106,9 @@ end subroutine finite_volume_local
        ixImin3:ixImax3)
     real(dp)               :: tmp(nw_phys,5)
     real(dp)               :: tmp1(nw_phys,3),tmp2(nw_phys,3),tmp3(nw_phys,3)
+#:if defined('SOURCE_NONLOCAL_FULL')
+    real(dp)               :: tmp4(nw_phys,5),tmp5(nw_phys,5),tmp6(nw_phys,5)
+#:endif
     real(dp)               :: f(nw_flux, 2)
     real(dp)               :: inv_dr(ndim)
     real(dp)               :: dr(ndim)
@@ -142,7 +146,7 @@ end subroutine finite_volume_local
              end do
           end do
 
-       !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
+       !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}##{if defined('SOURCE_NONLOCAL_FULL')}#, tmp4,tmp5,tmp6 #{endif}#)
        do ix3=ixOmin3,ixOmax3 
           do ix2=ixOmin2,ixOmax2 
              do ix1=ixOmin1,ixOmax1 
@@ -220,8 +224,21 @@ end subroutine finite_volume_local
                    call addsource_compact(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp1,tmp2,tmp3, &
                         qt, wnew, xloc, dr, .false. )
-                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)           
-#:endif                
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
+#:endif
+
+#:if defined('SOURCE_NONLOCAL_FULL')
+                   ! Add full 5-point cross source terms:
+                   xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
+                   tmp4 = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
+                   tmp5 = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
+                   tmp6 = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
+                   call addsource_nonlocal_full(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
+                        dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp4,tmp5,tmp6, &
+                        qt, wnew, xloc, dr, .false. )
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
+#:endif
                 end do
              end do
           end do

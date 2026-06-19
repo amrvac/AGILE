@@ -64,10 +64,6 @@
   double precision, public                :: He_abundance=0.1d0
   !$acc declare copyin(He_abundance)
 
-  !> The thermal conductivity kappa in hyperbolic thermal conduction
-  double precision, public                :: hypertc_kappa=-1.0d0
-  !$acc declare copyin(hypertc_kappa)
-
   !> Whether p*divb source term is not zero
   logical, public                         :: ffhd_pdivb = .false.
   !$acc declare copyin(ffhd_pdivb)
@@ -251,10 +247,8 @@
 #:if defined('HYPERTC')
     q_ = var_set_q()
     need_global_cmax = .true.
-    hypertc_kappa = 8.d-7*unit_temperature**3.5_dp/unit_length/unit_density/unit_velocity**3.0_dp
     !$acc update device(q_)
     !$acc update device(need_global_cmax)
-    !$acc update device(hypertc_kappa)
 #:endif
 
     ! Set index of frozen magnetic field
@@ -282,6 +276,17 @@
     !$acc update device(rc_fl)
     !$acc enter data copyin(rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc)
 #:endif
+
+    ! TODO: compile-time nw_phys/nw_flux and runtime nwflux/nw should
+    ! be unified so this can't go out of sync. Until then, assert here
+    if (nwflux /= nw_flux) then
+       write(*,'(A,I0,A,I0)') "ASSERT FAIL: nwflux=", nwflux, " nw_flux=", nw_flux
+       call mpistop("nwflux /= nw_flux: var_set_* calls do not match nw_flux parameter")
+    end if
+    if (nw /= nw_phys) then
+       write(*,'(A,I0,A,I0)') "ASSERT FAIL: nw=", nw, " nw_phys=", nw_phys
+       call mpistop("nw /= nw_phys: var_set_* calls do not match nw_phys parameter")
+    end if
 
   end subroutine phys_init
 #:enddef
@@ -372,7 +377,8 @@ end subroutine addsource_local
 subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir, &
      qsourcesplit)
   !$acc routine seq
-  use mod_global_parameters, only: dt, cmax_global, courantpar, third
+  use mod_global_parameters, only: dt, cmax_global, courantpar, third, &
+       unit_temperature, unit_length, unit_density, unit_velocity
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim(nw_phys,5)
@@ -381,7 +387,7 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
   integer, intent(in)      :: idir
   logical, intent(in)      :: qsourcesplit
   ! .. local ..
-  real(dp)                 :: tau, htc_qrsc, sigT
+  real(dp)                 :: tau, htc_qrsc, sig_par
   real(dp)                 :: Te(1:5), gradT
   real(dp)                 :: mag5(1:5), divb, mag
 
@@ -404,11 +410,13 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
 
      gradT = (8.d0*(Te(4)-Te(2))-Te(5)+Te(1))/(12.d0*dx(idir))
 
-     sigT = hypertc_kappa * sqrt(Te(3)**5)
-     tau = max(4.d0*dt, sigT*Te(3)*courantpar**2*(phys_gamma-1.0d0)/&
+     sig_par = 8.d-7_dp * unit_temperature**3.5_dp &
+             / (unit_length * unit_density * unit_velocity**3.0_dp) &
+             * sqrt(Te(3)**5)
+     tau = max(4.d0*dt, sig_par*Te(3)*courantpar**2*(phys_gamma-1.0d0)/&
         (wCTprim(iw_e,3)*cmax_global**2))
 
-     htc_qrsc = sigT * mag * gradT
+     htc_qrsc = sig_par * mag * gradT
 
      wnew(iw_q) = wnew(iw_q) - qdt * (htc_qrsc + wCTprim(iw_q,3)*third) / tau
 #:endif
