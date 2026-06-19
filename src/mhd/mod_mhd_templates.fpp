@@ -114,7 +114,7 @@
   logical, public                         :: mhd_hyperbolic_thermal_conduction = .false.
   !$acc declare copyin(mhd_hyperbolic_thermal_conduction)
 
-  !> Compile-time selector for anisotropic HTC -- read by build system to set HYPERTC_ANISO flag
+  !> Compile-time selector for anisotropic HTC
   logical, public                         :: mhd_hyperbolic_thermal_conduction_anisotropic = .false.
 
   !> GLM-MHD parameter: ratio of the diffusive and advective time scales for div b
@@ -162,11 +162,7 @@
     namelist /mhd_list/ mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity,&
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
       mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
-#:if defined('HYPERTC_ANISO')
       mhd_hyperbolic_thermal_conduction_anisotropic, hypertc_lnLambda
-#:else
-      mhd_hyperbolic_thermal_conduction_anisotropic
-#:endif
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -179,11 +175,7 @@
     !$acc&     mhd_gamma, mhd_glm_alpha, &
     !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, &
     !$acc&     He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity, &
-#:if defined('HYPERTC_ANISO')
     !$acc&     mhd_hyperbolic_thermal_conduction, hypertc_lnLambda)
-#:else
-    !$acc&     mhd_hyperbolic_thermal_conduction)
-#:endif
 #endif
 
   end subroutine read_params
@@ -792,7 +784,7 @@ end subroutine addsource_nonlocal_full
 
     ! Hyperbolic TC fluxes -- q variables have zero advective flux
 #:if defined('HYPERTC_ANISO')
-    ! Two-scalar: qpar (field-aligned) + qperp (approximate perpendicular direction)
+    ! Two-scalar: qpar (field-aligned) + qperp (perpendicular direction)
     Bmag2_tc = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
     b_fd     = u(iw_mag(flux_dim)) / sqrt(max(Bmag2_tc, 1.0e-18_dp))
     flux(iw_e)  = flux(iw_e) + u(q_)*b_fd + u(qperp_)*sqrt(max(1.0_dp - b_fd**2, 0.0_dp))

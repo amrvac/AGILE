@@ -228,7 +228,7 @@ end subroutine finite_volume_local
 #:endif
 
 #:if defined('SOURCE_NONLOCAL_FULL')
-                   ! Add full 5-point cross source terms:
+                   ! Add full 5-point source terms:
                    xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                    wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
                    tmp4 = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
