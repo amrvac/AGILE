@@ -34,7 +34,7 @@ implies = ["components.source_dt"]
 [methodlist.phys]
 type = "option"
 name = "PHYS"
-options = ["hd", "mhd", "ffhd"]
+options = ["hd", "mhd", "ffhd", "srhd"]
 flags = ["fypp", "hash"]
 default = "hd"
 
@@ -136,6 +136,20 @@ name = "COOLING"
 flags = ["fypp", "hash"]
 default = false
 implies = ["components.source_local"]
+
+[srhd_list]
+[srhd_list.srhd_source_usr]
+type = "flag"
+name = "SOURCE_USR"
+flags = ["fypp", "hash"]
+default = false
+implies = ["components.source_local"]
+
+[srhd_list.srhd_n_tracer]
+type = "value"
+name = "N_TRACER"
+dtype = "int"
+flags = ["fypp", "hash"]
 
 [meshlist]
 [meshlist.refine_usr]
