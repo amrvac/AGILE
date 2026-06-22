@@ -52,11 +52,9 @@
 
   !> The adiabatic index
   double precision, public                :: mhd_gamma = 5.d0/3.0d0
+  double precision, public                :: gamma_1, inv_gamma_1
   !$acc declare copyin(mhd_gamma)
-
-  !> The adiabatic index minus 1
-  double precision, public                :: mhd_gamma_m1
-  !$acc declare copyin(mhd_gamma_m1)
+  !$acc declare create(gamma_1, inv_gamma_1)
 
   !> Helium abundance over Hydrogen
   double precision, public  :: He_abundance=0.1d0
@@ -249,8 +247,9 @@
     phys_gamma = mhd_gamma
     phys_partial_ionization=mhd_partial_ionization
     need_global_cmax=.true.
-    mhd_gamma_m1=mhd_gamma-1.0_dp
- !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,mhd_gamma_m1)
+    gamma_1=mhd_gamma-1.0_dp
+    inv_gamma_1=1.0_dp/gamma_1
+ !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,gamma_1,inv_gamma_1)
 
     use_particles = mhd_particles
 
@@ -509,7 +508,7 @@ end subroutine addsource_compact
     u(iw_mom(1))=u(iw_mom(1))/u(iw_rho)
     u(iw_mom(2))=u(iw_mom(2))/u(iw_rho)
     u(iw_mom(3))=u(iw_mom(3))/u(iw_rho)
-    u(iw_e)=mhd_gamma_m1*(u(iw_e)-0.5_dp*&
+    u(iw_e)=gamma_1*(u(iw_e)-0.5_dp*&
       (u(iw_rho)*(u(iw_mom(1))**2+u(iw_mom(2))**2+u(iw_mom(3))**2)+&
        u(iw_mag(1))**2+u(iw_mag(2))**2+u(iw_mag(3))**2))
 
@@ -522,7 +521,7 @@ end subroutine addsource_compact
     real(dp), intent(inout) :: u(nw_phys)
 
     ! Compute energy from pressure and kinetic energy
-    u(iw_e)=u(iw_e)/mhd_gamma_m1+0.5_dp*&
+    u(iw_e)=u(iw_e)*inv_gamma_1+0.5_dp*&
       (u(iw_rho)*(u(iw_mom(1))**2+u(iw_mom(2))**2+u(iw_mom(3))**2)+&
        u(iw_mag(1))**2+u(iw_mag(2))**2+u(iw_mag(3))**2)
     ! Compute momentum from density and velocity components
@@ -557,7 +556,7 @@ end subroutine addsource_compact
     flux(iw_mom(flux_dim))=flux(iw_mom(flux_dim))+ptotal
 
     ! Energy flux
-    flux(iw_e)=u(iw_mom(flux_dim))*(u(iw_e)/mhd_gamma_m1+0.5_dp*&
+    flux(iw_e)=u(iw_mom(flux_dim))*(u(iw_e)*inv_gamma_1+0.5_dp*&
       u(iw_rho)*(u(iw_mom(1))**2+u(iw_mom(2))**2+u(iw_mom(3))**2)+&
       2.0_dp*ptotal-u(iw_e))-u(iw_mag(flux_dim))*&
       (u(iw_mag(1))*u(iw_mom(1))+u(iw_mag(2))*u(iw_mom(2))+u(iw_mag(3))*u(iw_mom(3)))
@@ -619,7 +618,7 @@ pure real(dp) function get_pthermal(w, x) result(pth)
   real(dp), intent(in)  :: w(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
 
-  pth = (phys_gamma-1.0_dp)*(w(iw_e)-0.5_dp*sum(w(iw_mom(:))**2)/w(iw_rho) &
+  pth = gamma_1*(w(iw_e)-0.5_dp*sum(w(iw_mom(:))**2)/w(iw_rho) &
        -0.5_dp*(w(iw_mag(1))**2+w(iw_mag(2))**2+w(iw_mag(3))**2))
 end function get_pthermal
 #:enddef

@@ -40,7 +40,9 @@
 
   !> The adiabatic index
   double precision, public                :: hd_gamma = 5.d0/3.0d0
+  double precision, public                :: gamma_1, inv_gamma_1
   !$acc declare copyin(hd_gamma)
+  !$acc declare create(gamma_1, inv_gamma_1)
 
   !> The adiabatic constant
   double precision, public                :: hd_adiab = 1.0d0
@@ -206,7 +208,9 @@
     phys_internal_e = .false.
     phys_gamma = hd_gamma
     phys_partial_ionization=hd_partial_ionization
- !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization)
+    gamma_1 = hd_gamma - 1.0d0
+    inv_gamma_1 = 1.0d0/gamma_1
+ !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization, gamma_1, inv_gamma_1)
 
     use_particles = hd_particles
 
@@ -365,7 +369,7 @@ pure subroutine to_primitive(u)
       u(iw_mom(3)) = u(iw_mom(3))/u(iw_rho)
 
   ! Compute pressure from energy
-  u(iw_e) = (hd_gamma-1.0_dp) * (u(iw_e) - 0.5_dp * u(iw_rho) * &
+  u(iw_e) = gamma_1 * (u(iw_e) - 0.5_dp * u(iw_rho) * &
      sum(u(iw_mom(1:ndim))**2) )
 
 end subroutine to_primitive
@@ -375,12 +379,9 @@ end subroutine to_primitive
 pure subroutine to_conservative(u)
   !$acc routine seq
   real(dp), intent(inout) :: u(nw_phys)
-  real(dp)                :: inv_gamma_m1
-
-  inv_gamma_m1 = 1.0d0/(hd_gamma - 1.0_dp)
 
   ! Compute energy from pressure and kinetic energy
-  u(iw_e) = u(iw_e) * inv_gamma_m1 + 0.5_dp * u(iw_rho) * &
+  u(iw_e) = u(iw_e) * inv_gamma_1 + 0.5_dp * u(iw_rho) * &
      sum(u(iw_mom(1:ndim))**2)
 
   ! Compute momentum from density and velocity components
@@ -398,9 +399,6 @@ subroutine get_flux(u, xC, flux_dim, flux)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
   real(dp), intent(out) :: flux(nw_flux)
-  real(dp)              :: inv_gamma_m1
-
-  inv_gamma_m1 = 1.0d0/(hd_gamma - 1.0_dp)
 
   ! Density flux
   flux(iw_rho) = u(iw_rho) * u(iw_mom(flux_dim))
@@ -414,7 +412,7 @@ subroutine get_flux(u, xC, flux_dim, flux)
   flux(iw_mom(flux_dim)) = flux(iw_mom(flux_dim)) + u(iw_e)
 
   ! Energy flux
-  flux(iw_e) = u(iw_mom(flux_dim)) * (u(iw_e) * inv_gamma_m1 + 0.5_dp * &
+  flux(iw_e) = u(iw_mom(flux_dim)) * (u(iw_e) * inv_gamma_1 + 0.5_dp * &
      u(iw_rho) * sum(u(iw_mom(1:ndim))**2) + u(iw_e))
 
   ! Tracer flux. Note that tracers stay conservative.
@@ -531,7 +529,7 @@ pure double precision function get_pthermal(w, x) result(pth)
   double precision, intent(in)  :: w(nw_flux)
   double precision, intent(in)  :: x(1:ndim)
 
-  pth = (phys_gamma-1.0_dp)*(w(iw_e)-0.5_dp*sum(w(iw_mom(:))**2)/w(iw_rho))
+  pth = gamma_1*(w(iw_e)-0.5_dp*sum(w(iw_mom(:))**2)/w(iw_rho))
 end function get_pthermal
 #:enddef
 
