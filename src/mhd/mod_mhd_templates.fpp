@@ -520,6 +520,9 @@ end subroutine addsource_local
 subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, x, dx, &
      qsourcesplit)
   !$acc routine seq
+#:if defined('HYPERTC_ANISO')
+  use mod_global_parameters, only: dt, cmax_global, ndir, smalldouble
+#:endif
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim1(nw_phys,3),wCTprim2(nw_phys,3),wCTprim3(nw_phys,3)
@@ -530,6 +533,12 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
   real(dp)                 :: laplb_cd2
   real(dp)                 :: Jdir1,Jdir2,Jdir3
   integer                  :: idir
+#:if defined('HYPERTC_ANISO')
+  real(dp)   :: Te_c, rho_c, e_c, sig_par, sig_perp, chi
+  real(dp)   :: gradT(3), bgradT, gradTperp_mag
+  real(dp)   :: Bmag2, Bmag, Bmag2_safe, tau_par, tau_perp
+  integer    :: k_tc
+#:endif
 
   if (.not. qsourcesplit) then 
      !---------------------------------
@@ -582,15 +591,56 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
      wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*(Jdir1**2+Jdir2**2+Jdir3**2)
 #:endif
 
+#:if defined('HYPERTC_ANISO')
+    Te_c  = wCTprim1(iw_e,2) / wCTprim1(iw_rho,2)
+    rho_c = wCTprim1(iw_rho,2)
+
+    gradT(1) = (wCTprim1(iw_e,3)/wCTprim1(iw_rho,3) - wCTprim1(iw_e,1)/wCTprim1(iw_rho,1)) / (2.d0*dx(1))
+    gradT(2) = (wCTprim2(iw_e,3)/wCTprim2(iw_rho,3) - wCTprim2(iw_e,1)/wCTprim2(iw_rho,1)) / (2.d0*dx(2))
+    gradT(3) = (wCTprim3(iw_e,3)/wCTprim3(iw_rho,3) - wCTprim3(iw_e,1)/wCTprim3(iw_rho,1)) / (2.d0*dx(3))
+
+    Bmag2 = 0.0d0
+    do k_tc = 1, ndir
+      Bmag2 = Bmag2 + wCTprim1(iw_mag(k_tc),2)**2
+    end do
+    Bmag       = sqrt(Bmag2)
+    Bmag2_safe = max(Bmag2, smalldouble**2)
+
+    bgradT = 0.0d0
+    do k_tc = 1, ndir
+      bgradT = bgradT + wCTprim1(iw_mag(k_tc),2) * gradT(k_tc)
+    end do
+    bgradT = bgradT * Bmag / Bmag2_safe
+
+    gradTperp_mag = sqrt(max(gradT(1)**2 + gradT(2)**2 + gradT(3)**2 &
+                           - bgradT**2, 0.0d0))
+
+    if (hypertc_const_kappa) then
+      sig_par = htc_coeff_par
+    else
+      sig_par = htc_coeff_par * Te_c**2.5d0
+    end if
+    chi      = htc_Cchi * Bmag * Te_c**1.5d0 / rho_c
+    sig_perp = sig_par / (1.0d0 + chi**2)
+
+    e_c = wCTprim1(iw_e,2) / (mhd_gamma - 1.0d0) + 0.5d0 * Bmag2
+
+    tau_par  = max(4.d0*dt, sig_par *Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
+    tau_perp = max(4.d0*dt, sig_perp*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
+
+    wnew(q_)     = wnew(q_)     - qdt*(sig_par *bgradT + wCTprim1(q_,2)    )/tau_par
+    wnew(qperp_) = wnew(qperp_) - qdt*(sig_perp*gradTperp_mag + wCTprim1(qperp_,2))/tau_perp
+#:endif
+
   else
      !---------------------------------
-     ! split sources     
+     ! split sources
      !---------------------------------
 
      ! Not yet implemented
 
   end if
-  
+
 end subroutine addsource_compact
 #:enddef
 
@@ -648,90 +698,6 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
 end subroutine addsource_nonlocal
 #:enddef
 
-#:def addsource_nonlocal_full()
-subroutine addsource_nonlocal_full(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, &
-     x, dx, qsourcesplit)
-  !$acc routine seq
-  use mod_global_parameters, only: dt, cmax_global, courantpar, ndir, smalldouble
-
-  real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
-  real(dp), intent(in)     :: wCTprim1(nw_phys,5),wCTprim2(nw_phys,5),wCTprim3(nw_phys,5)
-  real(dp), intent(in)     :: x(1:ndim), dx(1:ndim)
-  real(dp), intent(inout)  :: wnew(nw_phys)
-  logical, intent(in)      :: qsourcesplit
-#:if defined('HYPERTC_ANISO')
-  real(dp)   :: Te_c, rho_c, e_c, sig_par, sig_perp, chi
-  real(dp)   :: gradT(3), bgradT, gradTperp_mag
-  real(dp)   :: Bmag2, Bmag, Bmag2_safe, tau_par, tau_perp
-  integer    :: k_tc
-#:endif
-
-  if (.not. qsourcesplit) then
-
-#:if defined('HYPERTC_ANISO')
-    Te_c  = wCTprim1(iw_e,3) / wCTprim1(iw_rho,3)
-    rho_c = wCTprim1(iw_rho,3)
-
-    ! 4th-order central gradient of T in all 3 directions
-    gradT(1) = (8.d0*(wCTprim1(iw_e,4)/wCTprim1(iw_rho,4) &
-                    - wCTprim1(iw_e,2)/wCTprim1(iw_rho,2)) &
-              -      (wCTprim1(iw_e,5)/wCTprim1(iw_rho,5) &
-                    - wCTprim1(iw_e,1)/wCTprim1(iw_rho,1))) / (12.d0*dx(1))
-    gradT(2) = (8.d0*(wCTprim2(iw_e,4)/wCTprim2(iw_rho,4) &
-                    - wCTprim2(iw_e,2)/wCTprim2(iw_rho,2)) &
-              -      (wCTprim2(iw_e,5)/wCTprim2(iw_rho,5) &
-                    - wCTprim2(iw_e,1)/wCTprim2(iw_rho,1))) / (12.d0*dx(2))
-    gradT(3) = (8.d0*(wCTprim3(iw_e,4)/wCTprim3(iw_rho,4) &
-                    - wCTprim3(iw_e,2)/wCTprim3(iw_rho,2)) &
-              -      (wCTprim3(iw_e,5)/wCTprim3(iw_rho,5) &
-                    - wCTprim3(iw_e,1)/wCTprim3(iw_rho,1))) / (12.d0*dx(3))
-
-    ! |B|^2 and |B| at centre
-    Bmag2 = 0.0d0
-    do k_tc = 1, ndir
-      Bmag2 = Bmag2 + wCTprim1(iw_mag(k_tc),3)**2
-    end do
-    Bmag      = sqrt(Bmag2)
-    Bmag2_safe = max(Bmag2, smalldouble**2)
-
-    ! bhat.gradT; field-aligned component of temperature gradient
-    bgradT = 0.0d0
-    do k_tc = 1, ndir
-      bgradT = bgradT + wCTprim1(iw_mag(k_tc),3) * gradT(k_tc)
-    end do
-    bgradT = bgradT * Bmag / Bmag2_safe
-
-    ! |gradT_perp| = sqrt(|gradT|^2 - (bhat.gradT)^2)
-    gradTperp_mag = sqrt(max(gradT(1)**2 + gradT(2)**2 + gradT(3)**2 &
-                           - bgradT**2, 0.0d0))
-
-    if (hypertc_const_kappa) then
-      sig_par = htc_coeff_par
-    else
-      sig_par = htc_coeff_par * Te_c**2.5d0
-    end if
-    chi      = htc_Cchi * Bmag * Te_c**1.5d0 / rho_c
-    sig_perp = sig_par / (1.0d0 + chi**2)
-
-    ! e_total = p/(gamma-1) + B^2/2
-    e_c = wCTprim1(iw_e,3) / (mhd_gamma - 1.0d0) + 0.5d0 * Bmag2
-
-    ! Relaxation times
-    tau_par  = max(4.d0*dt, sig_par *Te_c*(mhd_gamma-1.0d0) &
-                          / (e_c*cmax_global**2))
-    tau_perp = max(4.d0*dt, sig_perp*Te_c*(mhd_gamma-1.0d0) &
-                          / (e_c*cmax_global**2))
-
-    wnew(q_)     = wnew(q_) - qdt*(sig_par *bgradT + wCTprim1(q_,3))/tau_par
-    wnew(qperp_) = wnew(qperp_) - qdt*(sig_perp*gradTperp_mag + wCTprim1(qperp_,3))/tau_perp
-#:endif
-
-  else
-     ! split sources -- not yet implemented
-  end if
-
-end subroutine addsource_nonlocal_full
-#:enddef
 
 #:def to_primitive()
   pure subroutine to_primitive(u)

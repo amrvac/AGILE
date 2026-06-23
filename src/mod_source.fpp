@@ -31,7 +31,6 @@ contains
 @:addsource_local()
 @:addsource_nonlocal()
 @:addsource_compact()
-@:addsource_nonlocal_full()
 @:to_primitive()
 
 
