@@ -9,10 +9,12 @@ module mod_limiter
   double precision :: schmid_rad1,schmid_rad2,schmid_rad3
   !$acc declare create(cada3_radius, schmid_rad1,schmid_rad2,schmid_rad3)
   integer, parameter :: limiter_minmod = 1
+  integer, parameter :: limiter_vanleer = 5
+  integer, parameter :: limiter_mc = 26
+
   integer, parameter :: limiter_woodward = 2
   integer, parameter :: limiter_mcbeta = 3
   integer, parameter :: limiter_superbee = 4
-  integer, parameter :: limiter_vanleer = 5
   integer, parameter :: limiter_albada = 6
   integer, parameter :: limiter_koren = 7
   integer, parameter :: limiter_cada = 8
@@ -44,56 +46,10 @@ contains
     select case (namelim)
     case ('minmod')
        limiter_type = limiter_minmod
-    case ('woodward')
-       limiter_type = limiter_woodward
-    case ('mcbeta')
-       limiter_type = limiter_mcbeta
-    case ('superbee')
-       limiter_type = limiter_superbee
     case ('vanleer')
        limiter_type = limiter_vanleer
-    case ('albada')
-       limiter_type = limiter_albada
-    case ('koren')
-       limiter_type = limiter_koren
-    case ('cada')
-       limiter_type = limiter_cada
-    case ('cada3')
-       limiter_type = limiter_cada3
-    case ('schmid1')
-       limiter_type = limiter_schmid
-    case ('schmid2')
-       limiter_type = limiter_schmid
-    case('venk')
-       limiter_type = limiter_venk
-    case ('ppm')
-       limiter_type = limiter_ppm
-    case ('mp5')
-       limiter_type = limiter_mp5
-    case ('weno3')
-       limiter_type = limiter_weno3
-    case ('wenoyc3')
-       limiter_type = limiter_wenoyc3
-    case ('weno5')
-       limiter_type = limiter_weno5
-    case ('weno5nm')
-       limiter_type = limiter_weno5nm
-    case ('wenoz5')
-       limiter_type = limiter_wenoz5
-    case ('wenoz5nm')
-       limiter_type = limiter_wenoz5nm
-    case ('wenozp5')
-       limiter_type = limiter_wenozp5
-    case ('wenozp5nm')
-       limiter_type = limiter_wenozp5nm
-    case ('weno5cu6')
-       limiter_type = limiter_weno5cu6
-    case ('teno5ad')
-       limiter_type = limiter_teno5ad
-    case ('weno7')
-       limiter_type = limiter_weno7
-    case ('mpweno7')
-       limiter_type = limiter_mpweno7
+    case ('mc')
+       limiter_type = limiter_mc
 
     case default
        limiter_type = -1

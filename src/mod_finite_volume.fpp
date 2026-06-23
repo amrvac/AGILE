@@ -243,7 +243,7 @@ end subroutine finite_volume_local
   !> Returns uL(:,iface), uR(:,iface) for iface=1 (between cells 2-3) and iface=2 (between 3-4).
   pure subroutine muscl_reconstruct_prim(u, typelim, uL, uR)
     !$acc routine seq
-    use mod_limiter, only: limiter_minmod, limiter_vanleer
+    use mod_limiter, only: limiter_minmod, limiter_vanleer, limiter_mc
     real(dp), intent(in)  :: u(nw_phys,5)
     integer,  intent(in)  :: typelim
     real(dp), intent(out) :: uL(nw_phys,2), uR(nw_phys,2)
@@ -263,6 +263,12 @@ end subroutine finite_volume_local
         sig(iw,1) = vanleer(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
         sig(iw,2) = vanleer(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
         sig(iw,3) = vanleer(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
+      end do
+    case (limiter_mc)
+      do iw=1,nw_phys
+        sig(iw,1) = mc(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
+        sig(iw,2) = mc(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+        sig(iw,3) = mc(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
       end do
     case default  ! Fallback: Godunov (piecewise constant)
       do iw=1,nw_phys
@@ -538,9 +544,9 @@ end subroutine finite_volume_local
 
     ab = a * b
     if (ab > 0) then
-       phi = 2 * ab / (a + b)
+       phi = 2.0_dp * ab / (a + b)
     else
-       phi = 0
+       phi = 0.0_dp
     end if
   end function vanleer
 
@@ -556,5 +562,20 @@ end subroutine finite_volume_local
        minmod = b
     end if
   end function minmod
+
+  !> Monotonised central-difference (MC) limiter (van Leer 1979)
+  pure real(dp) function mc(a, b) result(phi)
+  !$acc routine seq
+  real(dp), intent(in) :: a, b
+  real(dp)             :: ab
+
+  ab = a * b
+  if (ab > 0) then
+    phi = sign(1.0_dp, a + b) * min(2.0_dp*abs(a), 2.0_dp*abs(b), abs(a+b)*0.5_dp)
+  else
+    phi = 0.0_dp
+  end if
+
+  end function mc
 
 end module mod_finite_volume

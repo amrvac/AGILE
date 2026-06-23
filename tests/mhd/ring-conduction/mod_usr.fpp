@@ -51,10 +51,16 @@ contains
        dsqrt(x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1)**2 &
            + x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2)**2)
 
-    ! theta = arctan(y/x)
-    theta(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) = &
-       atan2(x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2), &
-             x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1))
+    ! theta in [0, 2*pi): y>=0 -> acos(x/r), y<0 -> 2*pi - acos(x/r)
+    where (x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2) >= 0.0d0)
+      theta(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) = &
+         dacos(x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1) &
+               / max(r(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3), 1.0d-15))
+    elsewhere
+      theta(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) = &
+         2.0d0*dpi - dacos(x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1) &
+                           / max(r(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3), 1.0d-15))
+    end where
 
     ! --- Step 2: thermodynamic state ---
     w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,rho_)   = 1.0d0

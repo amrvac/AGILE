@@ -637,7 +637,7 @@ end subroutine addsource_compact
 subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir, &
      qsourcesplit)
   !$acc routine seq
-  use mod_global_parameters, only: dt, cmax_global, courantpar, third, &
+  use mod_global_parameters, only: dt, cmax_global, third, &
        unit_temperature, unit_length, unit_density, unit_velocity
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
