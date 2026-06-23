@@ -277,17 +277,6 @@
     !$acc enter data copyin(rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc)
 #:endif
 
-    ! TODO: compile-time nw_phys/nw_flux and runtime nwflux/nw should
-    ! be unified so this can't go out of sync. Until then, assert here
-    if (nwflux /= nw_flux) then
-       write(*,'(A,I0,A,I0)') "ASSERT FAIL: nwflux=", nwflux, " nw_flux=", nw_flux
-       call mpistop("nwflux /= nw_flux: var_set_* calls do not match nw_flux parameter")
-    end if
-    if (nw /= nw_phys) then
-       write(*,'(A,I0,A,I0)') "ASSERT FAIL: nw=", nw, " nw_phys=", nw_phys
-       call mpistop("nw /= nw_phys: var_set_* calls do not match nw_phys parameter")
-    end if
-
   end subroutine phys_init
 #:enddef
 
