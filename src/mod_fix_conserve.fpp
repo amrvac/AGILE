@@ -10,8 +10,9 @@ module mod_fix_conserve
   private
 
   type fluxalloc
-     double precision, dimension(:,:,:,:), pointer:: flux => null()
-     double precision, dimension(:,:,:,:), pointer:: edge => null()
+     double precision, dimension(:,:,:,:), allocatable :: flux
+     !!double precision, dimension(:,:,:,:), pointer:: flux => null()
+     !!double precision, dimension(:,:,:,:), pointer:: edge => null()
   end type fluxalloc
   !> store flux to fix conservation
   type(fluxalloc), dimension(:,:,:), allocatable, public :: pflux
