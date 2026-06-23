@@ -154,9 +154,11 @@ contains
 
     !!TODO JESSE OLD REFINE ROUTINE
 !refine along x,y,z-axis
-    if ( any(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,3) & 
-         <0.75d0) .and. any(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,3) & 
-         >0.60d0)) then
+!!    if ( any(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1) & 
+!!         <0.75d0) .and. any(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,3) & 
+!!         >0.50d0)) then
+    if ( any(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1) & 
+        < 0.5d0) ) then
        coarsen = -1
        refine  = 1
     else 
