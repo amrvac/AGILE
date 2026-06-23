@@ -731,7 +731,7 @@ subroutine acc_create_flux(arr)
 
   double precision, allocatable, intent(inout) :: arr(:,:,:,:)
 
-#ifdef OPENACC_
+#ifdef _OPENACC
 !!!  !$acc exit data delete(arr)
   !$acc enter data create(arr)
   !$acc enter data attach(arr)
@@ -1082,7 +1082,7 @@ end subroutine allocateBflux
 !!     do iigrid=1,igridstail; igrid=igrids(iigrid);
 !!       do iside=1,2
 !!
-!!#ifdef OPENACC_
+!!#ifdef _OPENACC
 !!         if (acc_is_present(pflux(iside,1,igrid)%flux, &
 !!                  size(pflux(iside,1,igrid)%flux))) then
 !!!!         !$acc exit data detach(pflux(iside,1,igrid)%flux) !JESSE
@@ -1117,7 +1117,7 @@ end subroutine allocateBflux
 !!        ! end if
 !!       end do
 !!       do iside=1,2
-!!#ifdef OPENACC_
+!!#ifdef _OPENACC
 !!         if (acc_is_present(pflux(iside,2,igrid)%flux, &
 !!                  size(pflux(iside,2,igrid)%flux))) then
 !!!!         !$acc exit data detach(pflux(iside,1,igrid)%flux) !JESSE
@@ -1144,7 +1144,7 @@ end subroutine allocateBflux
 !!        ! end if
 !!       end do
 !!       do iside=1,2
-!!#ifdef OPENACC_
+!!#ifdef _OPENACC
 !!         if (acc_is_present(pflux(iside,3,igrid)%flux, &
 !!                  size(pflux(iside,3,igrid)%flux))) then
 !!         !$acc exit data delete(pflux(iside,3,igrid)%flux) !JESSE
@@ -1172,7 +1172,7 @@ end subroutine allocateBflux
 !!       end do
 !!     end do
 !!
-!!!!#ifdef OPENACC_
+!!!!#ifdef _OPENACC
 !!!!      !$acc update device(pflux(iside,1,igrid))
 !!!!      !$acc update device(pflux(iside,2,igrid))
 !!!!      !$acc update device(pflux(iside,3,igrid))
@@ -1191,7 +1191,7 @@ subroutine deallocateBflux()
 
     do iside = 1, 2
 
-#ifdef OPENACC_
+#ifdef _OPENACC
 !!      ! Step 1: Clear device-side pointers FIRST
 !!      if (allocated(pflux(iside,1,igrid)%flux)) then
 !!        nullify(pflux(iside,1,igrid)%flux)
