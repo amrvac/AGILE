@@ -86,6 +86,7 @@ end subroutine finite_volume_local
      ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
      ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb, fC, fE)
     use mod_global_parameters
+    use mod_fix_conserve
 
     double precision, intent(in)                                       :: qdt,&
         dtfactor, qtC, qt
@@ -101,6 +102,7 @@ end subroutine finite_volume_local
        ixImin3:ixImax3, sdim:3)            :: fE !not yet provided
     ! .. local ..
     integer                :: n, iigrid, ix1,ix2,ix3
+    integer                :: nx1,nx2,nx3, nxCo1,nxCo2,nxCo3
     double precision       :: uprim(nw_phys, ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3)
     real(dp)               :: tmp(nw_phys,5)
@@ -112,10 +114,22 @@ end subroutine finite_volume_local
     real(dp)               :: xloc(ndim)
     real(dp)               :: xlocC(ndim,2)
     real(dp)               :: wprim(nw_phys), wCT(nw_phys), wnew(nw_phys)
+    real(dp)       :: fC1(2,ixImin2:ixOmax2,ixImin3:ixOmax3,1:nwflux)
+    real(dp)       :: fC2(2,ixImin1:ixOmax1,ixImin3:ixOmax3,1:nwflux)
+    real(dp)       :: fC3(2,ixImin1:ixOmax1,ixImin2:ixOmax2,1:nwflux)
     integer, parameter     :: max_batch=4096
     integer                :: nbatches, ibatch, igrid_beg, igrid_end
     !-----------------------------------------------------------------------------
 
+    nx1=ixMhi1-ixMlo1+1
+    nx2=ixMhi2-ixMlo2+1
+    nx3=ixMhi3-ixMlo3+1
+
+    nxCo1=nx1/2
+    nxCo2=nx2/2
+    nxCo3=nx3/2
+
+    !$acc enter data copyin(nxCo1,nxCo2,nxCo3)
     ! batch-launch the kernels (oom issue when many ~30000 blocks):
     nbatches = (igridstail_active + max_batch - 1) / max_batch ! ceiling division
     
@@ -123,7 +137,7 @@ end subroutine finite_volume_local
        igrid_beg = (ibatch-1) * max_batch + 1
        igrid_end = min(ibatch * max_batch, igridstail_active)
 
-       !$acc parallel loop gang private(uprim, inv_dr, dr, n) default(present)
+       !$acc parallel loop gang private(uprim, inv_dr, dr, n, ix1, ix2, ix3, fC1, fC2, fC3) default(present)
        do iigrid = igrid_beg, igrid_end
           n = igrids_active(iigrid)
 
@@ -142,38 +156,89 @@ end subroutine finite_volume_local
              end do
           end do
 
-       !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
-       do ix3=ixOmin3,ixOmax3 
-          do ix2=ixOmin2,ixOmax2 
-             do ix1=ixOmin1,ixOmax1 
-                ! Compute fluxes in all dimensions
+          !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
+          do ix3=ixOmin3,ixOmax3 
+             do ix2=ixOmin2,ixOmax2 
+                do ix1=ixOmin1,ixOmax1 
+                   ! Compute fluxes in all dimensions
 
-                tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
-                xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                xlocC(1,1) = xlocC(1,1)-0.5_dp*dr(1)
-                xlocC(1,2) = xlocC(1,2)+0.5_dp*dr(1)
-                call ${faceflux_proc}$(tmp, xlocC, 1, f, typelim)
-                bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                     n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(1)
+                   tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
+                   xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   xlocC(1,1) = xlocC(1,1)-0.5_dp*dr(1)
+                   xlocC(1,2) = xlocC(1,2)+0.5_dp*dr(1)
+                   call ${faceflux_proc}$(tmp, xlocC, 1, f, typelim)
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                        n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(1)
 
-                tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
-                xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                xlocC(2,1) = xlocC(2,1)-0.5_dp*dr(2)
-                xlocC(2,2) = xlocC(2,2)+0.5_dp*dr(2)
-                call ${faceflux_proc}$(tmp, xlocC, 2, f, typelim)
-                bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                     n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(2)
+                   ! Store fluxes for flux fixing in direction 1
+                   select case (neighbor_type(-1,0,0,n))
+                   case (neighbor_fine)
+                       if (ix1.eq.ixOmin1) pflux(1,1,n)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux) &
+                               = qdt * inv_dr(1) * f(:,1)
+                   case (neighbor_coarse)
+                       if (ix1.eq.ixOmin1) fC1(1,ix2,ix3,1:nw_flux) = - qdt * inv_dr(1) * f(:,1)
+                   end select
 
-                tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
-                xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                xlocC(3,1) = xlocC(3,1)-0.5_dp*dr(3)
-                xlocC(3,2) = xlocC(3,2)+0.5_dp*dr(3)
-                call ${faceflux_proc}$(tmp, xlocC, 3, f, typelim)
-                bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                     n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(3)
+                   select case (neighbor_type(1,0,0,n))
+                   case (neighbor_fine)
+                       if (ix1.eq.ixOmax1) pflux(2,1,n)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux) =  &
+                               - qdt * inv_dr(1) * f(:,2)
+                   case (neighbor_coarse)
+                       if (ix1.eq.ixOmax1) fC1(2,ix2,ix3,1:nw_flux) = qdt * inv_dr(1) * f(:,2)
+                   end select
+
+                   tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
+                   xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   xlocC(2,1) = xlocC(2,1)-0.5_dp*dr(2)
+                   xlocC(2,2) = xlocC(2,2)+0.5_dp*dr(2)
+                   call ${faceflux_proc}$(tmp, xlocC, 2, f, typelim)
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                        n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(2)
+
+                   ! Store fluxes for flux fixing in direction 2
+                   select case (neighbor_type(0,-1,0,n))
+                   case (neighbor_fine)
+                       if (ix2.eq.ixOmin2) pflux(1,2,n)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux) &
+                                = qdt * inv_dr(2) * f(:,1)
+                   case (neighbor_coarse)
+                       if (ix2.eq.ixOmin2) fC2(1,ix1,ix3,1:nw_flux) = - qdt * inv_dr(2) * f(:,1)
+                   end select
+
+                   select case (neighbor_type(0,1,0,n))
+                   case (neighbor_fine)
+                       if (ix2.eq.ixOmax2) pflux(2,2,n)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux) &
+                               = - qdt * inv_dr(2) * f(:,2)
+                   case (neighbor_coarse)
+                       if (ix2.eq.ixOmax2) fC2(2,ix1,ix3,1:nw_flux) = qdt * inv_dr(2) * f(:,2)
+                   end select
+
+                   tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
+                   xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   xlocC(3,1) = xlocC(3,1)-0.5_dp*dr(3)
+                   xlocC(3,2) = xlocC(3,2)+0.5_dp*dr(3)
+                   call ${faceflux_proc}$(tmp, xlocC, 3, f, typelim)
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                        n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(3)
+
+                   ! Store fluxes for flux fixing in direction 3               
+                   select case (neighbor_type(0,0,-1,n))
+                   case (neighbor_fine)
+                       if (ix3.eq.ixOmin3) pflux(1,3,n)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux) &
+                               = qdt * inv_dr(3) * f(:,1)
+                   case (neighbor_coarse)
+                       if (ix3.eq.ixOmin3) fC3(1,ix1,ix2,1:nw_flux) = - qdt * inv_dr(3) * f(:,1)
+                   end select
+
+                   select case (neighbor_type(0,0,1,n))
+                   case (neighbor_fine)
+                       if (ix3.eq.ixOmax3) pflux(2,3,n)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux) &
+                               = - qdt * inv_dr(3) * f(:,2)
+                   case (neighbor_coarse)
+                       if (ix3.eq.ixOmax3) fC3(2,ix1,ix2,1:nw_flux) = qdt * inv_dr(3) * f(:,2)
+                   end select
 
 #:if defined('SOURCE_LOCAL')
                    ! Add local source terms:
@@ -185,7 +250,7 @@ end subroutine finite_volume_local
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, wCT,&
                         wprim, qt, wnew, xloc, dr, .false. )
                    bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
-#:endif             
+#:endif
 
 #:if defined('SOURCE_NONLOCAL')
                    ! Add non-local (gradient) source terms:
@@ -208,7 +273,7 @@ end subroutine finite_volume_local
                         qt, wnew, xloc, dr, 3, .false. )
 
                    bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)           
-#:endif                
+#:endif
 
 #:if defined('SOURCE_COMPACT')
                    ! Add non-local compact source terms:
@@ -225,6 +290,95 @@ end subroutine finite_volume_local
                 end do
              end do
           end do
+
+          ! Reduce fluxes to be stored for the coarse neighbor case
+          ! Direction 1
+          select case (neighbor_type(-1,0,0,n))
+              case (neighbor_coarse)
+                  !$acc loop vector collapse(ndim-1) 
+                  do ix3=1,nxCo3 
+                    do ix2=1,nxCo2 
+                  pflux(1,1,n)%flux(1,ix2,ix3,1:nw_flux) = &
+                    fC1(1,1+2*(ix2-1)+nghostcells,1+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC1(1,2+2*(ix2-1)+nghostcells,1+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC1(1,1+2*(ix2-1)+nghostcells,2+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC1(1,2+2*(ix2-1)+nghostcells,2+2*(ix3-1)+nghostcells,1:nw_flux) 
+                    end do
+                  end do
+          end select
+
+          select case (neighbor_type(1,0,0,n))
+              case (neighbor_coarse)
+                  !$acc loop vector collapse(ndim-1)
+                  do ix3=1,nxCo3 
+                     do ix2=1,nxCo2 
+                  pflux(2,1,n)%flux(1,ix2,ix3,1:nw_flux) = &
+                    fC1(2,1+2*(ix2-1)+nghostcells,1+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC1(2,2+2*(ix2-1)+nghostcells,1+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC1(2,1+2*(ix2-1)+nghostcells,2+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC1(2,2+2*(ix2-1)+nghostcells,2+2*(ix3-1)+nghostcells,1:nw_flux) 
+                     end do
+                  end do
+          end select
+
+          ! Direction 2
+          select case (neighbor_type(0,-1,0,n))
+              case (neighbor_coarse)
+                  !$acc loop vector collapse(ndim-1) 
+                  do ix3=1,nxCo3 
+                    do ix1=1,nxCo1 
+                  pflux(1,2,n)%flux(ix1,1,ix3,1:nw_flux) = &
+                    fC2(1,1+2*(ix1-1)+nghostcells,1+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC2(1,2+2*(ix1-1)+nghostcells,1+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC2(1,1+2*(ix1-1)+nghostcells,2+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC2(1,2+2*(ix1-1)+nghostcells,2+2*(ix3-1)+nghostcells,1:nw_flux) 
+                    end do
+                  end do
+          end select
+
+          select case (neighbor_type(0,1,0,n))
+              case (neighbor_coarse)
+                  !$acc loop vector collapse(ndim-1)
+                  do ix3=1,nxCo3 
+                     do ix1=1,nxCo1 
+                  pflux(2,2,n)%flux(ix1,1,ix3,1:nw_flux) = &
+                    fC2(2,1+2*(ix1-1)+nghostcells,1+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC2(2,2+2*(ix1-1)+nghostcells,1+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC2(2,1+2*(ix1-1)+nghostcells,2+2*(ix3-1)+nghostcells,1:nw_flux) &
+                   +fC2(2,2+2*(ix1-1)+nghostcells,2+2*(ix3-1)+nghostcells,1:nw_flux) 
+                     end do
+                  end do
+          end select
+          
+          ! Direction 3
+          select case (neighbor_type(0,0,-1,n))
+              case (neighbor_coarse)
+                  !$acc loop vector collapse(ndim-1) 
+                  do ix2=1,nxCo2 
+                    do ix1=1,nxCo1 
+                  pflux(1,3,n)%flux(ix1,ix2,1,1:nw_flux) = &
+                    fC3(1,1+2*(ix1-1)+nghostcells,1+2*(ix2-1)+nghostcells,1:nw_flux) &
+                   +fC3(1,2+2*(ix1-1)+nghostcells,1+2*(ix2-1)+nghostcells,1:nw_flux) &
+                   +fC3(1,1+2*(ix1-1)+nghostcells,2+2*(ix2-1)+nghostcells,1:nw_flux) &
+                   +fC3(1,2+2*(ix1-1)+nghostcells,2+2*(ix2-1)+nghostcells,1:nw_flux) 
+                    end do
+                  end do
+          end select
+
+          select case (neighbor_type(0,0,1,n))
+              case (neighbor_coarse)
+                  !$acc loop vector collapse(ndim-1)
+                  do ix2=1,nxCo2 
+                     do ix1=1,nxCo1 
+                  pflux(2,3,n)%flux(ix1,ix2,1,1:nw_flux) = &
+                    fC3(2,1+2*(ix1-1)+nghostcells,1+2*(ix2-1)+nghostcells,1:nw_flux) &
+                   +fC3(2,2+2*(ix1-1)+nghostcells,1+2*(ix2-1)+nghostcells,1:nw_flux) &
+                   +fC3(2,1+2*(ix1-1)+nghostcells,2+2*(ix2-1)+nghostcells,1:nw_flux) &
+                   +fC3(2,2+2*(ix1-1)+nghostcells,2+2*(ix2-1)+nghostcells,1:nw_flux) 
+                     end do
+                  end do
+          end select
+
        end do
     end do
 
