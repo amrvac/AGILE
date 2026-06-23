@@ -153,31 +153,37 @@ contains
 !         >0.25d0)) then
 
     !!TODO JESSE OLD REFINE ROUTINE
-!!!refine along x,y,z-axis
-!!    if ( any(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,3) & 
-!!         <0.75d0) .and. any(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,3) & 
-!!         >0.60d0)) then
-
-    has_interface = .false.
-    !$acc loop vector collapse(3) reduction(.or.:has_interface)
-    do ix3 = ixmin3, ixmax3
-       do ix2 = ixmin2, ixmax2
-          do ix1 = ixmin1, ixmax1
-             if ( abs(x(ix1, ix2, ix3, 2) - 0.75d0) < 1.0d-1 .or. &
-                  abs(x(ix1, ix2, ix3, 2) - 0.25d0) < 1.0d-1 ) then
-                has_interface = .true.
-             end if
-          end do
-       end do
-    end do
-
-    if (has_interface) then
+!refine along x,y,z-axis
+    if ( any(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,3) & 
+         <0.75d0) .and. any(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,3) & 
+         >0.60d0)) then
        coarsen = -1
        refine  = 1
     else 
        coarsen = 1
        refine  = -1
     end if
+
+!!    has_interface = .false.
+!!    !$acc loop vector collapse(3) reduction(.or.:has_interface)
+!!    do ix3 = ixmin3, ixmax3
+!!       do ix2 = ixmin2, ixmax2
+!!          do ix1 = ixmin1, ixmax1
+!!             if ( abs(x(ix1, ix2, ix3, 2) - 0.75d0) < 1.0d-1 .or. &
+!!                  abs(x(ix1, ix2, ix3, 2) - 0.25d0) < 1.0d-1 ) then
+!!                has_interface = .true.
+!!             end if
+!!          end do
+!!       end do
+!!    end do
+!!
+!!    if (has_interface) then
+!!       coarsen = -1
+!!       refine  = 1
+!!    else 
+!!       coarsen = 1
+!!       refine  = -1
+!!    end if
 
   end subroutine usr_refine_grid
 

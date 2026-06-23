@@ -29,6 +29,13 @@ module mod_fix_conserve
   !!$acc declare create(pflux) !JESSE, try to retain pointer structure
   !!this is done in mod_initialize.ffp
 
+  !JESSE TODO LAST RESORT ALLOCATABLE
+  !! pflux(2,:,:,:,:)
+  !! flux = pflux(1,:,:,:,:)
+  !! edge = pflux(2,:,:,:,:)
+  !! pflux_edge
+
+
   ! Hector, note to self: pflux is of type fluxalloc, not a pointer to an array 
 
   integer, save                        :: nrecv, nsend
@@ -1210,7 +1217,9 @@ subroutine deallocateBflux()
       !!$acc exit data delete(pflux(iside,1,igrid)%flux)
       !!$acc exit data delete(pflux(iside,2,igrid)%flux)
       !!$acc exit data delete(pflux(iside,3,igrid)%flux)
+
       !$acc exit data delete(pflux(iside,*,igrid)%flux)
+
 #endif
 
       ! deallocate host memory
@@ -1229,6 +1238,7 @@ subroutine deallocateBflux()
     end do
   end do
 
+  !!!$acc exit data delete(pflux%flux)
   !$acc exit data delete(pflux)
   deallocate(pflux)
 

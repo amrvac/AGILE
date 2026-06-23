@@ -34,7 +34,8 @@ source load_modules.sh
 ###make
 make clean-all
 make clean
-make -j16 arch=nvidia OPENACC=1 NOGPUDIRECT=1
+make -j16 arch=nvidia OPENACC=1 
+#NOGPUDIRECT=1
 
 #export PGI_ACC_NOTIFY=16
 
