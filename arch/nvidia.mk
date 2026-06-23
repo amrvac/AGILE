@@ -40,7 +40,7 @@ endif
 ifdef DEBUG
 $(info Enable debugging symbols)
 enabled += DEBUG
-f90_flags += -g -O0
+f90_flags += -g -O0 -Mbackslash -traceback
 else
 f90_flags += -O3 -fast
 endif
