@@ -260,12 +260,17 @@ contains
   end function var_set_energy
 
   !> Set heat flux variable (hyperbolic TC treatment)
-  function var_set_q() result(iw)
+  function var_set_q(need_bc) result(iw)
+    logical, intent(in), optional :: need_bc
     integer :: iw
+    logical :: add_bc
+
+    add_bc = .true.
+    if (present(need_bc)) add_bc = need_bc
 
     nwflux              = nwflux + 1
-    nwfluxbc            = nwfluxbc + 1
     nw                  = nw + 1
+    if (add_bc) nwfluxbc = nwfluxbc + 1
     iw_q                = nwflux
     iw                  = nwflux
     cons_wnames(nwflux) = 'q'

@@ -165,6 +165,12 @@ flags = ["fypp", "hash"]
 default = false
 implies = ["mhd_list.mhd_hyperbolic_thermal_conduction", "components.source_nonlocal_full"]
 
+[mhd_list.mhd_energy_only]
+type = "flag"
+name = "MHD_ENERGY_ONLY"
+flags = ["fypp", "hash"]
+default = false
+
 [meshlist]
 [meshlist.refine_usr]
 type = "flag"

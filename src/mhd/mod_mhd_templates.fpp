@@ -93,9 +93,12 @@
   ! and it is p = RR * rho * T
   double precision, public  :: RR=1d0
   !$acc declare copyin(RR)
+  !> Coulomb logarithm for hyperbolic TC
+  double precision, public                :: hypertc_lnLambda = 20.0d0
+  !$acc declare copyin(hypertc_lnLambda)
 
-  !> Index of field-aligned heat flux scalar (qpar); for HYPERTC_ANISO: qperp_ = q_+1
-#:if defined('HYPERTC') or defined('HYPERTC_ANISO')
+  !> Index of field-aligned heat flux scalar q_; for HYPERTC_ANISO: qperp_ = q_+1
+#:if defined('HYPERTC')
   integer, public                         :: q_ = -1
   !$acc declare create(q_)
 #:endif
@@ -104,15 +107,29 @@
   !$acc declare create(qperp_)
 #:endif
 
-  !> Coulomb logarithm for Braginskii perpendicular conductivity (kappa_perp ~ n^2/(B^2 T^0.5))
+#:if defined('HYPERTC') or defined('HYPERTC_ANISO')
+  !> Spitzer parallel conductivity prefactor: sig_par = htc_coeff_par * Te^2.5
+  !> Computed from unit system in phys_units(); set hypertc_kappa0 > 0 in usr_init to override
+  double precision, public                :: htc_coeff_par = 0.0d0
+  !$acc declare copyin(htc_coeff_par)
+  !> If positive, overrides the Spitzer-derived htc_coeff_par; set in usr_init before phys_activate
+  double precision, public                :: hypertc_kappa0 = -1.0d0
+  !> If true, use htc_coeff_par as a constant sig_par (bypass Spitzer T^2.5 scaling)
+  logical, public                         :: hypertc_const_kappa = .false.
+  !$acc declare copyin(hypertc_const_kappa)
+#:endif
 #:if defined('HYPERTC_ANISO')
-  double precision, public                :: hypertc_lnLambda = 20.0d0
-  !$acc declare copyin(hypertc_lnLambda)
+  !> Magnetisation chi prefactor: chi = htc_Cchi * B * Te^1.5 / n
+  double precision, public                :: htc_Cchi = 0.0d0
+  !$acc declare copyin(htc_Cchi)
 #:endif
 
   !> Switch for hyperbolic thermal conduction
   logical, public                         :: mhd_hyperbolic_thermal_conduction = .false.
   !$acc declare copyin(mhd_hyperbolic_thermal_conduction)
+
+  !> Freeze rho/v/B and evolve only the energy equation (compile-time MHD_ENERGY_ONLY flag)
+  logical, public                         :: mhd_energy_only = .false.
 
   !> Compile-time selector for anisotropic HTC
   logical, public                         :: mhd_hyperbolic_thermal_conduction_anisotropic = .false.
@@ -162,7 +179,8 @@
     namelist /mhd_list/ mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity,&
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
       mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
-      mhd_hyperbolic_thermal_conduction_anisotropic, hypertc_lnLambda
+      mhd_hyperbolic_thermal_conduction_anisotropic, hypertc_lnLambda, &
+      mhd_energy_only
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -267,6 +285,19 @@
     unit_mass=unit_density*unit_length**3
 
     !$acc update device(unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass)
+
+#:if defined('HYPERTC') or defined('HYPERTC_ANISO')
+    htc_coeff_par = 8.0d-7 * unit_temperature**3.5d0 &
+                  / (unit_length * unit_density * unit_velocity**3.0d0)
+    if (hypertc_kappa0 > 0.0d0) htc_coeff_par = hypertc_kappa0
+    !$acc update device(htc_coeff_par)
+    !$acc update device(hypertc_const_kappa)
+#:endif
+#:if defined('HYPERTC_ANISO')
+    htc_Cchi      = 0.823d0 * (4.753567596681522d6 / hypertc_lnLambda) &
+                  * unit_magneticfield * unit_temperature**1.5d0 / unit_numberdensity
+    !$acc update device(htc_Cchi)
+#:endif
   end subroutine phys_units
 #:enddef
   
@@ -314,12 +345,12 @@
 
     ! Set index for heat flux variable(s)
 #:if defined('HYPERTC_ANISO')
-    q_     = var_set_q()                      ! qpar: field-aligned scalar
+    q_     = var_set_q(need_bc=.false.)
     !$acc update device(q_)
-    qperp_ = var_set_fluxvar('qperp', 'qperp')! qperp: perpendicular magnitude scalar
+    qperp_ = var_set_fluxvar('qperp', 'qperp', need_bc=.false.)
     !$acc update device(qperp_)
 #:elif defined('HYPERTC')
-    q_ = var_set_q()
+    q_ = var_set_q(need_bc=.false.)
     !$acc update device(q_)
 #:endif
 
@@ -592,10 +623,12 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
 
     gradT = (8.d0*(Te(4)-Te(2))-Te(5)+Te(1))/(12.d0*dx(idir))
 
-    sig_par = 8.d-7_dp * unit_temperature**3.5_dp &
-            / (unit_length * unit_density * unit_velocity**3.0_dp) &
-            * sqrt(Te(3)**5)
-    tau = max(4.d0*dt, sig_par*Te(3)*courantpar**2*(mhd_gamma-1.0d0)/&
+    if (hypertc_const_kappa) then
+      sig_par = htc_coeff_par
+    else
+      sig_par = htc_coeff_par * sqrt(Te(3)**5)
+    end if
+    tau = max(4.d0*dt, sig_par*Te(3)*(mhd_gamma-1.0d0)/&
         (wCTprim(iw_e,3)*cmax_global**2))
 
     htc_qrsc = sig_par * mag * gradT
@@ -619,9 +652,7 @@ end subroutine addsource_nonlocal
 subroutine addsource_nonlocal_full(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, &
      x, dx, qsourcesplit)
   !$acc routine seq
-  use mod_global_parameters, only: dt, cmax_global, courantpar, &
-       unit_temperature, unit_length, unit_density, unit_velocity, &
-       unit_magneticfield, unit_numberdensity, ndir
+  use mod_global_parameters, only: dt, cmax_global, courantpar, ndir, smalldouble
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim1(nw_phys,5),wCTprim2(nw_phys,5),wCTprim3(nw_phys,5)
@@ -629,9 +660,9 @@ subroutine addsource_nonlocal_full(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTpr
   real(dp), intent(inout)  :: wnew(nw_phys)
   logical, intent(in)      :: qsourcesplit
 #:if defined('HYPERTC_ANISO')
-  real(dp)   :: Te_c, rho_c, sig_par, sig_perp, chi
+  real(dp)   :: Te_c, rho_c, e_c, sig_par, sig_perp, chi
   real(dp)   :: gradT(3), bgradT, gradTperp_mag
-  real(dp)   :: Bmag2, Bmag, tau_par, tau_perp
+  real(dp)   :: Bmag2, Bmag, Bmag2_safe, tau_par, tau_perp
   integer    :: k_tc
 #:endif
 
@@ -660,35 +691,36 @@ subroutine addsource_nonlocal_full(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTpr
     do k_tc = 1, ndir
       Bmag2 = Bmag2 + wCTprim1(iw_mag(k_tc),3)**2
     end do
-    Bmag = sqrt(max(Bmag2, 1.0d-18))
+    Bmag      = sqrt(Bmag2)
+    Bmag2_safe = max(Bmag2, smalldouble**2)
 
-    ! bhat.gradT -- field-aligned component of temperature gradient
+    ! bhat.gradT; field-aligned component of temperature gradient
     bgradT = 0.0d0
     do k_tc = 1, ndir
       bgradT = bgradT + wCTprim1(iw_mag(k_tc),3) * gradT(k_tc)
     end do
-    bgradT = bgradT / Bmag
+    bgradT = bgradT * Bmag / Bmag2_safe
 
     ! |gradT_perp| = sqrt(|gradT|^2 - (bhat.gradT)^2)
     gradTperp_mag = sqrt(max(gradT(1)**2 + gradT(2)**2 + gradT(3)**2 &
                            - bgradT**2, 0.0d0))
 
-    ! Spitzer parallel conductivity
-    sig_par = 8.0d-7 * unit_temperature**3.5d0 &
-            / (unit_length * unit_density * unit_velocity**3.0d0) &
-            * sqrt(Te_c**5)
-
-    ! Magnetisation closure: kappa_perp = kappa_par / (1 + chi^2),  chi = omega_ce * tau_e
-    chi      = 4.84d16 * Bmag * unit_magneticfield &
-             * (Te_c * unit_temperature)**1.5d0 &
-             / (rho_c * unit_numberdensity * hypertc_lnLambda)
+    if (hypertc_const_kappa) then
+      sig_par = htc_coeff_par
+    else
+      sig_par = htc_coeff_par * Te_c**2.5d0
+    end if
+    chi      = htc_Cchi * Bmag * Te_c**1.5d0 / rho_c
     sig_perp = sig_par / (1.0d0 + chi**2)
 
-    ! CFL-safe relaxation times
-    tau_par  = max(4.d0*dt, sig_par *Te_c*courantpar**2*(mhd_gamma-1.0d0) &
-                          / (wCTprim1(iw_e,3)*cmax_global**2))
-    tau_perp = max(4.d0*dt, sig_perp*Te_c*courantpar**2*(mhd_gamma-1.0d0) &
-                          / (wCTprim1(iw_e,3)*cmax_global**2))
+    ! e_total = p/(gamma-1) + B^2/2
+    e_c = wCTprim1(iw_e,3) / (mhd_gamma - 1.0d0) + 0.5d0 * Bmag2
+
+    ! Relaxation times
+    tau_par  = max(4.d0*dt, sig_par *Te_c*(mhd_gamma-1.0d0) &
+                          / (e_c*cmax_global**2))
+    tau_perp = max(4.d0*dt, sig_perp*Te_c*(mhd_gamma-1.0d0) &
+                          / (e_c*cmax_global**2))
 
     wnew(q_)     = wnew(q_) - qdt*(sig_par *bgradT + wCTprim1(q_,3))/tau_par
     wnew(qperp_) = wnew(qperp_) - qdt*(sig_perp*gradTperp_mag + wCTprim1(qperp_,3))/tau_perp
@@ -735,7 +767,7 @@ end subroutine addsource_nonlocal_full
 
 #:def get_flux()
   subroutine get_flux(u, xC, flux_dim, flux)
-    use mod_global_parameters, only:cmax_global
+    use mod_global_parameters, only: cmax_global, smalldouble
     !$acc routine seq
     real(dp), intent(in)  :: u(nw_phys)
     real(dp), intent(in)  :: xC(1:ndim)
@@ -743,7 +775,22 @@ end subroutine addsource_nonlocal_full
     real(dp), intent(out) :: flux(nw_flux)
     real(dp)              :: ptotal
 #:if defined('HYPERTC_ANISO')
-    real(dp)              :: Bmag2_tc, b_fd
+    real(dp)              :: Bmag2_tc, Bmag_tc, Bmag2_tc_safe, b_fd
+#:endif
+
+#:if defined('MHD_ENERGY_ONLY')
+    ! Zero all fluxes; only energy gets a non-zero contribution
+    flux = 0.0_dp
+#:if defined('HYPERTC_ANISO')
+    Bmag2_tc      = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
+    Bmag_tc       = sqrt(Bmag2_tc)
+    Bmag2_tc_safe = max(Bmag2_tc, smalldouble**2)
+    b_fd          = u(iw_mag(flux_dim)) * Bmag_tc / Bmag2_tc_safe
+    flux(iw_e) = u(q_)*b_fd + u(qperp_)*sqrt(max(1.0_dp - b_fd**2, 0.0_dp))
+#:elif defined('HYPERTC')
+    flux(iw_e) = u(iw_q) * u(iw_mag(flux_dim))
+#:endif
+    return
 #:endif
 
     ! Density flux
@@ -782,11 +829,12 @@ end subroutine addsource_nonlocal_full
   #:endfor
 #:endif
 
-    ! Hyperbolic TC fluxes -- q variables have zero advective flux
+    ! Hyperbolic TC fluxes
 #:if defined('HYPERTC_ANISO')
-    ! Two-scalar: qpar (field-aligned) + qperp (perpendicular direction)
-    Bmag2_tc = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
-    b_fd     = u(iw_mag(flux_dim)) / sqrt(max(Bmag2_tc, 1.0e-18_dp))
+    Bmag2_tc      = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
+    Bmag_tc       = sqrt(Bmag2_tc)
+    Bmag2_tc_safe = max(Bmag2_tc, smalldouble**2)
+    b_fd          = u(iw_mag(flux_dim)) * Bmag_tc / Bmag2_tc_safe
     flux(iw_e)  = flux(iw_e) + u(q_)*b_fd + u(qperp_)*sqrt(max(1.0_dp - b_fd**2, 0.0_dp))
     flux(q_)    = 0.0_dp
     flux(qperp_)= 0.0_dp

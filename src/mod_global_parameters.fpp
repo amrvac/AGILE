@@ -600,6 +600,14 @@ module mod_global_parameters
   integer, parameter :: fs_hllc=2
   integer, parameter :: fs_tvdlf=5
 
+  !> Adaptive LLF diffusion (Rempel et al. 2009): phi in [flux_ad_min, 1] per face per variable
+  logical  :: flux_adaptive_diffusion = .false.
+  !$acc declare create(flux_adaptive_diffusion)
+  double precision :: flux_ad_min             = 0.2d0
+  !$acc declare create(flux_ad_min)
+  double precision :: flux_ad_scale           = 1.0d0
+  !$acc declare create(flux_ad_scale)
+
   !> time stepper type
   integer :: t_stepper=0
   integer, parameter :: onestep=1
