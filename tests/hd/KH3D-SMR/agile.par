@@ -42,17 +42,21 @@
  /
 
  &meshlist
-   max_blocks         = 32768
-   refine_max_level   = 3
-   refine_criterion   = 1 !user-defined criterion only (in mod_usr)
-   refine_usr         = .true.
+   max_blocks         = 4096 !32768
+   refine_max_level   = 2
+   refine_criterion   = 3 !AMR
+   refine_threshold  = 20*0.4d0
+   derefine_ratio    = 20*0.35d0
+   w_refine_weight(1) = 1.0d0
+!   refine_criterion   = 1 !user-defined criterion only (in mod_usr)
+!   refine_usr         = .true.
    itfixgrid          = 0 
-   block_nx1          = 16
-   block_nx2          = 16
-   block_nx3          = 16
-   domain_nx1         = 128
-   domain_nx2         = 128
-   domain_nx3         = 128
+   block_nx1          = 8 !16
+   block_nx2          = 8 !16
+   block_nx3          = 8 !16
+   domain_nx1         = 64 !128
+   domain_nx2         = 64 !128
+   domain_nx3         = 64 !128
    xprobmin1       = 0.0d0
    xprobmax1       = 1.0d0
    xprobmin2       = 0.0d0
