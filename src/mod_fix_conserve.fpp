@@ -876,6 +876,7 @@ end subroutine deallocateBflux
 
      integer :: iigrid, igrid, idims, iside, iotherside, i1,i2,i3, ic1,ic2,ic3,&
          inc1,inc2,inc3, ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3
+     integer :: ix1, ix2, ix3 !JESSE ADDED
      integer :: nxCo1,nxCo2,nxCo3, iw, ix, ipe_neighbor, ineighbor, nbuf,&
          ibufnext, nw1
      double precision :: CoFiratio
@@ -892,17 +893,22 @@ end subroutine deallocateBflux
        ibuf=1
      end if
 
-     nxCo1=(ixMhi1-ixMlo1+1)/2;nxCo2=(ixMhi2-ixMlo2+1)/2
-     nxCo3=(ixMhi3-ixMlo3+1)/2;
+     nxCo1=(ixMhi1-ixMlo1+1)/2
+     nxCo2=(ixMhi2-ixMlo2+1)/2
+     nxCo3=(ixMhi3-ixMlo3+1)/2
 
      ! for all grids: perform flux update at Coarse-Fine interfaces
-     do iigrid=1,igridstail; igrid=igrids(iigrid);
-       do idims= idimmin,idimmax
+     !$acc parallel loop gang private(i1,i2,i3,ic1,ic2,ic3,ix1,ix2,ix3) default(present)
+     do iigrid=1,igridstail
+       igrid=igrids(iigrid)
+
+       do idims=idimmin,idimmax
          select case (idims)
            case (1)
            do iside=1,2
-             i1=kr(1,1)*(2*iside-3);i2=kr(2,1)*(2*iside-3)
-             i3=kr(3,1)*(2*iside-3);
+             i1=kr(1,1)*(2*iside-3)
+             i2=kr(2,1)*(2*iside-3)
+             i3=kr(3,1)*(2*iside-3)
 
              if (neighbor_pole(i1,i2,i3,igrid)/=0) cycle
 
@@ -910,24 +916,24 @@ end subroutine deallocateBflux
 
  !opedit: skip over active/passive interface since flux for passive ones is
              ! not computed, keep the buffer counter up to date:
-             if (.not.neighbor_active(i1,i2,i3,&
-                igrid).or..not.neighbor_active(0,0,0,igrid) ) then
-               do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
-               inc3=2*i3+ic3
-           do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
-               inc2=2*i2+ic2
-           do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
-               inc1=2*i1+ic1
-               ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
-               if (ipe_neighbor/=mype) then
-                 ibufnext=ibuf+isize(1)
-                 ibuf=ibufnext
-               end if
-               end do
-           end do
-           end do
-               cycle
-             end if
+          !   if (.not.neighbor_active(i1,i2,i3,&
+          !      igrid).or..not.neighbor_active(0,0,0,igrid) ) then
+          !     do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
+          !     inc3=2*i3+ic3
+          ! do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
+          !     inc2=2*i2+ic2
+          ! do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
+          !     inc1=2*i1+ic1
+          !     ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
+          !     if (ipe_neighbor/=mype) then
+          !       ibufnext=ibuf+isize(1)
+          !       ibuf=ibufnext
+          !     end if
+          !     end do
+          ! end do
+          ! end do
+          !     cycle
+          !   end if
              !
 
              select case (iside)
@@ -939,79 +945,111 @@ end subroutine deallocateBflux
 
              ! remove coarse flux
              if (slab_uniform) then
-               psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
-                  nw0:nw1) = psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
-                  nw0:nw1) -pflux(iside,1,igrid)%flux(1,:,:,1:nwfluxin)
-             else
-               do iw=nw0,nw1
-                 psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
-                    iw)=psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
-                    iw)-pflux(iside,1,igrid)%flux(1,:,:,&
-                    iw-nw0+1) /ps(igrid)%dvolume(ix,ixMlo2:ixMhi2,&
-                    ixMlo3:ixMhi3)
-               end do
+                !TODO do I need to add "private(ix2,ix3)"?
+                !$acc loop collapse(ndim-1) vector
+                do ix3=ixMlo3,ixMhi3
+                  do ix2=ixMlo2,ixMhi2 
+                    psb(igrid)%w(ix,ix2,ix3,nw0:nw1) = &
+                      psb(igrid)%w(ix,ix2,ix3,nw0:nw1) - &
+                      pflux(iside,1,igrid)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nwfluxin)
+                      !TODO JESSE I suspect that the indexing
+                      !of flux (ix1..ix3) is not correct
+                      !yet...
+                      ! HO: Should be ok now
+                  end do
+                end do
+             !  psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
+             !     nw0:nw1) = psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
+             !     nw0:nw1) -pflux(iside,1,igrid)%flux(1,:,:,1:nwfluxin)
+             !else
+             !  do iw=nw0,nw1
+             !    psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
+             !       iw)=psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
+             !       iw)-pflux(iside,1,igrid)%flux(1,:,:,&
+             !       iw-nw0+1) /ps(igrid)%dvolume(ix,ixMlo2:ixMhi2,&
+             !       ixMlo3:ixMhi3)
+             !  end do
              end if
 
 
              ! add fine flux
-            do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
+
+             do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
                inc3=2*i3+ic3
-           do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
+             do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
                inc2=2*i2+ic2
-           do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
+             do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
                inc1=2*i1+ic1
                ineighbor=neighbor_child(1,inc1,inc2,inc3,igrid)
                ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
-               ixmin1=ix;ixmin2=ixMlo2+(ic2-1)*nxCo2
-               ixmin3=ixMlo3+(ic3-1)*nxCo3;
-               ixmax1=ix;ixmax2=ixmin2-1+nxCo2;ixmax3=ixmin3-1+nxCo3;
+               ixmin1=ix
+               ixmin2=ixMlo2+(ic2-1)*nxCo2
+               ixmin3=ixMlo3+(ic3-1)*nxCo3
+               ixmax1=ix
+               ixmax2=ixmin2-1+nxCo2
+               ixmax3=ixmin3-1+nxCo3
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
                  if (slab_uniform) then
-                   psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                      nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                      ixmin3:ixmax3,nw0:nw1) + pflux(iotherside,1,&
-                      ineighbor)%flux(:,:,:,1:nwfluxin)* CoFiratio
-                 else
-                   do iw=nw0,nw1
-                     psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                        iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                        ixmin3:ixmax3,iw) +pflux(iotherside,1,&
-                        ineighbor)%flux(:,:,:,&
-                        iw-nw0+1) /ps(igrid)%dvolume(ixmin1:ixmax1,&
-                        ixmin2:ixmax2,ixmin3:ixmax3)
-                   end do
+                     ! Direction 1, so loop runs over directions 2 and 3
+                     !$acc loop collapse(ndim-1) vector
+                     do ix3=1,nxCo3 
+                        do ix2=1,nxCo2 
+                           psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0:nw1) = &
+                            psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0:nw1) + &
+                            pflux(iotherside,1,ineighbor&
+                            )%flux(1,ix2,ix3,1:nwfluxin)&
+                            * CoFiratio
+                            !TODO JESSE I suspect that the indexing
+                            !of flux (ix1..ix3) is not correct
+                            !yet...
+                        end do
+                     end do
+
+                 !  psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+                 !     nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+                 !     ixmin3:ixmax3,nw0:nw1) + pflux(iotherside,1,&
+                 !     ineighbor)%flux(:,:,:,1:nwfluxin)* CoFiratio
+                 !else
+                 !  do iw=nw0,nw1
+                 !    psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+                 !       iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+                 !       ixmin3:ixmax3,iw) +pflux(iotherside,1,&
+                 !       ineighbor)%flux(:,:,:,&
+                 !       iw-nw0+1) /ps(igrid)%dvolume(ixmin1:ixmax1,&
+                 !       ixmin2:ixmax2,ixmin3:ixmax3)
+                 !  end do
                  end if
-               else
-                 if (slab_uniform) then
-                   ibufnext=ibuf+isize(1)
-                   if(stagger_grid) ibufnext=ibufnext-isize_stg(1)
-                   psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                      nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                      ixmin3:ixmax3,nw0:nw1)+CoFiratio &
-                      *reshape(source=recvbuffer(ibuf:ibufnext-1),&
-                       shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                      ixmin3:ixmax3,nw0:nw1)))
-                   ibuf=ibuf+isize(1)
-                 else
-                   ibufnext=ibuf+isize(1)
-                   if(stagger_grid) then
-                     nbuf=(isize(1)-isize_stg(1))/nwfluxin
-                   else
-                     nbuf=isize(1)/nwfluxin
-                   end if
-                   do iw=nw0,nw1
-                     psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                        iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                        ixmin3:ixmax3,iw) &
-                        +reshape(source=recvbuffer(ibuf:ibufnext-1),&
-                         shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                        ixmin3:ixmax3,iw))) /ps(igrid)%dvolume(ixmin1:ixmax1,&
-                        ixmin2:ixmax2,ixmin3:ixmax3)
-                     ibuf=ibuf+nbuf
-                   end do
-                   ibuf=ibufnext
-                 end if
+               !else
+               !  if (slab_uniform) then
+               !    ibufnext=ibuf+isize(1)
+               !    if(stagger_grid) ibufnext=ibufnext-isize_stg(1)
+               !    psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+               !       nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !       ixmin3:ixmax3,nw0:nw1)+CoFiratio &
+               !       *reshape(source=recvbuffer(ibuf:ibufnext-1),&
+               !        shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !       ixmin3:ixmax3,nw0:nw1)))
+               !    ibuf=ibuf+isize(1)
+               !  else
+               !    ibufnext=ibuf+isize(1)
+               !    if(stagger_grid) then
+               !      nbuf=(isize(1)-isize_stg(1))/nwfluxin
+               !    else
+               !      nbuf=isize(1)/nwfluxin
+               !    end if
+               !    do iw=nw0,nw1
+               !      psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+               !         iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !         ixmin3:ixmax3,iw) &
+               !         +reshape(source=recvbuffer(ibuf:ibufnext-1),&
+               !          shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !         ixmin3:ixmax3,iw))) /ps(igrid)%dvolume(ixmin1:ixmax1,&
+               !         ixmin2:ixmax2,ixmin3:ixmax3)
+               !      ibuf=ibuf+nbuf
+               !    end do
+               !    ibuf=ibufnext
+               !  end if
                end if
             end do
            end do
@@ -1019,8 +1057,9 @@ end subroutine deallocateBflux
            end do
            case (2)
            do iside=1,2
-             i1=kr(1,2)*(2*iside-3);i2=kr(2,2)*(2*iside-3)
-             i3=kr(3,2)*(2*iside-3);
+             i1=kr(1,2)*(2*iside-3)
+             i2=kr(2,2)*(2*iside-3)
+             i3=kr(3,2)*(2*iside-3)
 
              if (neighbor_pole(i1,i2,i3,igrid)/=0) cycle
 
@@ -1028,24 +1067,24 @@ end subroutine deallocateBflux
 
  !opedit: skip over active/passive interface since flux for passive ones is
              ! not computed, keep the buffer counter up to date:
-             if (.not.neighbor_active(i1,i2,i3,&
-                igrid).or..not.neighbor_active(0,0,0,igrid) ) then
-               do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
-               inc3=2*i3+ic3
-           do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
-               inc2=2*i2+ic2
-           do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
-               inc1=2*i1+ic1
-               ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
-               if (ipe_neighbor/=mype) then
-                 ibufnext=ibuf+isize(2)
-                 ibuf=ibufnext
-               end if
-               end do
-           end do
-           end do
-               cycle
-             end if
+            ! if (.not.neighbor_active(i1,i2,i3,&
+            !    igrid).or..not.neighbor_active(0,0,0,igrid) ) then
+            !   do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
+            !   inc3=2*i3+ic3
+            !   do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
+            !   inc2=2*i2+ic2
+            !   do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
+            !   inc1=2*i1+ic1
+            !   ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
+            !   if (ipe_neighbor/=mype) then
+            !     ibufnext=ibuf+isize(2)
+            !     ibuf=ibufnext
+            !   end if
+            !   end do
+            !  end do
+            !  end do
+            !   cycle
+            ! end if
              !
 
              select case (iside)
@@ -1057,88 +1096,112 @@ end subroutine deallocateBflux
 
              ! remove coarse flux
              if (slab_uniform) then
-               psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
-                  nw0:nw1) = psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
-                  nw0:nw1) -pflux(iside,2,igrid)%flux(:,1,:,1:nwfluxin)
-             else
-               do iw=nw0,nw1
-                 psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
-                    iw)=psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
-                    iw)-pflux(iside,2,igrid)%flux(:,1,:,&
-                    iw-nw0+1) /ps(igrid)%dvolume(ixMlo1:ixMhi1,ix,&
-                    ixMlo3:ixMhi3)
-               end do
+                !$acc loop collapse(ndim-1) vector
+                do ix3=ixMlo3,ixMhi3
+                  do ix1=ixMlo1,ixMhi1 
+                    psb(igrid)%w(ix1,ix,ix3,nw0:nw1) = &
+                     psb(igrid)%w(ix1,ix,ix3,nw0:nw1) - &
+                     pflux(iside,2,igrid)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nwfluxin)
+                  end do
+                end do
+             !  psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
+             !     nw0:nw1) = psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
+             !     nw0:nw1) -pflux(iside,2,igrid)%flux(:,1,:,1:nwfluxin)
+             !else
+             !  do iw=nw0,nw1
+             !    psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
+             !       iw)=psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
+             !       iw)-pflux(iside,2,igrid)%flux(:,1,:,&
+             !       iw-nw0+1) /ps(igrid)%dvolume(ixMlo1:ixMhi1,ix,&
+             !       ixMlo3:ixMhi3)
+             !  end do
              end if
 
 
              ! add fine flux
-            do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
+             do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
                inc3=2*i3+ic3
-           do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
+             do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
                inc2=2*i2+ic2
-           do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
+             do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
                inc1=2*i1+ic1
                ineighbor=neighbor_child(1,inc1,inc2,inc3,igrid)
                ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
-               ixmin1=ixMlo1+(ic1-1)*nxCo1;ixmin2=ix
-               ixmin3=ixMlo3+(ic3-1)*nxCo3;
-               ixmax1=ixmin1-1+nxCo1;ixmax2=ix;ixmax3=ixmin3-1+nxCo3;
+               ixmin1=ixMlo1+(ic1-1)*nxCo1
+               ixmin2=ix
+               ixmin3=ixMlo3+(ic3-1)*nxCo3
+               ixmax1=ixmin1-1+nxCo1
+               ixmax2=ix
+               ixmax3=ixmin3-1+nxCo3
+
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
+
                  if (slab_uniform) then
-                   psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                      nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                      ixmin3:ixmax3,nw0:nw1) + pflux(iotherside,2,&
-                      ineighbor)%flux(:,:,:,1:nwfluxin)* CoFiratio
-                 else
-                   do iw=nw0,nw1
-                     psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                        iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                        ixmin3:ixmax3,iw) +pflux(iotherside,2,&
-                        ineighbor)%flux(:,:,:,&
-                        iw-nw0+1) /ps(igrid)%dvolume(ixmin1:ixmax1,&
-                        ixmin2:ixmax2,ixmin3:ixmax3)
+                   !$acc loop collapse(ndim-1) vector
+                   do ix3=1,nxCo3 
+                     do ix1=1,nxCo1 
+                       psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0:nw1) = &
+                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0:nw1) + &
+                         pflux(iotherside,2,ineighbor)%flux(ix1,1,ix3,1:nwfluxin) * CoFiratio
+                     end do
                    end do
+
+                 !  psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+                 !     nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+                 !     ixmin3:ixmax3,nw0:nw1) + pflux(iotherside,2,&
+                 !     ineighbor)%flux(:,:,:,1:nwfluxin)* CoFiratio
+                 !else
+                 !  do iw=nw0,nw1
+                 !    psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+                 !       iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+                 !       ixmin3:ixmax3,iw) +pflux(iotherside,2,&
+                 !       ineighbor)%flux(:,:,:,&
+                 !       iw-nw0+1) /ps(igrid)%dvolume(ixmin1:ixmax1,&
+                 !       ixmin2:ixmax2,ixmin3:ixmax3)
+                 !  end do
                  end if
-               else
-                 if (slab_uniform) then
-                   ibufnext=ibuf+isize(2)
-                   if(stagger_grid) ibufnext=ibufnext-isize_stg(2)
-                   psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                      nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                      ixmin3:ixmax3,nw0:nw1)+CoFiratio &
-                      *reshape(source=recvbuffer(ibuf:ibufnext-1),&
-                       shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                      ixmin3:ixmax3,nw0:nw1)))
-                   ibuf=ibuf+isize(2)
-                 else
-                   ibufnext=ibuf+isize(2)
-                   if(stagger_grid) then
-                     nbuf=(isize(2)-isize_stg(2))/nwfluxin
-                   else
-                     nbuf=isize(2)/nwfluxin
-                   end if
-                   do iw=nw0,nw1
-                     psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                        iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                        ixmin3:ixmax3,iw) &
-                        +reshape(source=recvbuffer(ibuf:ibufnext-1),&
-                         shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                        ixmin3:ixmax3,iw))) /ps(igrid)%dvolume(ixmin1:ixmax1,&
-                        ixmin2:ixmax2,ixmin3:ixmax3)
-                     ibuf=ibuf+nbuf
-                   end do
-                   ibuf=ibufnext
-                 end if
+               !else
+               !  if (slab_uniform) then
+               !    ibufnext=ibuf+isize(2)
+               !    if(stagger_grid) ibufnext=ibufnext-isize_stg(2)
+               !    psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+               !       nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !       ixmin3:ixmax3,nw0:nw1)+CoFiratio &
+               !       *reshape(source=recvbuffer(ibuf:ibufnext-1),&
+               !        shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !       ixmin3:ixmax3,nw0:nw1)))
+               !    ibuf=ibuf+isize(2)
+               !  else
+               !    ibufnext=ibuf+isize(2)
+               !    if(stagger_grid) then
+               !      nbuf=(isize(2)-isize_stg(2))/nwfluxin
+               !    else
+               !      nbuf=isize(2)/nwfluxin
+               !    end if
+               !    do iw=nw0,nw1
+               !      psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+               !         iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !         ixmin3:ixmax3,iw) &
+               !         +reshape(source=recvbuffer(ibuf:ibufnext-1),&
+               !          shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !         ixmin3:ixmax3,iw))) /ps(igrid)%dvolume(ixmin1:ixmax1,&
+               !         ixmin2:ixmax2,ixmin3:ixmax3)
+               !      ibuf=ibuf+nbuf
+               !    end do
+               !    ibuf=ibufnext
+               !  end if
                end if
-            end do
+             end do
+             end do
+             end do
            end do
-           end do
-           end do
+
            case (3)
            do iside=1,2
-             i1=kr(1,3)*(2*iside-3);i2=kr(2,3)*(2*iside-3)
-             i3=kr(3,3)*(2*iside-3);
+             i1=kr(1,3)*(2*iside-3)
+             i2=kr(2,3)*(2*iside-3)
+             i3=kr(3,3)*(2*iside-3)
 
              if (neighbor_pole(i1,i2,i3,igrid)/=0) cycle
 
@@ -1146,25 +1209,24 @@ end subroutine deallocateBflux
 
  !opedit: skip over active/passive interface since flux for passive ones is
              ! not computed, keep the buffer counter up to date:
-             if (.not.neighbor_active(i1,i2,i3,&
-                igrid).or..not.neighbor_active(0,0,0,igrid) ) then
-               do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
-               inc3=2*i3+ic3
-           do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
-               inc2=2*i2+ic2
-           do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
-               inc1=2*i1+ic1
-               ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
-               if (ipe_neighbor/=mype) then
-                 ibufnext=ibuf+isize(3)
-                 ibuf=ibufnext
-               end if
-               end do
-           end do
-           end do
-               cycle
-             end if
-             !
+            !   if (.not.neighbor_active(i1,i2,i3,&
+            !      igrid).or..not.neighbor_active(0,0,0,igrid) ) then
+            !     do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
+            !     inc3=2*i3+ic3
+            ! do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
+            !     inc2=2*i2+ic2
+            ! do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
+            !     inc1=2*i1+ic1
+            !     ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
+            !     if (ipe_neighbor/=mype) then
+            !       ibufnext=ibuf+isize(3)
+            !       ibuf=ibufnext
+            !     end if
+            !     end do
+            ! end do
+            ! end do
+            !     cycle
+            !   end if
 
              select case (iside)
              case (1)
@@ -1175,83 +1237,103 @@ end subroutine deallocateBflux
 
              ! remove coarse flux
              if (slab_uniform) then
-               psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
-                  nw0:nw1) = psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
-                  nw0:nw1) -pflux(iside,3,igrid)%flux(:,:,1,1:nwfluxin)
-             else
-               do iw=nw0,nw1
-                 psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
-                    iw)=psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
-                    iw)-pflux(iside,3,igrid)%flux(:,:,1,&
-                    iw-nw0+1) /ps(igrid)%dvolume(ixMlo1:ixMhi1,ixMlo2:ixMhi2,&
-                    ix)
+               !$acc loop collapse(ndim-1) vector
+               do ix2=ixMlo2,ixMhi2
+                 do ix1=ixMlo1,ixMhi1 
+                   psb(igrid)%w(ix1,ix2,ix,nw0:nw1) = &
+                     psb(igrid)%w(ix1,ix2,ix,nw0:nw1) - &
+                     pflux(iside,3,igrid)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nwfluxin)
+                 end do
                end do
+             !  psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
+             !     nw0:nw1) = psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
+             !     nw0:nw1) -pflux(iside,3,igrid)%flux(:,:,1,1:nwfluxin)
+             !else
+             !  do iw=nw0,nw1
+             !    psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
+             !       iw)=psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
+             !       iw)-pflux(iside,3,igrid)%flux(:,:,1,&
+             !       iw-nw0+1) /ps(igrid)%dvolume(ixMlo1:ixMhi1,ixMlo2:ixMhi2,&
+             !       ix)
+             !  end do
              end if
 
 
              ! add fine flux
-            do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
+             do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
                inc3=2*i3+ic3
-           do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
+             do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
                inc2=2*i2+ic2
-           do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
+             do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
                inc1=2*i1+ic1
                ineighbor=neighbor_child(1,inc1,inc2,inc3,igrid)
                ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
-               ixmin1=ixMlo1+(ic1-1)*nxCo1;ixmin2=ixMlo2+(ic2-1)*nxCo2
-               ixmin3=ix;
-               ixmax1=ixmin1-1+nxCo1;ixmax2=ixmin2-1+nxCo2;ixmax3=ix;
+               ixmin1=ixMlo1+(ic1-1)*nxCo1
+               ixmin2=ixMlo2+(ic2-1)*nxCo2
+               ixmin3=ix
+               ixmax1=ixmin1-1+nxCo1
+               ixmax2=ixmin2-1+nxCo2
+               ixmax3=ix
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
                  if (slab_uniform) then
-                   psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                      nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                      ixmin3:ixmax3,nw0:nw1) + pflux(iotherside,3,&
-                      ineighbor)%flux(:,:,:,1:nwfluxin)* CoFiratio
-                 else
-                   do iw=nw0,nw1
-                     psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                        iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                        ixmin3:ixmax3,iw) +pflux(iotherside,3,&
-                        ineighbor)%flux(:,:,:,&
-                        iw-nw0+1) /ps(igrid)%dvolume(ixmin1:ixmax1,&
-                        ixmin2:ixmax2,ixmin3:ixmax3)
+                   !$acc loop collapse(ndim-1) vector
+                   do ix2=1,nxCo2 
+                     do ix1=1,nxCo1 
+                       psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0:nw1) = &
+                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0:nw1) + &
+                         pflux(iotherside,3,ineighbor&
+                         )%flux(ix1,ix2,1,1:nwfluxin)* CoFiratio
+                     end do
                    end do
+                 !  psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+                 !     nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+                 !     ixmin3:ixmax3,nw0:nw1) + pflux(iotherside,3,&
+                 !     ineighbor)%flux(:,:,:,1:nwfluxin)* CoFiratio
+                 !else
+                 !  do iw=nw0,nw1
+                 !    psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+                 !       iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+                 !       ixmin3:ixmax3,iw) +pflux(iotherside,3,&
+                 !       ineighbor)%flux(:,:,:,&
+                 !       iw-nw0+1) /ps(igrid)%dvolume(ixmin1:ixmax1,&
+                 !       ixmin2:ixmax2,ixmin3:ixmax3)
+                 !  end do
                  end if
-               else
-                 if (slab_uniform) then
-                   ibufnext=ibuf+isize(3)
-                   if(stagger_grid) ibufnext=ibufnext-isize_stg(3)
-                   psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                      nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                      ixmin3:ixmax3,nw0:nw1)+CoFiratio &
-                      *reshape(source=recvbuffer(ibuf:ibufnext-1),&
-                       shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                      ixmin3:ixmax3,nw0:nw1)))
-                   ibuf=ibuf+isize(3)
-                 else
-                   ibufnext=ibuf+isize(3)
-                   if(stagger_grid) then
-                     nbuf=(isize(3)-isize_stg(3))/nwfluxin
-                   else
-                     nbuf=isize(3)/nwfluxin
-                   end if
-                   do iw=nw0,nw1
-                     psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                        iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                        ixmin3:ixmax3,iw) &
-                        +reshape(source=recvbuffer(ibuf:ibufnext-1),&
-                         shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                        ixmin3:ixmax3,iw))) /ps(igrid)%dvolume(ixmin1:ixmax1,&
-                        ixmin2:ixmax2,ixmin3:ixmax3)
-                     ibuf=ibuf+nbuf
-                   end do
-                   ibuf=ibufnext
-                 end if
+               !else
+               !  if (slab_uniform) then
+               !    ibufnext=ibuf+isize(3)
+               !    if(stagger_grid) ibufnext=ibufnext-isize_stg(3)
+               !    psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+               !       nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !       ixmin3:ixmax3,nw0:nw1)+CoFiratio &
+               !       *reshape(source=recvbuffer(ibuf:ibufnext-1),&
+               !        shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !       ixmin3:ixmax3,nw0:nw1)))
+               !    ibuf=ibuf+isize(3)
+               !  else
+               !    ibufnext=ibuf+isize(3)
+               !    if(stagger_grid) then
+               !      nbuf=(isize(3)-isize_stg(3))/nwfluxin
+               !    else
+               !      nbuf=isize(3)/nwfluxin
+               !    end if
+               !    do iw=nw0,nw1
+               !      psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
+               !         iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !         ixmin3:ixmax3,iw) &
+               !         +reshape(source=recvbuffer(ibuf:ibufnext-1),&
+               !          shape=shape(psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
+               !         ixmin3:ixmax3,iw))) /ps(igrid)%dvolume(ixmin1:ixmax1,&
+               !         ixmin2:ixmax2,ixmin3:ixmax3)
+               !      ibuf=ibuf+nbuf
+               !    end do
+               !    ibuf=ibufnext
+               !  end if
                end if
-            end do
-           end do
-           end do
+             end do
+             end do
+             end do
            end do
          end select
        end do
@@ -1423,6 +1505,10 @@ end subroutine deallocateBflux
      end do
 
    end subroutine store_flux
+
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !! ALL OF THE FOLLOWING IS FOR STAGGERED GRIDS !!
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
    subroutine store_edge(igrid,ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
       fE,idimmin,idimmax)
