@@ -45,6 +45,12 @@ options = ["hd", "mhd", "ffhd"]
 flags = ["fypp", "hash"]
 default = "hd"
 
+[methodlist.flux_adaptive_diffusion]
+type = "flag"
+name = "FLUX_AD"
+flags = ["fypp", "hash"]
+default = false
+
 [boundlist]
 [boundlist.specialboundary]
 type = "flag"

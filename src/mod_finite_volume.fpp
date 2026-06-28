@@ -8,7 +8,11 @@ module mod_finite_volume
 
   use mod_variables
   use mod_physics_vars
-  use mod_global_parameters, only: ndim, flux_adaptive_diffusion, flux_ad_min, flux_ad_scale
+#:if defined('FLUX_AD')
+  use mod_global_parameters, only: ndim, flux_ad_min, flux_ad_scale
+#:else
+  use mod_global_parameters, only: ndim
+#:endif
   use mod_physicaldata
   implicit none
 
@@ -289,12 +293,16 @@ end subroutine finite_volume_local
 
 
   !> One-face LLF/Rusanov numerical flux from primitive L/R states.
-  subroutine riemann_llf_prim(uL, uR, xC, flux_dim, F, phi)
+  !> phi(nw_flux) is the adaptive-diffusion reduction factor; only present when FLUX_AD is defined.
+  subroutine riemann_llf_prim(uL, uR, xC, flux_dim, F#{if defined('FLUX_AD')}#, phi#{endif}#)
     !$acc routine seq
     real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
-    real(dp), intent(in)    :: xC(ndim), phi(nw_flux)
+    real(dp), intent(in)    :: xC(ndim)
     integer,  intent(in)    :: flux_dim
     real(dp), intent(out)   :: F(nw_flux)
+#:if defined('FLUX_AD')
+    real(dp), intent(in)    :: phi(nw_flux)
+#:endif
 
     real(dp) :: flux_l(nw_flux), flux_r(nw_flux)
     real(dp) :: wL, wR, wmax
@@ -309,7 +317,7 @@ end subroutine finite_volume_local
     call to_conservative(uL)
     call to_conservative(uR)
 
-    F = 0.5_dp * ((flux_l + flux_r) - wmax * (uR(1:nw_flux) - uL(1:nw_flux)) * phi)
+    F = 0.5_dp * ((flux_l + flux_r) - wmax * (uR(1:nw_flux) - uL(1:nw_flux))#{if defined('FLUX_AD')}# * phi#{endif}#)
   end subroutine riemann_llf_prim
 
 
@@ -469,6 +477,7 @@ end subroutine finite_volume_local
 
   !> MUSCL (primitive-variable) reconstruction with slope limiter; LLF/Rusanov numerical flux at faces.
   !> Robust and diffusive; uses local max wavespeed for upwinding.
+  !> Adaptive diffusion (Rempel et al. 2009) is compiled in only when FLUX_AD is defined.
   subroutine reconflux_muscl_llf_prim(u, xlocC, flux_dim, flux, typelim)
     !$acc routine seq
     real(dp), intent(in)  :: u(nw_phys, 5)
@@ -477,34 +486,35 @@ end subroutine finite_volume_local
     real(dp), intent(out) :: flux(nw_flux, 2)
 
     real(dp) :: uL(nw_phys,2), uR(nw_phys,2)
+    integer  :: iface
+#:if defined('FLUX_AD')
     real(dp) :: phi(nw_flux,2)
     real(dp) :: delta_rc, delta_ct, phi_v
-    integer  :: iface, iw
+    integer  :: iw
+#:endif
 #:if defined('MHD_ENERGY_ONLY')
     real(dp) :: Fe
 #:endif
 
     call muscl_reconstruct_prim(u, typelim, uL, uR)
 
-    ! Default: full (unmodified) dissipation
+#:if defined('FLUX_AD')
+    ! Rempel et al. (2009): reduce dissipation where reconstruction and cell-centre agree in sign
     phi = 1.0_dp
-
-    if (flux_adaptive_diffusion) then
-      ! Rempel et al. (2009): reduce phi where reconstruction and cell-centre
-      do iface = 1, 2
-        do iw = 1, nw_flux
-          delta_rc = uR(iw,iface) - uL(iw,iface)          ! primitive recon jump
-          delta_ct = u(iw, iface+2) - u(iw, iface+1)      ! primitive cell-centre diff
-          if (delta_rc * delta_ct > 1.0e-18_dp) then
-            phi_v = flux_ad_scale * delta_rc**2 / (delta_ct**2 + 1.0e-18_dp)
-            phi(iw,iface) = max(flux_ad_min, min(phi_v, 1.0_dp))
-          end if
-        end do
+    do iface = 1, 2
+      do iw = 1, nw_flux
+        delta_rc = uR(iw,iface) - uL(iw,iface)
+        delta_ct = u(iw, iface+2) - u(iw, iface+1)
+        if (delta_rc * delta_ct > 1.0e-18_dp) then
+          phi_v = flux_ad_scale * delta_rc**2 / (delta_ct**2 + 1.0e-18_dp)
+          phi(iw,iface) = max(flux_ad_min, min(phi_v, 1.0_dp))
+        end if
       end do
-    end if
+    end do
+#:endif
 
     do iface = 1, 2
-      call riemann_llf_prim(uL(:,iface), uR(:,iface), xlocC(:,iface), flux_dim, flux(:,iface), phi(:,iface))
+      call riemann_llf_prim(uL(:,iface), uR(:,iface), xlocC(:,iface), flux_dim, flux(:,iface)#{if defined('FLUX_AD')}#, phi(:,iface)#{endif}#)
     end do
 
 #:if defined('MHD_ENERGY_ONLY')
@@ -515,7 +525,7 @@ end subroutine finite_volume_local
     end do
 #:endif
 
-  end subroutine reconflux_muscl_llf_prim  
+  end subroutine reconflux_muscl_llf_prim
 
 
   !> MUSCL (primitive-variable) reconstruction with slope limiter; HLLC approximate Riemann flux at faces.
