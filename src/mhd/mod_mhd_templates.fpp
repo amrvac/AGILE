@@ -117,6 +117,10 @@
   !> If true, use htc_coeff_par as a constant sig_par (bypass Spitzer T^2.5 scaling)
   logical, public                         :: hypertc_const_kappa = .false.
   !$acc declare copyin(hypertc_const_kappa)
+  !> Apply free-streaming saturation limiter to hyperbolic TC (Cowie & McKee 1977)
+  !> q_sat = 1.5 rho (p/rho)^1.5; f_sat = 1/(1 + |q_Spitzer|/q_sat)
+  logical, public                         :: mhd_hypertc_saturate = .false.
+  !$acc declare copyin(mhd_hypertc_saturate)
 #:endif
 #:if defined('HYPERTC_ANISO')
   !> Magnetisation chi prefactor: chi = htc_Cchi * B * Te^1.5 / n
@@ -180,7 +184,7 @@
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
       mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
       mhd_hyperbolic_thermal_conduction_anisotropic, hypertc_lnLambda, &
-      mhd_energy_only
+      mhd_hypertc_saturate, mhd_energy_only
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -193,7 +197,8 @@
     !$acc&     mhd_gamma, mhd_glm_alpha, &
     !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, &
     !$acc&     He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity, &
-    !$acc&     mhd_hyperbolic_thermal_conduction, hypertc_lnLambda)
+    !$acc&     mhd_hyperbolic_thermal_conduction, hypertc_lnLambda, &
+    !$acc&     mhd_hypertc_saturate)
 #endif
 
   end subroutine read_params
@@ -522,11 +527,15 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
   real(dp)                 :: laplb_cd2
   real(dp)                 :: Jdir1,Jdir2,Jdir3
   integer                  :: idir
-#:if defined('HYPERTC_ANISO')
-  real(dp)   :: Te_c, rho_c, e_c, sig_par, sig_perp, chi
-  real(dp)   :: gradT(3), bgradT, gradTperp_mag
-  real(dp)   :: Bmag2, Bmag, Bmag2_safe, tau_par, tau_perp
+#:if defined('HYPERTC')
+  real(dp)   :: Te_c, rho_c, e_c, pth_c, sig_par
+  real(dp)   :: gradT(3), bgradT
+  real(dp)   :: Bmag2, Bmag, Bmag2_safe, tau_par
+  real(dp)   :: q_sat, f_sat
   integer    :: k_tc
+#:endif
+#:if defined('HYPERTC_ANISO')
+  real(dp)   :: sig_perp, chi, gradTperp_mag, tau_perp
 #:endif
 
   if (.not. qsourcesplit) then 
@@ -580,9 +589,10 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
      wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*(Jdir1**2+Jdir2**2+Jdir3**2)
 #:endif
 
-#:if defined('HYPERTC_ANISO')
+#:if defined('HYPERTC')
     Te_c  = wCTprim1(iw_e,2) / wCTprim1(iw_rho,2)
     rho_c = wCTprim1(iw_rho,2)
+    pth_c = wCTprim1(iw_e,2)
 
     gradT(1) = (wCTprim1(iw_e,3)/wCTprim1(iw_rho,3) - wCTprim1(iw_e,1)/wCTprim1(iw_rho,1)) / (2.d0*dx(1))
     gradT(2) = (wCTprim2(iw_e,3)/wCTprim2(iw_rho,3) - wCTprim2(iw_e,1)/wCTprim2(iw_rho,1)) / (2.d0*dx(2))
@@ -601,24 +611,39 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
     end do
     bgradT = bgradT * Bmag / Bmag2_safe
 
-    gradTperp_mag = sqrt(max(gradT(1)**2 + gradT(2)**2 + gradT(3)**2 &
-                           - bgradT**2, 0.0d0))
-
     if (hypertc_const_kappa) then
       sig_par = htc_coeff_par
     else
       sig_par = htc_coeff_par * Te_c**2.5d0
     end if
+
+    e_c = pth_c / (mhd_gamma - 1.0d0) + 0.5d0 * Bmag2
+
+    if (mhd_hypertc_saturate) then
+      ! free-streaming limit: q_sat = 1.5 rho c_s^3, c_s = sqrt(p/rho)
+      q_sat = 1.5d0 * rho_c * (pth_c / rho_c)**1.5d0
+      f_sat = 1.0d0 / (1.0d0 + abs(sig_par * bgradT) / q_sat)
+      tau_par = max(4.d0*dt, f_sat*sig_par*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
+      wnew(q_) = wnew(q_) - qdt*(f_sat*sig_par*bgradT + wCTprim1(q_,2))/tau_par
+    else
+      tau_par = max(4.d0*dt, sig_par*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
+      wnew(q_) = wnew(q_) - qdt*(sig_par*bgradT + wCTprim1(q_,2))/tau_par
+    end if
+
+#:if defined('HYPERTC_ANISO')
+    gradTperp_mag = sqrt(max(gradT(1)**2 + gradT(2)**2 + gradT(3)**2 &
+                           - bgradT**2, 0.0d0))
     chi      = htc_Cchi * Bmag * Te_c**1.5d0 / rho_c
     sig_perp = sig_par / (1.0d0 + chi**2)
 
-    e_c = wCTprim1(iw_e,2) / (mhd_gamma - 1.0d0) + 0.5d0 * Bmag2
-
-    tau_par  = max(4.d0*dt, sig_par *Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
-    tau_perp = max(4.d0*dt, sig_perp*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
-
-    wnew(q_)     = wnew(q_)     - qdt*(sig_par *bgradT + wCTprim1(q_,2)    )/tau_par
-    wnew(qperp_) = wnew(qperp_) - qdt*(sig_perp*gradTperp_mag + wCTprim1(qperp_,2))/tau_perp
+    if (mhd_hypertc_saturate) then
+      tau_perp = max(4.d0*dt, f_sat*sig_perp*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
+      wnew(qperp_) = wnew(qperp_) - qdt*(f_sat*sig_perp*gradTperp_mag + wCTprim1(qperp_,2))/tau_perp
+    else
+      tau_perp = max(4.d0*dt, sig_perp*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
+      wnew(qperp_) = wnew(qperp_) - qdt*(sig_perp*gradTperp_mag + wCTprim1(qperp_,2))/tau_perp
+    end if
+#:endif
 #:endif
 
   else
@@ -637,8 +662,6 @@ end subroutine addsource_compact
 subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir, &
      qsourcesplit)
   !$acc routine seq
-  use mod_global_parameters, only: dt, cmax_global, third, smalldouble, &
-       unit_temperature, unit_length, unit_density, unit_velocity
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim(nw_phys,5)
@@ -646,46 +669,7 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
   real(dp), intent(inout)  :: wnew(nw_phys)
   integer, intent(in)      :: idir
   logical, intent(in)      :: qsourcesplit
-  ! .. local ..
-  real(dp)                 :: tau, htc_qrsc, sig_par
-  real(dp)                 :: Te(1:5), gradT
-  real(dp)                 :: mag, Bmag
 
-  if (.not. qsourcesplit) then
-     !---------------------------------
-     ! unsplit sources
-     !---------------------------------
-
-#:if defined('HYPERTC') and not defined('HYPERTC_ANISO')
-    Te(1:5) = wCTprim(iw_e,1:5) / wCTprim(iw_rho,1:5)
-    mag = wCTprim(iw_mag(idir),3)
-
-    gradT = (8.d0*(Te(4)-Te(2))-Te(5)+Te(1))/(12.d0*dx(idir))
-
-    if (hypertc_const_kappa) then
-      sig_par = htc_coeff_par
-    else
-      sig_par = htc_coeff_par * sqrt(Te(3)**5)
-    end if
-    tau = max(4.d0*dt, sig_par*Te(3)*(mhd_gamma-1.0d0)/&
-        (wCTprim(iw_e,3)*cmax_global**2))
-
-    Bmag = sqrt(max(wCTprim(iw_mag(1),3)**2 + wCTprim(iw_mag(2),3)**2 + &
-                    wCTprim(iw_mag(3),3)**2, smalldouble**2))
-    htc_qrsc = sig_par * (mag/Bmag) * gradT
-
-    wnew(iw_q) = wnew(iw_q) - qdt * (htc_qrsc + wCTprim(iw_q,3)*third) / tau
-#:endif
-
-  else
-     !---------------------------------
-     ! split sources     
-     !---------------------------------
-
-     ! Not yet implemented
-
-  end if
-  
 end subroutine addsource_nonlocal
 #:enddef
 
