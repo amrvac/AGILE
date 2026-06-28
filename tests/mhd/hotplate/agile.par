@@ -1,0 +1,71 @@
+
+ &filelist
+   base_filename = 'output/hotplate'
+   saveprim      = T
+   autoconvert   = T
+   convert_type  = 'vtuBCCmpi'
+   nwauxio       = 1
+ /
+
+ &savelist
+   itsave(1,1)  = 0
+   itsave(1,2)  = 0
+   ditsave_log  = 200
+   dtsave_dat   = 1.0d0
+ /
+
+ &stoplist
+   time_max = 5.0d0
+ /
+
+ &methodlist
+   time_stepper            = 'threestep'
+   flux_scheme             = 20*'tvdlf'
+   limiter                 = 20*'mc'
+   phys                    = 'mhd'
+   flux_adaptive_diffusion = .true.
+   flux_ad_min             = 0.2d0
+   flux_ad_scale           = 0.5d0
+ /
+
+ &boundlist
+   specialboundary=T
+   ! x: periodic
+   typeboundary_min1 = 8*'periodic'
+   typeboundary_max1 = 8*'periodic'
+   ! y-min: special (hotplate, iB=3); y-max: outflow
+   typeboundary_min2 = 8*'special'
+   typeboundary_max2 = 8*'cont'
+   ! z: periodic (thin slab)
+   typeboundary_min3 = 8*'periodic'
+   typeboundary_max3 = 8*'periodic'
+ /
+
+ &meshlist
+   max_blocks       = 50
+   refine_max_level = 1
+   block_nx1        = 20
+   block_nx2        = 20
+   block_nx3        = 4
+   domain_nx1       = 200
+   domain_nx2       = 200
+   domain_nx3       = 4
+   xprobmin1        = -0.5d0
+   xprobmax1        =  0.5d0
+   xprobmin2        =  -0.5d0
+   xprobmax2        =  0.5d0
+   xprobmin3        = -1.d-2
+   xprobmax3        =  1.d-2
+ /
+
+ &paramlist
+   slowsteps   = 10
+   courantpar  = 0.7d0
+   typecourant = 'maxsum'
+ /
+
+ &mhd_list
+   mhd_gamma                            = 1.6666667d0
+   mhd_hyperbolic_thermal_conduction    = .true.
+   mhd_energy_only                      = .false.
+ /
