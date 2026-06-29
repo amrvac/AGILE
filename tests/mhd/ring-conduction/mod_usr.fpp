@@ -11,6 +11,7 @@ module mod_usr
   double precision, parameter :: T_cold       = 10.0d0
   ! Constant parallel conductivity kappa*T^(5/2) = 0.01 (Zhou et al. 2025, Sect. 2.3)
   double precision, parameter :: ring_kappa0  = 0.01d0
+  double precision, parameter :: ring_Busr   = 1.0d-5  ! B = ring_Busr/r (line-current field, eq. 63)
 
 contains
 
@@ -45,21 +46,23 @@ contains
 
     double precision :: r(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
     double precision :: theta(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
+    double precision :: B(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
 
     ! --- Step 1: cylindrical coords ---
     r(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) = &
        dsqrt(x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1)**2 &
            + x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2)**2)
 
-    ! theta in [0, 2*pi): y>=0 -> acos(x/r), y<0 -> 2*pi - acos(x/r)
-    where (x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2) >= 0.0d0)
+    where (x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1) > 0.0d0)
       theta(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) = &
-         dacos(x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1) &
-               / max(r(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3), 1.0d-15))
+         atan(x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2) &
+              / x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1))
+    elsewhere (x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1) < 0.0d0)
+      theta(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) = &
+         dpi - atan(x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2) &
+                    / abs(x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1)))
     elsewhere
-      theta(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) = &
-         2.0d0*dpi - dacos(x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1) &
-                           / max(r(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3), 1.0d-15))
+      theta(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) = 0.0d0
     end where
 
     ! --- Step 2: thermodynamic state ---
@@ -79,13 +82,15 @@ contains
       w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,p_) = T_cold
     end where
 
-    ! --- Step 3: azimuthal unit B field: B = (-y, x, 0)/r ---
+    ! --- Step 3: azimuthal B field from straight-line current: |B| = ring_Busr/r ---
+    B(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) = &
+       ring_Busr / max(r(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3), 1.0d-15)
     w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mag(1)) = &
-       -x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,2) &
-       / max(r(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3), 1.0d-15)
+       B(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) &
+       * dcos(theta(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) + 0.5d0*dpi)
     w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mag(2)) = &
-        x(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,1) &
-       / max(r(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3), 1.0d-15)
+       B(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) &
+       * dsin(theta(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3) + 0.5d0*dpi)
     w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,mag(3)) = 0.0d0
 
     ! --- Step 4: zero-initialise auxiliary scalars ---

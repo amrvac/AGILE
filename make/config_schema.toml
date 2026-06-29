@@ -168,14 +168,14 @@ type = "flag"
 name = "HYPERTC"
 flags = ["fypp", "hash"]
 default = false
-implies = ["components.source_nonlocal"]
+implies = ["components.source_compact"]
 
 [mhd_list.mhd_hyperbolic_thermal_conduction_anisotropic]
 type = "flag"
 name = "HYPERTC_ANISO"
 flags = ["fypp", "hash"]
 default = false
-implies = ["mhd_list.mhd_hyperbolic_thermal_conduction", "components.source_nonlocal_full"]
+implies = ["mhd_list.mhd_hyperbolic_thermal_conduction"]
 
 [mhd_list.mhd_energy_only]
 type = "flag"

@@ -514,7 +514,7 @@ end subroutine addsource_local
 subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, x, dx, &
      qsourcesplit)
   !$acc routine seq
-#:if defined('HYPERTC_ANISO')
+#:if defined('HYPERTC')
   use mod_global_parameters, only: dt, cmax_global, ndir, smalldouble
 #:endif
 
@@ -708,7 +708,9 @@ end subroutine addsource_nonlocal
 
 #:def get_flux()
   subroutine get_flux(u, xC, flux_dim, flux)
+#:if defined('HYPERTC')
     use mod_global_parameters, only: cmax_global, smalldouble
+#:endif
     !$acc routine seq
     real(dp), intent(in)  :: u(nw_phys)
     real(dp), intent(in)  :: xC(1:ndim)
@@ -716,22 +718,24 @@ end subroutine addsource_nonlocal
     real(dp), intent(out) :: flux(nw_flux)
     real(dp)              :: ptotal
 #:if defined('HYPERTC_ANISO')
-    real(dp)              :: Bmag2_tc, Bmag_tc, Bmag2_tc_safe, b_fd
+    real(dp)              :: Bmag2_tc, b_fd
 #:elif defined('HYPERTC')
     real(dp)              :: Bmag_tc
 #:endif
 
-#:if defined('MHD_ENERGY_ONLY')
-    ! Zero all fluxes; only energy gets a non-zero contribution
-    flux = 0.0_dp
+    ! Hyperbolic TC field geometry
 #:if defined('HYPERTC_ANISO')
-    Bmag2_tc      = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
-    Bmag_tc       = sqrt(Bmag2_tc)
-    Bmag2_tc_safe = max(Bmag2_tc, smalldouble**2)
-    b_fd          = u(iw_mag(flux_dim)) * Bmag_tc / Bmag2_tc_safe
-    flux(iw_e) = u(q_)*b_fd + u(qperp_)*sqrt(max(1.0_dp - b_fd**2, 0.0_dp))
+    Bmag2_tc = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
+    b_fd     = u(iw_mag(flux_dim)) * sqrt(Bmag2_tc) / max(Bmag2_tc, smalldouble**2)
 #:elif defined('HYPERTC')
     Bmag_tc = sqrt(max(u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2, smalldouble**2))
+#:endif
+
+#:if defined('MHD_ENERGY_ONLY')
+    flux = 0.0_dp
+#:if defined('HYPERTC_ANISO')
+    flux(iw_e) = u(q_)*b_fd + u(qperp_)*sqrt(max(1.0_dp - b_fd**2, 0.0_dp))
+#:elif defined('HYPERTC')
     flux(iw_e) = u(iw_q) * u(iw_mag(flux_dim)) / Bmag_tc
 #:endif
     return
@@ -775,20 +779,14 @@ end subroutine addsource_nonlocal
 
     ! Hyperbolic TC fluxes
 #:if defined('HYPERTC_ANISO')
-    Bmag2_tc      = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
-    Bmag_tc       = sqrt(Bmag2_tc)
-    Bmag2_tc_safe = max(Bmag2_tc, smalldouble**2)
-    b_fd          = u(iw_mag(flux_dim)) * Bmag_tc / Bmag2_tc_safe
     flux(iw_e)  = flux(iw_e) + u(q_)*b_fd + u(qperp_)*sqrt(max(1.0_dp - b_fd**2, 0.0_dp))
     flux(q_)    = 0.0_dp
     flux(qperp_)= 0.0_dp
 #:elif defined('HYPERTC')
     ! Field-aligned scalar: flux = q * bhat_{flux_dim}
-    Bmag_tc = sqrt(max(u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2, smalldouble**2))
     flux(iw_e) = flux(iw_e) + u(iw_q) * u(iw_mag(flux_dim)) / Bmag_tc
     flux(iw_q) = 0.0_dp
 #:endif
-
 
   end subroutine get_flux
 #:enddef
