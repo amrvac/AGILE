@@ -54,7 +54,9 @@
 
   !> The adiabatic index
   double precision, public                :: ffhd_gamma = 5.d0/3.0d0
-  !$acc declare copyin(ffhd_gamma)
+  double precision, public                :: gamma_1, inv_gamma_1
+  !$acc declare copyin(ffhd_gamma, gamma_1, inv_gamma_1)
+  !$acc declare create(gamma_1, inv_gamma_1)
 
   !> The adiabatic constant
   double precision, public                :: ffhd_adiab = 1.0d0
@@ -227,7 +229,9 @@
     phys_internal_e = .false.
     phys_gamma = ffhd_gamma
     phys_partial_ionization=ffhd_partial_ionization
- !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization)
+    gamma_1 = ffhd_gamma - 1.0d0
+    inv_gamma_1 = 1.0d0/gamma_1
+ !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization, gamma_1, inv_gamma_1)
 
     ! Determine flux variables
     rho_ = var_set_rho()
@@ -405,7 +409,7 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
      gradT = (8.d0*(Te(4)-Te(2))-Te(5)+Te(1))/(12.d0*dx(idir))
 
      sigT = hypertc_kappa * sqrt(Te(3)**5)
-     tau = max(4.d0*dt, sigT*Te(3)*courantpar**2*(phys_gamma-1.0d0)/&
+     tau = max(4.d0*dt, sigT*Te(3)*courantpar**2*gamma_1/&
         (wCTprim(iw_e,3)*cmax_global**2))
 
      htc_qrsc = sigT * mag * gradT
@@ -432,7 +436,7 @@ pure subroutine to_primitive(u)
 
   u(iw_mom(1)) = u(iw_mom(1))/u(iw_rho)
 
-  u(iw_e) = (phys_gamma-1.0d0) * (u(iw_e) - 0.5d0 * u(iw_rho) * &
+  u(iw_e) = gamma_1 * (u(iw_e) - 0.5_dp * u(iw_rho) * &
      u(iw_mom(1))**2 )
 
 end subroutine to_primitive
@@ -442,12 +446,9 @@ end subroutine to_primitive
 pure subroutine to_conservative(u)
   !$acc routine seq
   real(dp), intent(inout) :: u(nw_phys)
-  real(dp)                :: inv_gamma_m1
-
-  inv_gamma_m1 = 1.0d0/(phys_gamma - 1.0d0)
 
   ! Compute energy from pressure and kinetic energy
-  u(iw_e) = u(iw_e) * inv_gamma_m1 + 0.5d0 * u(iw_rho) * &
+  u(iw_e) = u(iw_e) * inv_gamma_1 + 0.5_dp * u(iw_rho) * &
      u(iw_mom(1))**2
 
   ! Compute momentum from density and velocity components
@@ -464,10 +465,7 @@ subroutine get_flux(u, xC, flux_dim, flux)
   real(dp), intent(in)  :: xC(1:ndim)
   integer, intent(in)   :: flux_dim
   real(dp), intent(out) :: flux(nw_flux)
-  real(dp)              :: inv_gamma_m1
   real(dp)              :: mag
-
-  inv_gamma_m1 = 1.0d0/(phys_gamma - 1.0d0)
 
   mag = u(iw_b1-1+flux_dim)
 
@@ -478,8 +476,8 @@ subroutine get_flux(u, xC, flux_dim, flux)
   flux(iw_mom(1)) = (u(iw_rho)*u(iw_mom(1))**2 + u(iw_e)) * mag
   
   ! Energy flux with hyperbolic conduction included
-  flux(iw_e) = u(iw_mom(1))*(u(iw_e)*inv_gamma_m1 + &
-               0.5d0*u(iw_rho)*u(iw_mom(1))**2 + u(iw_e)) * mag + &
+  flux(iw_e) = u(iw_mom(1))*(u(iw_e)*inv_gamma_1 + &
+               0.5_dp*u(iw_rho)*u(iw_mom(1))**2 + u(iw_e)) * mag + &
 #:if defined('HYPERTC')
   u(iw_q)*mag
 
@@ -522,7 +520,7 @@ pure real(dp) function get_pthermal(w, x) result(pth)
   real(dp), intent(in)  :: w(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
 
-  pth = (phys_gamma-1.0d0)*(w(iw_e)-0.5d0*w(iw_mom(1))**2/w(iw_rho))
+  pth = gamma_1*(w(iw_e)-0.5_dp*w(iw_mom(1))**2/w(iw_rho))
 end function get_pthermal
 #:enddef
 

@@ -12,7 +12,6 @@ amrvac.h
 *F90sources
 !**/correct_output/**
 *.bak
-*.csv
 *.log.shfp.*
 /tests/hd/*/makefile
 /tests/mhd/*/makefile
