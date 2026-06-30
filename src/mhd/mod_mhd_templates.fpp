@@ -93,10 +93,6 @@
   ! and it is p = RR * rho * T
   double precision, public  :: RR=1d0
   !$acc declare copyin(RR)
-  !> Coulomb logarithm for hyperbolic TC
-  double precision, public                :: hypertc_lnLambda = 20.0d0
-  !$acc declare copyin(hypertc_lnLambda)
-
   !> Index of field-aligned heat flux scalar q_; for HYPERTC_ANISO: qperp_ = q_+1
 #:if defined('HYPERTC')
   integer, public                         :: q_ = -1
@@ -108,20 +104,23 @@
 #:endif
 
 #:if defined('HYPERTC') or defined('HYPERTC_ANISO')
-  !> Spitzer parallel conductivity prefactor: sig_par = htc_coeff_par * Te^2.5
-  !> Computed from unit system in phys_units(); set hypertc_kappa0 > 0 in usr_init to override
-  double precision, public                :: htc_coeff_par = 0.0d0
-  !$acc declare copyin(htc_coeff_par)
-  !> If positive, overrides the Spitzer-derived htc_coeff_par; set in usr_init before phys_activate
-  double precision, public                :: hypertc_kappa0 = -1.0d0
-  !> If true, use htc_coeff_par as a constant sig_par (bypass Spitzer T^2.5 scaling)
-  logical, public                         :: hypertc_const_kappa = .false.
-  !$acc declare copyin(hypertc_const_kappa)
+  !> sig_par = tc_kappa0_par * Te^2.5; if <= 0 and tc_kappa_par <= 0, set from Spitzer in phys_units()
+  double precision, public                :: tc_kappa0_par = -1.0d0
+  !$acc declare copyin(tc_kappa0_par)
+  !> sig_par = tc_kappa_par (constant, no T^2.5); takes precedence over tc_kappa0_par when > 0
+  double precision, public                :: tc_kappa_par = -1.0d0
+  !$acc declare copyin(tc_kappa_par)
 #:endif
 #:if defined('HYPERTC_ANISO')
   !> Magnetisation chi prefactor: chi = htc_Cchi * B * Te^1.5 / n
   double precision, public                :: htc_Cchi = 0.0d0
   !$acc declare copyin(htc_Cchi)
+  !> sig_perp = tc_kappa0_perp * Te^2.5; if <= 0 and tc_kappa_perp <= 0, uses Braginskii sig_par/(1+chi^2)
+  double precision, public                :: tc_kappa0_perp = -1.0d0
+  !$acc declare copyin(tc_kappa0_perp)
+  !> sig_perp = tc_kappa_perp (constant, no T^2.5); takes precedence over tc_kappa0_perp when > 0
+  double precision, public                :: tc_kappa_perp = -1.0d0
+  !$acc declare copyin(tc_kappa_perp)
 #:endif
 
   !> Switch for hyperbolic thermal conduction
@@ -179,7 +178,8 @@
     namelist /mhd_list/ mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity,&
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
       mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
-      mhd_hyperbolic_thermal_conduction_anisotropic, hypertc_lnLambda, &
+      mhd_hyperbolic_thermal_conduction_anisotropic, &
+      tc_kappa0_par, tc_kappa_par, tc_kappa0_perp, tc_kappa_perp, &
       mhd_energy_only
 
     do n = 1, size(files)
@@ -193,7 +193,8 @@
     !$acc&     mhd_gamma, mhd_glm_alpha, &
     !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, &
     !$acc&     He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity, &
-    !$acc&     mhd_hyperbolic_thermal_conduction, hypertc_lnLambda)
+    !$acc&     mhd_hyperbolic_thermal_conduction, &
+    !$acc&     tc_kappa0_par, tc_kappa_par, tc_kappa0_perp, tc_kappa_perp)
 #endif
 
   end subroutine read_params
@@ -287,16 +288,18 @@
     !$acc update device(unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass)
 
 #:if defined('HYPERTC') or defined('HYPERTC_ANISO')
-    htc_coeff_par = 8.0d-7 * unit_temperature**3.5d0 &
-                  / (unit_length * unit_density * unit_velocity**3.0d0)
-    if (hypertc_kappa0 > 0.0d0) htc_coeff_par = hypertc_kappa0
-    !$acc update device(htc_coeff_par)
-    !$acc update device(hypertc_const_kappa)
+    if (tc_kappa0_par <= 0.0d0 .and. tc_kappa_par <= 0.0d0) &
+      tc_kappa0_par = 8.0d-7 * unit_temperature**3.5d0 &
+                    / (unit_length * unit_density * unit_velocity**3.0d0)
+    !$acc update device(tc_kappa0_par)
+    !$acc update device(tc_kappa_par)
 #:endif
 #:if defined('HYPERTC_ANISO')
-    htc_Cchi      = 0.823d0 * (4.753567596681522d6 / hypertc_lnLambda) &
-                  * unit_magneticfield * unit_temperature**1.5d0 / unit_numberdensity
+    htc_Cchi = 0.823d0 * (4.753567596681522d6 / 20.0d0) &
+             * unit_magneticfield * unit_temperature**1.5d0 / unit_numberdensity
     !$acc update device(htc_Cchi)
+    !$acc update device(tc_kappa0_perp)
+    !$acc update device(tc_kappa_perp)
 #:endif
   end subroutine phys_units
 #:enddef
@@ -606,10 +609,10 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
     end do
     bgradT = bgradT * Bmag / Bmag2_safe
 
-    if (hypertc_const_kappa) then
-      sig_par = htc_coeff_par
+    if (tc_kappa_par > 0.0d0) then
+      sig_par = tc_kappa_par
     else
-      sig_par = htc_coeff_par * Te_c**2.5d0
+      sig_par = tc_kappa0_par * Te_c**2.5d0
     end if
 
     e_c = pth_c / (mhd_gamma - 1.0d0) + 0.5d0 * Bmag2
@@ -623,8 +626,14 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
 #:if defined('HYPERTC_ANISO')
     gradTperp_mag = sqrt(max(gradT(1)**2 + gradT(2)**2 + gradT(3)**2 &
                            - bgradT**2, 0.0d0))
-    chi      = htc_Cchi * Bmag * Te_c**1.5d0 / rho_c
-    sig_perp = sig_par / (1.0d0 + chi**2)
+    if (tc_kappa_perp > 0.0d0) then
+      sig_perp = tc_kappa_perp
+    else if (tc_kappa0_perp > 0.0d0) then
+      sig_perp = tc_kappa0_perp * Te_c**2.5d0
+    else
+      chi      = htc_Cchi * Bmag * Te_c**1.5d0 / rho_c
+      sig_perp = sig_par / (1.0d0 + chi**2)
+    end if
 
     tau_perp = max(4.d0*dt, f_sat*sig_perp*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
     wnew(qperp_) = wnew(qperp_) - qdt*(f_sat*sig_perp*gradTperp_mag + wCTprim1(qperp_,2))/tau_perp

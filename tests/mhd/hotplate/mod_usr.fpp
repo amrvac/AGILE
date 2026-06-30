@@ -10,16 +10,11 @@ module mod_usr
   double precision, parameter :: rho_bg    = 0.1d0    ! ambient: T = p0/rho_bg = 1
   double precision, parameter :: hp_xhalf  = 0.1d0    ! hot-strip half-width in x
   double precision, parameter :: hp_theta  = dpi / 4.0d0  ! B tilt from y-axis (45 deg)
-  double precision, parameter :: hp_kappa0 = 0.01d0   ! kappa_par * T^(5/2) = const
-
 contains
 
   subroutine usr_init()
     use mod_global_parameters
     implicit none
-
-    hypertc_kappa0      = hp_kappa0
-    hypertc_const_kappa = .true.
 
     nwauxio = 1
 

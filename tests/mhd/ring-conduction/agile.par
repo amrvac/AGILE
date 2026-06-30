@@ -68,5 +68,6 @@
    mhd_gamma                                    = 1.6666667d0
    mhd_hyperbolic_thermal_conduction_anisotropic = .false.
    mhd_hyperbolic_thermal_conduction = .true.
+   tc_kappa_par                      = 0.01d0
    mhd_energy_only = .true.
  /

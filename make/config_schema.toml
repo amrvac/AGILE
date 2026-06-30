@@ -23,13 +23,6 @@ flags = ["fypp", "hash"]
 default = false
 implies = ["components.source_dt"]
 
-[components.source_nonlocal_full]
-type = "flag"
-name = "SOURCE_NONLOCAL_FULL"
-flags = ["fypp", "hash"]
-default = false
-implies = ["components.source_dt"]
-
 [components.source_local]
 type = "flag"
 name = "SOURCE_LOCAL"

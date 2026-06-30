@@ -9,8 +9,6 @@ module mod_usr
   double precision, parameter :: ring_slab_hw = 0.2d0   ! half-width in ring-frame z
   double precision, parameter :: T_hot        = 12.0d0  ! pressure = T since rho=1
   double precision, parameter :: T_cold       = 10.0d0
-  ! Constant parallel conductivity kappa*T^(5/2) = 0.01 (Zhou et al. 2025, Sect. 2.3)
-  double precision, parameter :: ring_kappa0  = 0.01d0
   double precision, parameter :: ring_Busr   = 1.0d-5  ! B = ring_Busr/r (line-current field, eq. 63)
 
 contains
@@ -18,10 +16,6 @@ contains
   subroutine usr_init()
     use mod_global_parameters
     implicit none
-
-    ! kappa_0 * T^(5/2) = ring_kappa0 = const
-    hypertc_kappa0      = ring_kappa0
-    hypertc_const_kappa = .true.
 
     nwauxio = 1
 
