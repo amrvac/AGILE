@@ -76,6 +76,10 @@ module mod_variables
   integer :: iw_q = -1
   !$acc declare copyin(iw_q)
 
+  !> Index of the perpendicular heat flux (anisotropic HTC only)
+  integer :: iw_qperp = -1
+  !$acc declare copyin(iw_qperp)
+
   !> Index of the radiation energy density
   integer :: iw_r_e = -1
   !$acc declare copyin(iw_r_e)
@@ -277,6 +281,24 @@ contains
     prim_wnames(nwflux) = 'q'
     !$acc update device(nwflux,nw,nwfluxbc,iw_q)
   end function var_set_q
+
+  function var_set_qperp(need_bc) result(iw)
+    logical, intent(in), optional :: need_bc
+    integer :: iw
+    logical :: add_bc
+
+    add_bc = .true.
+    if (present(need_bc)) add_bc = need_bc
+
+    nwflux              = nwflux + 1
+    nw                  = nw + 1
+    if (add_bc) nwfluxbc = nwfluxbc + 1
+    iw_qperp            = nwflux
+    iw                  = nwflux
+    cons_wnames(nwflux) = 'qperp'
+    prim_wnames(nwflux) = 'qperp'
+    !$acc update device(nwflux,nw,nwfluxbc,iw_qperp)
+  end function var_set_qperp
 
   function var_set_radiation_energy() result(iw)
     integer :: iw

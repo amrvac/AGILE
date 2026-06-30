@@ -1,21 +1,18 @@
 
  &filelist
-   base_filename = 'output/ring_tc-vtwo-noadaptiveflux'
+   base_filename = 'output/run-x'
    saveprim      = T
    autoconvert   = T
    convert_type  = 'vtuBCCmpi'
-   nwauxio       = 1
+   nwauxio       = 2
  /
 
  &savelist
    itsave(1,1)   = 0
    itsave(1,2)   = 0
-   ditsave_log   = 40
-   dtsave_dat    = 50.0d0
-   ! dtsave_slice  = 10.0d0
-   ! nslices       = 1
-   ! slicedir(1)   = 3
-   ! slicecoord(1) = 0.0d0
+   ditsave_log   = 200
+   dtsave_dat      = 100.0d0
+   dtsave_custom   = 20.0d0
  /
 
  &stoplist
@@ -65,8 +62,8 @@
  /
 
  &mhd_list
-   mhd_gamma                                    = 1.6666667d0
+   mhd_gamma                         = 1.6666667d0
    mhd_hyperbolic_thermal_conduction = .true.
    tc_kappa_par                      = 0.01d0
-   mhd_energy_only = .true.
+   mhd_energy_only                   = .true.
  /

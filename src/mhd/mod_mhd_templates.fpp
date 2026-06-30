@@ -359,7 +359,7 @@
 #:if defined('HYPERTC_ANISO')
     q_     = var_set_q(need_bc=.false.)
     !$acc update device(q_)
-    qperp_ = var_set_fluxvar('qperp', 'qperp', need_bc=.false.)
+    qperp_ = var_set_qperp(need_bc=.false.)
     !$acc update device(qperp_)
 #:elif defined('HYPERTC')
     q_ = var_set_q(need_bc=.false.)
@@ -721,7 +721,7 @@ end subroutine addsource_compact
 #:if defined('MHD_ENERGY_ONLY')
     flux = 0.0_dp
 #:if defined('HYPERTC_ANISO')
-    flux(iw_e) = u(q_)*b_fd + u(qperp_)*sqrt(max(1.0_dp - b_fd**2, 0.0_dp))
+    flux(iw_e) = u(iw_q)*b_fd + u(iw_qperp)*sqrt(max(1.0_dp - b_fd**2, 0.0_dp))
 #:elif defined('HYPERTC')
     flux(iw_e) = u(iw_q) * u(iw_mag(flux_dim)) / Bmag_tc
 #:endif
@@ -766,11 +766,10 @@ end subroutine addsource_compact
 
     ! Hyperbolic TC fluxes
 #:if defined('HYPERTC_ANISO')
-    flux(iw_e)  = flux(iw_e) + u(q_)*b_fd + u(qperp_)*sqrt(max(1.0_dp - b_fd**2, 0.0_dp))
-    flux(q_)    = 0.0_dp
-    flux(qperp_)= 0.0_dp
+    flux(iw_e)     = flux(iw_e) + u(iw_q)*b_fd + u(iw_qperp)*sqrt(max(1.0_dp - b_fd**2, 0.0_dp))
+    flux(iw_q)     = 0.0_dp
+    flux(iw_qperp) = 0.0_dp
 #:elif defined('HYPERTC')
-    ! Field-aligned scalar: flux = q * bhat_{flux_dim}
     flux(iw_e) = flux(iw_e) + u(iw_q) * u(iw_mag(flux_dim)) / Bmag_tc
     flux(iw_q) = 0.0_dp
 #:endif
