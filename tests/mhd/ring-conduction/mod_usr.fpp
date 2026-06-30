@@ -230,7 +230,7 @@ contains
       write(filename,'(a,a)') trim(base_filename), 'Lerrors.csv'
       inquire(file=filename, exist=alive)
       if (alive) then
-        open(unit=21,file=filename,form='formatted',status='old',access='append')
+        open(unit=21,file=filename,form='formatted',status='old',position='append')
       else
         open(unit=21,file=filename,form='formatted',status='new')
         write(21,'(a)') 'time, L1 error, L2 error, L infinity error, Tmax, Tmin'
@@ -399,7 +399,7 @@ contains
       write(filename,'(a,a)') trim(base_filename), 'kperp.csv'
       inquire(file=filename, exist=alive)
       if (alive) then
-        open(unit=22,file=filename,form='formatted',status='old',access='append')
+        open(unit=22,file=filename,form='formatted',status='old',position='append')
       else
         open(unit=22,file=filename,form='formatted',status='new')
         write(22,'(a)') 'time, k_perp, k_perp/k_par'
