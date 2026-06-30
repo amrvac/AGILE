@@ -11,7 +11,7 @@
    itsave(1,1)  = 0
    itsave(1,2)  = 0
    ditsave_log  = 200
-   dtsave_dat   = 1.0d0
+   dtsave_dat   = 0.5d0
  /
 
  &stoplist

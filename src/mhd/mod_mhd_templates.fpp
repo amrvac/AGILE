@@ -117,10 +117,6 @@
   !> If true, use htc_coeff_par as a constant sig_par (bypass Spitzer T^2.5 scaling)
   logical, public                         :: hypertc_const_kappa = .false.
   !$acc declare copyin(hypertc_const_kappa)
-  !> Apply free-streaming saturation limiter to hyperbolic TC (Cowie & McKee 1977)
-  !> q_sat = 1.5 rho (p/rho)^1.5; f_sat = 1/(1 + |q_Spitzer|/q_sat)
-  logical, public                         :: mhd_hypertc_saturate = .false.
-  !$acc declare copyin(mhd_hypertc_saturate)
 #:endif
 #:if defined('HYPERTC_ANISO')
   !> Magnetisation chi prefactor: chi = htc_Cchi * B * Te^1.5 / n
@@ -184,7 +180,7 @@
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
       mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
       mhd_hyperbolic_thermal_conduction_anisotropic, hypertc_lnLambda, &
-      mhd_hypertc_saturate, mhd_energy_only
+      mhd_energy_only
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -197,8 +193,7 @@
     !$acc&     mhd_gamma, mhd_glm_alpha, &
     !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, &
     !$acc&     He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity, &
-    !$acc&     mhd_hyperbolic_thermal_conduction, hypertc_lnLambda, &
-    !$acc&     mhd_hypertc_saturate)
+    !$acc&     mhd_hyperbolic_thermal_conduction, hypertc_lnLambda)
 #endif
 
   end subroutine read_params
@@ -619,16 +614,11 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
 
     e_c = pth_c / (mhd_gamma - 1.0d0) + 0.5d0 * Bmag2
 
-    if (mhd_hypertc_saturate) then
-      ! free-streaming limit: q_sat = 1.5 rho c_s^3, c_s = sqrt(p/rho)
-      q_sat = 1.5d0 * rho_c * (pth_c / rho_c)**1.5d0
-      f_sat = 1.0d0 / (1.0d0 + abs(sig_par * bgradT) / q_sat)
-      tau_par = max(4.d0*dt, f_sat*sig_par*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
-      wnew(q_) = wnew(q_) - qdt*(f_sat*sig_par*bgradT + wCTprim1(q_,2))/tau_par
-    else
-      tau_par = max(4.d0*dt, sig_par*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
-      wnew(q_) = wnew(q_) - qdt*(sig_par*bgradT + wCTprim1(q_,2))/tau_par
-    end if
+    ! free-streaming limit: q_sat = 1.5 rho c_s^3, c_s = sqrt(p/rho)
+    q_sat = 1.5d0 * rho_c * (pth_c / rho_c)**1.5d0
+    f_sat = 1.0d0 / (1.0d0 + abs(sig_par * bgradT) / q_sat)
+    tau_par = max(4.d0*dt, f_sat*sig_par*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
+    wnew(q_) = wnew(q_) - qdt*(f_sat*sig_par*bgradT + wCTprim1(q_,2))/tau_par
 
 #:if defined('HYPERTC_ANISO')
     gradTperp_mag = sqrt(max(gradT(1)**2 + gradT(2)**2 + gradT(3)**2 &
@@ -636,13 +626,8 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
     chi      = htc_Cchi * Bmag * Te_c**1.5d0 / rho_c
     sig_perp = sig_par / (1.0d0 + chi**2)
 
-    if (mhd_hypertc_saturate) then
-      tau_perp = max(4.d0*dt, f_sat*sig_perp*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
-      wnew(qperp_) = wnew(qperp_) - qdt*(f_sat*sig_perp*gradTperp_mag + wCTprim1(qperp_,2))/tau_perp
-    else
-      tau_perp = max(4.d0*dt, sig_perp*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
-      wnew(qperp_) = wnew(qperp_) - qdt*(sig_perp*gradTperp_mag + wCTprim1(qperp_,2))/tau_perp
-    end if
+    tau_perp = max(4.d0*dt, f_sat*sig_perp*Te_c*(mhd_gamma-1.0d0) / (e_c*cmax_global**2))
+    wnew(qperp_) = wnew(qperp_) - qdt*(f_sat*sig_perp*gradTperp_mag + wCTprim1(qperp_,2))/tau_perp
 #:endif
 #:endif
 
