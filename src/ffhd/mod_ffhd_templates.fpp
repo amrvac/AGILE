@@ -64,6 +64,10 @@
   double precision, public                :: He_abundance=0.1d0
   !$acc declare copyin(He_abundance)
 
+  !> The thermal conductivity kappa in hyperbolic thermal conduction
+  double precision, public                :: hypertc_kappa=-1.0d0
+  !$acc declare copyin(hypertc_kappa)
+
   !> Whether p*divb source term is not zero
   logical, public                         :: ffhd_pdivb = .false.
   !$acc declare copyin(ffhd_pdivb)
@@ -88,10 +92,6 @@
   logical, public                         :: ffhd_source_usr = .false.
   !$acc declare copyin(ffhd_source_usr)
 
-  !> freeze momentum; only evolve energy via thermal conduction
-  logical, public                         :: ffhd_energy_only = .false.
-  !$acc declare copyin(ffhd_energy_only)
-
 #:enddef
 
 #:def read_params()
@@ -102,8 +102,7 @@
     integer                      :: n
 
     namelist /ffhd_list/ ffhd_energy, ffhd_gamma, ffhd_partial_ionization, ffhd_gravity, &
-          ffhd_radiative_cooling, ffhd_hyperbolic_thermal_conduction, ffhd_source_usr, ffhd_pdivb, He_abundance, &
-          ffhd_energy_only
+          ffhd_radiative_cooling, ffhd_hyperbolic_thermal_conduction, ffhd_source_usr, ffhd_pdivb, He_abundance
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -252,8 +251,10 @@
 #:if defined('HYPERTC')
     q_ = var_set_q()
     need_global_cmax = .true.
+    hypertc_kappa = 8.d-7*unit_temperature**3.5d0/unit_length/unit_density/unit_velocity**3.0d0
     !$acc update device(q_)
     !$acc update device(need_global_cmax)
+    !$acc update device(hypertc_kappa)
 #:endif
 
     ! Set index of frozen magnetic field
@@ -303,7 +304,7 @@
     do idim = 1, ndim
        field = gravity_field(w, x, idim)
        field = max( abs(field), epsilon(1.0d0) )
-       dtnew = min( dtnew, 1_dp / sqrt( field/dx(idim) ) )
+       dtnew = min( dtnew, 1.0d0 / sqrt( field/dx(idim) ) )
     end do
 #:endif    
     
@@ -371,8 +372,7 @@ end subroutine addsource_local
 subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir, &
      qsourcesplit)
   !$acc routine seq
-  use mod_global_parameters, only: dt, cmax_global, courantpar, third, &
-       unit_temperature, unit_length, unit_density, unit_velocity
+  use mod_global_parameters, only: dt, cmax_global, courantpar, third
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim(nw_phys,5)
@@ -381,7 +381,7 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
   integer, intent(in)      :: idir
   logical, intent(in)      :: qsourcesplit
   ! .. local ..
-  real(dp)                 :: tau, htc_qrsc, sig_par
+  real(dp)                 :: tau, htc_qrsc, sigT
   real(dp)                 :: Te(1:5), gradT
   real(dp)                 :: mag5(1:5), divb, mag
 
@@ -393,7 +393,7 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
 #:if defined('PDIVB')
      ! > p*divb 
      mag5(1:5) = wCTprim(iw_b1-1+idir,1:5)
-     divb = (8*mag5(4)-8*mag5(2)-mag5(5)+mag5(1))/12.d0/dx(idir)
+     divb = (8*mag5(4)-8*mag5(2)-mag5(5)+mag5(1))/12.0d0/dx(idir)
      wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt*wCTprim(iw_e,3)*divb
 #:endif
 
@@ -404,11 +404,11 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
 
      gradT = (8.d0*(Te(4)-Te(2))-Te(5)+Te(1))/(12.d0*dx(idir))
 
-     sig_par = 0.01d0  ! TODO: wire up via ffhd_list
-     tau = max(4.d0*dt, sig_par*Te(3)*(phys_gamma-1.0d0)/&
+     sigT = hypertc_kappa * sqrt(Te(3)**5)
+     tau = max(4.d0*dt, sigT*Te(3)*courantpar**2*(phys_gamma-1.0d0)/&
         (wCTprim(iw_e,3)*cmax_global**2))
 
-     htc_qrsc = sig_par * mag * gradT
+     htc_qrsc = sigT * mag * gradT
 
      wnew(iw_q) = wnew(iw_q) - qdt * (htc_qrsc + wCTprim(iw_q,3)*third) / tau
 #:endif
@@ -432,7 +432,7 @@ pure subroutine to_primitive(u)
 
   u(iw_mom(1)) = u(iw_mom(1))/u(iw_rho)
 
-  u(iw_e) = (phys_gamma-1.0_dp) * (u(iw_e) - 0.5_dp * u(iw_rho) * &
+  u(iw_e) = (phys_gamma-1.0d0) * (u(iw_e) - 0.5d0 * u(iw_rho) * &
      u(iw_mom(1))**2 )
 
 end subroutine to_primitive
@@ -444,10 +444,10 @@ pure subroutine to_conservative(u)
   real(dp), intent(inout) :: u(nw_phys)
   real(dp)                :: inv_gamma_m1
 
-  inv_gamma_m1 = 1.0_dp/(phys_gamma - 1.0_dp)
+  inv_gamma_m1 = 1.0d0/(phys_gamma - 1.0d0)
 
   ! Compute energy from pressure and kinetic energy
-  u(iw_e) = u(iw_e) * inv_gamma_m1 + 0.5_dp * u(iw_rho) * &
+  u(iw_e) = u(iw_e) * inv_gamma_m1 + 0.5d0 * u(iw_rho) * &
      u(iw_mom(1))**2
 
   ! Compute momentum from density and velocity components
@@ -467,36 +467,25 @@ subroutine get_flux(u, xC, flux_dim, flux)
   real(dp)              :: inv_gamma_m1
   real(dp)              :: mag
 
-  mag = u(iw_b1-1+flux_dim)
+  inv_gamma_m1 = 1.0d0/(phys_gamma - 1.0d0)
 
-#:if defined('FFHD_ENERGY_ONLY')
-  flux(iw_rho)    = 0.0d0
-  flux(iw_mom(1)) = 0.0d0
-#:if defined('HYPERTC')
-  flux(iw_e) = u(iw_q) * mag
-  flux(iw_q) = 0.0d0
-#:else
-  flux(iw_e) = 0.0d0
-#:endif
-#:else
-  inv_gamma_m1 = 1.0_dp/(phys_gamma - 1.0_dp)
+  mag = u(iw_b1-1+flux_dim)
 
   ! Density flux
   flux(iw_rho) = u(iw_rho) * u(iw_mom(1)) * mag
 
   ! Momentum flux with pressure term
   flux(iw_mom(1)) = (u(iw_rho)*u(iw_mom(1))**2 + u(iw_e)) * mag
-
+  
   ! Energy flux with hyperbolic conduction included
   flux(iw_e) = u(iw_mom(1))*(u(iw_e)*inv_gamma_m1 + &
-               0.5_dp*u(iw_rho)*u(iw_mom(1))**2 + u(iw_e)) * mag + &
+               0.5d0*u(iw_rho)*u(iw_mom(1))**2 + u(iw_e)) * mag + &
 #:if defined('HYPERTC')
   u(iw_q)*mag
 
-  flux(iw_q) = 0.0_dp
+  flux(iw_q) = 0.0d0
 #:else
-  0.0_dp
-#:endif
+  0.0d0
 #:endif
 
 end subroutine get_flux
@@ -533,7 +522,7 @@ pure real(dp) function get_pthermal(w, x) result(pth)
   real(dp), intent(in)  :: w(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
 
-  pth = (phys_gamma-1.0_dp)*(w(iw_e)-0.5_dp*w(iw_mom(1))**2/w(iw_rho))
+  pth = (phys_gamma-1.0d0)*(w(iw_e)-0.5d0*w(iw_mom(1))**2/w(iw_rho))
 end function get_pthermal
 #:enddef
 
