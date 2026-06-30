@@ -87,13 +87,6 @@ flags = ["fypp", "hash"]
 default = false
 implies = ["components.source_nonlocal"]
 
-[ffhd_list.ffhd_hyperbolic_thermal_conduction_anisotropic]
-type = "flag"
-name = "HYPERTC_ANISO"
-flags = ["fypp", "hash"]
-default = false
-implies = ["ffhd_list.ffhd_hyperbolic_thermal_conduction"]
-
 [ffhd_list.ffhd_gravity]
 type = "flag"
 name = "GRAVITY"
