@@ -8,10 +8,9 @@ module mod_finite_volume
 
   use mod_variables
   use mod_physics_vars
-#:if defined('FLUX_AD')
-  use mod_global_parameters, only: ndim, flux_ad_min, flux_ad_scale
-#:else
   use mod_global_parameters, only: ndim
+#:if defined('FLUX_AD')
+  use mod_global_parameters, only: flux_ad_min, flux_ad_scale
 #:endif
   use mod_physicaldata
   implicit none

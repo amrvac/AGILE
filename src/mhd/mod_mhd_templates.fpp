@@ -179,7 +179,12 @@
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
       mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
       mhd_hyperbolic_thermal_conduction_anisotropic, &
-      tc_kappa0_par, tc_kappa_par, tc_kappa0_perp, tc_kappa_perp, &
+#:if defined('HYPERTC')
+      tc_kappa_par, &
+#:endif
+#:if defined('HYPERTC_ANISO')
+      tc_kappa_perp, &
+#:endif
       mhd_energy_only
 
     do n = 1, size(files)
@@ -192,9 +197,13 @@
     !$acc update device(mhd_energy, &
     !$acc&     mhd_gamma, mhd_glm_alpha, &
     !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, &
-    !$acc&     He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity, &
-    !$acc&     mhd_hyperbolic_thermal_conduction, &
-    !$acc&     tc_kappa0_par, tc_kappa_par, tc_kappa0_perp, tc_kappa_perp)
+    !$acc&     He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity)
+#:if defined('HYPERTC')
+    !$acc update device(tc_kappa_par)
+#:endif
+#:if defined('HYPERTC_ANISO')
+    !$acc update device(tc_kappa_perp)
+#:endif
 #endif
 
   end subroutine read_params
@@ -651,22 +660,6 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
 
 end subroutine addsource_compact
 #:enddef
-
-#:def addsource_nonlocal()
-subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir, &
-     qsourcesplit)
-  !$acc routine seq
-
-  real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
-  real(dp), intent(in)     :: wCTprim(nw_phys,5)
-  real(dp), intent(in)     :: x(1:ndim), dx(1:ndim)
-  real(dp), intent(inout)  :: wnew(nw_phys)
-  integer, intent(in)      :: idir
-  logical, intent(in)      :: qsourcesplit
-
-end subroutine addsource_nonlocal
-#:enddef
-
 
 #:def to_primitive()
   pure subroutine to_primitive(u)
