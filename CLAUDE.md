@@ -210,12 +210,15 @@ auxiliaries via `nwgc=nwflux+nwaux`), and `tests/ffhd/spherical_blast`.
 
 Every case directory has a `mod_usr.fpp` defining `module mod_usr` with a
 `usr_init()` subroutine that:
-1. optionally calls `set_coordinate_system(...)` — the coordinate system is
-   otherwise taken from `geometry` in `agile.par`, see "Coordinate systems",
-2. registers callbacks by assigning the procedure pointers declared in
+1. registers callbacks by assigning the procedure pointers declared in
    `src/mod_usr_methods.fpp` (e.g. `usr_init_one_grid`, `usr_special_bc`,
    `usr_source`, `usr_process_grid`, `usr_refine_threshold`, ...),
-3. calls `phys_activate()` last.
+2. calls `phys_activate()` last.
+
+The coordinate system comes from `geometry` in `agile.par` (see "Coordinate
+systems" above); `usr_init()` does not need to call `set_coordinate_system`
+itself. Older cases may still call it explicitly — the call is idempotent as
+long as the name agrees with `geometry` — but new cases shouldn't.
 
 The physics module itself (hd/mhd/ffhd/srhd) is selected via `phys` in
 `agile.par`'s `&methodlist`, which the config system turns into a `PHYS`
