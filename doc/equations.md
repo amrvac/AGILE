@@ -19,7 +19,11 @@ the code's parameter file in the methodlist
 ```
 
 where `phys` is one of the implemented physics modules (`hd`, `mhd`, `ffhd`, `srhd`),
-see below. The equations and notation below follow
+see below. The equations below are written in flat (Cartesian) space; running
+on a spherical or cylindrical mesh instead adds extra geometric source terms
+to the momentum (and, for `mhd`, magnetic field) equations, described
+separately in [Coordinate systems](coordinate_systems.html#geom_sources).
+The equations and notation below follow
 [Porth et al., "Astrophysics on GPUs: introducing AGILE 1.0"
 (submitted to RASTI, in review; arXiv:2607.19277)](https://arxiv.org/abs/2607.19277),
 Section 2.3, which is also the citable reference for AGILE 1.0.
