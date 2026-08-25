@@ -196,7 +196,12 @@
     end if
     !$acc update device(flux_type)
 
-! use cycle, needs to be dealt with:    
+    nvector      = 1 ! No. vector vars
+    allocate(iw_vector(nvector))
+    iw_vector(1) = mom(1) - 1
+    !$acc update device(nvector, iw_vector)
+
+! use cycle, needs to be dealt with:
 !    ! Initialize particles module
 !    if (srhd_particles) then
 !       call particles_init()
@@ -253,6 +258,58 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 
 end subroutine addsource_local
 #:enddef
+
+#:if GEOM == 'spherical'
+!> Curvature source terms for spherical coordinates, ported from upstream
+!> MPI-AMRVAC's srhd_add_source_geom. Structurally identical to this fork's
+!> HD addsource_geometry (src/hd/mod_hd_templates.fpp): the relativistic
+!> spatial stress tensor is T^ij = S^i v^j + p delta^ij, i.e. HD's rho v^i v^j
+!> with the conserved momentum density S^i = xi * v^i in place of rho * v^i.
+!> wprim(iw_mom(:)) holds the spatial four-velocity (celerity) u^i = lfac*v^i
+!> rather than v^i itself (see to_primitive/to_conservative and
+!> mod_con2prim.fpp's xi = tau + D + p, v^2 = S^2/xi^2), so
+!> S^i v^j = xi * v^i * v^j = xi * u^i * u^j / lfac^2. The isotropic pressure
+!> term uses the discrete dAdV factor rather than the continuous 2/r,
+!> cot(theta)/r prefactors upstream uses directly, matching HD's convention.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  !$acc routine seq
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (rho, spatial four-velocity, pressure, xi, lfac)
+  !> at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, theta, phi)
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: pth, xi_inv_lfac2, inv_r, inv_tan, source
+
+  pth          = wprim(iw_e)
+  xi_inv_lfac2 = wprim(xi_) / wprim(lfac_)**2
+  inv_r        = 1.0_dp / x(1)
+  inv_tan      = 1.0_dp / tan(x(2))
+
+  ! s[m_r] = (2 p + (xi/lfac^2) (u_theta^2 + u_phi^2)) / r
+  source = pth * x(1) * dAdV(1) + xi_inv_lfac2 * (wprim(iw_mom(2))**2 + &
+     wprim(iw_mom(3))**2)
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source * inv_r
+
+  ! s[m_theta] = (p cot(theta) + (xi/lfac^2) (u_phi^2 cot(theta) - u_r u_theta)) / r
+  source = pth * x(1) * dAdV(2) + xi_inv_lfac2 * (wprim(iw_mom(3))**2 * &
+     inv_tan - wprim(iw_mom(1)) * wprim(iw_mom(2)))
+  wnew(iw_mom(2)) = wnew(iw_mom(2)) + qdt * source * inv_r
+
+  ! s[m_phi] = -(xi/lfac^2) u_phi (u_r + u_theta cot(theta)) / r
+  source = -xi_inv_lfac2 * wprim(iw_mom(3)) * (wprim(iw_mom(1)) + &
+     wprim(iw_mom(2)) * inv_tan)
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source * inv_r
+
+end subroutine addsource_geometry
+#:enddef
+#:endif
 
 #:def to_primitive()
   pure subroutine to_primitive(u)

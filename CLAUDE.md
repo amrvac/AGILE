@@ -76,6 +76,7 @@ cd tests
 make hd            # run all hd/* test cases
 make mhd           # run all mhd/* test cases
 make ffhd          # run all ffhd/* test cases
+make srhd          # run all srhd/* test cases
 make -j4 hd         # run in parallel
 make -s hd          # suppress "Entering/leaving directory" noise
 make clean          # clean all test build artifacts
@@ -149,14 +150,22 @@ a version that `mpistop`s, so a physics module without one fails loudly.
 
 Current limits of the spherical support:
 
-- Only `phys = 'hd'` and `phys = 'mhd'` implement `addsource_geometry`; ffhd
-  and srhd will stop at startup if built with `geometry = 'spherical'`. MHD's
-  curvature terms (`src/mhd/mod_mhd_templates.fpp`) were ported from upstream
-  MPI-AMRVAC's `mhd_add_source_geom` (cell-centred GLM-MHD branch; this fork
-  has no `stagger_grid`/constrained-transport support), with the isotropic
-  (`ptot`, `psi`) terms rewritten to use the discrete `dAdV` well-balancing
-  factor instead of the continuous `2/r`, `cot(theta)/r` prefactors upstream
-  uses directly, for consistency with this fork's HD implementation.
+- Only `phys = 'hd'`, `phys = 'mhd'` and `phys = 'srhd'` implement
+  `addsource_geometry`; ffhd will stop at startup if built with
+  `geometry = 'spherical'`. MHD's and SRHD's curvature terms
+  (`src/mhd/mod_mhd_templates.fpp`, `src/srhd/mod_srhd_templates.fpp`) were
+  ported from upstream MPI-AMRVAC's `mhd_add_source_geom` (cell-centred
+  GLM-MHD branch; this fork has no `stagger_grid`/constrained-transport
+  support) and `srhd_add_source_geom`, with the isotropic pressure-like terms
+  (`ptot`/`psi` for MHD, `p` for SRHD) rewritten to use the discrete `dAdV`
+  well-balancing factor instead of the continuous `2/r`, `cot(theta)/r`
+  prefactors upstream uses directly, for consistency with this fork's HD
+  implementation. SRHD's primitive `mom(:)` slot holds the spatial
+  four-velocity `u^i = lfac*v^i` rather than `v^i` itself (see
+  `to_primitive`/`to_conservative` and `src/srhd/mod_con2prim.fpp`'s
+  `xi = tau + D + p`, `v^2 = S^2/xi^2`), so the curvature terms use the
+  primitive `xi_`/`lfac_` auxiliaries directly rather than reconstructing the
+  conserved momentum density.
 - No polar-axis handling. `set_pole`/`poleB` and the pi-periodic root-neighbor
   lookup in `src/amr/mod_amr_neighbors.fpp` survive from upstream, but AGILE's
   rewritten `getbc` in `src/mod_ghostcells_update.fpp` never performs the pole
@@ -169,9 +178,14 @@ Current limits of the spherical support:
 
 Validated by `tests/hd/spherical_uniform_flow` (a uniform Cartesian flow
 written in spherical components, which converges at second order),
-`tests/hd/spherical_blast`, and `tests/mhd/spherical_uniform_flow` (the same
+`tests/hd/spherical_blast`, `tests/mhd/spherical_uniform_flow` (the same
 uniform-flow idea extended with a uniform Cartesian magnetic field, to
-exercise the induction equation's and GLM psi's curvature terms too).
+exercise the induction equation's and GLM psi's curvature terms too),
+`tests/mhd/spherical_blast`, `tests/srhd/spherical_uniform_flow` (a uniform,
+sub-luminal Cartesian flow, which also converges at second order — the
+Lorentz factor only depends on `|v|`, which a spherical rotation leaves
+invariant, so it stays a single global constant), and
+`tests/srhd/spherical_blast`.
 
 ## Writing a new simulation case (`mod_usr.fpp`)
 
