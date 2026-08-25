@@ -3,9 +3,7 @@ title: Coordinate systems
 # Available geometries {: #geom_overview }
 
 AGILE supports three coordinate systems: Cartesian (x, y, z), spherical
-(r, θ, φ) and cylindrical (r, z, φ). All three are always 3D -- `ndim` is a
-compile-time constant of 3 -- so a spherical or cylindrical run is the full
-3D system, never an axisymmetric or 1D/2D reduction.
+(r, θ, φ) and cylindrical (r, z, φ). All three are always 3D,  so a spherical or cylindrical run is the full 3D system, never an axisymmetric or 1D/2D reduction.
 
 The coordinate system is a **compile-time** choice: the finite-volume
 kernels are specialized for it, so that the (much cheaper) Cartesian kernel
@@ -157,7 +155,3 @@ As for spherical, with \( \mathbf{u}\equiv\Gamma\mathbf{v} \) and
 * **No polar-axis/cylindrical-axis handling.** Keep the domain away from
   θ = 0 and θ = π (spherical), or from r = 0 (cylindrical).
 * **AMR across curvilinear refinement levels is untested.**
-
-See `CLAUDE.md` in the repository root for the implementation-level detail
-behind both of these (which files are involved, and which tests exercise
-what).

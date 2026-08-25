@@ -675,6 +675,7 @@ used 'unlimit'. To retain second order accuracy, the default set is needed.
 
 ## meshlist {: #par_meshlist }
     &meshlist
+     geometry= 'Cartesian' | 'spherical' | 'cylindrical'
      refine_max_level= INTEGER
      domain_nx1= INTEGER
      domain_nx2= INTEGER
@@ -689,6 +690,7 @@ used 'unlimit'. To retain second order accuracy, the default set is needed.
      xprobmin3= DOUBLE
      xprobmax3= DOUBLE
      refine_criterion= INTEGER
+     refine_usr= F | T
      nbufferx1= INTEGER
      nbufferx2= INTEGER
      nbufferx3= INTEGER
@@ -701,6 +703,7 @@ used 'unlimit'. To retain second order accuracy, the default set is needed.
      iprob= INTEGER
      prolongprimitive= F | T
      coarsenprimitive= F | T
+     typeprolonglimit= 'default' | 'unlimit' | 'minmod' | 'woodward' | 'koren'
      tfixgrid= DOUBLE
      itfixgrid= INTEGER
      ditregrid= INTEGER
@@ -709,6 +712,17 @@ used 'unlimit'. To retain second order accuracy, the default set is needed.
      qstretch_baselevel= DOUBLE
      nstretchedblocks_baselevel= INTEGER
     /
+
+### geometry {: #par_geometry }
+`geometry` selects the coordinate system: `'Cartesian'` (the default),
+`'spherical'` (r, theta, phi) or `'cylindrical'` (r, z, phi). This is a
+**compile-time** choice -- changing it and re-running `make` regenerates the
+build's `config.mk` and recompiles the finite-volume kernels for the new
+geometry, rather than switching at runtime. See [Coordinate
+systems](coordinate_systems.html) for the axis conventions, the geometric
+source terms each non-Cartesian choice adds, and its current limitations
+(no polar-axis/cylindrical-axis handling, and only the `hd`, `mhd`, `srhd`
+and `ffhd` physics modules support it).
 
 ### refine_max_level, max_blocks, domain_nx^D, block_nx^D, xprobmin^D, xprobmax^D {: #par_refine_max_level }
 `refine_max_level` indicates the maximum number of grid levels that can be used 
@@ -727,7 +741,8 @@ The computational domain is set by specifying the minimal and maximal
 coordinate value per direction in the _xprob^L_ settings. When cylindrical or
 spherical coordinates are selected, the angle ranges (for phi in
 the cylindrical case, and for both theta and phi in the spherical case) are to
-be given in 2 pi units.
+be given in 2 pi units -- see [geometry](#par_geometry) above and
+[Coordinate systems](coordinate_systems.html) for more detail.
 
 The base grid resolution (i.e. on the coarsest level 1) is best specified by
 providing _domain_nx^D_, the number of grid cells per dimension, to cover the full
@@ -755,7 +770,15 @@ problems. When `refine_criterion=3`, the original Lohner method is used.
 
 A call to the user defined subroutine _usr_refine_grid_ follows the error 
 estimator, making it possible to use this routine for augmented user-controlled 
-refinement, or even derefinement.
+refinement, or even derefinement. This call is only compiled in and invoked
+when `refine_usr=T` (default `F`); unlike most other `usr_*` hooks, which are
+registered as procedure pointers in `usr_init()`, `usr_refine_grid` must be
+defined directly as a `subroutine` in `mod_usr` (with the exact interface
+`forcedrefine_grid` in `src/amr/mod_errest.fpp` calls it with), because
+`refine_usr` also gates a compile-time `REFINE_USR` fypp define -- like
+`geometry` above, this is a case where AGILE resolves a user hook at compile
+time rather than through a runtime procedure pointer, since the call needs
+to be inlined into GPU-offloaded code.
 
 Depending on the error estimator used, it is needed or advisable to
 additionally provide a buffer zone of a certain number of grid cells in width,
@@ -807,6 +830,15 @@ grid information (coarsen), or filling new finer level grids
 which may not be a wise choice, but is perhaps better behaved with respect to
 positivity of pressure etc. This is activated seperately for prolongation by
 `prolongprimitive=T`, and for coarsen by `coarsenprimitive=T`. 
+
+`typeprolonglimit` selects the slope limiter used when linearly
+interpolating a coarse cell onto its finer children during prolongation
+(`'unlimit'`, `'minmod'`, `'woodward'` or `'koren'`; default `'default'`).
+**Note:** in this fork, the `select case(typeprolonglimit)` branch in
+`src/amr/mod_refine.fpp` that would act on this choice is currently
+commented out, so prolongation always falls through to its `case default`
+(a minmod-like limiter) regardless of what `typeprolonglimit` is set to --
+the parameter is parsed but has no effect yet.
 
 The parameters `tfixgrid, itfixgrid` are available to fix the AMR
 hierarchical grid from a certain time onwards (tfixgrid) or iteration (the it-
