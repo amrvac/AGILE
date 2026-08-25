@@ -150,9 +150,8 @@ a version that `mpistop`s, so a physics module without one fails loudly.
 
 Current limits of the spherical support:
 
-- Only `phys = 'hd'`, `phys = 'mhd'` and `phys = 'srhd'` implement
-  `addsource_geometry`; ffhd will stop at startup if built with
-  `geometry = 'spherical'`. MHD's and SRHD's curvature terms
+- `phys = 'hd'`, `phys = 'mhd'`, `phys = 'srhd'` and `phys = 'ffhd'` all
+  implement `addsource_geometry`. MHD's and SRHD's curvature terms
   (`src/mhd/mod_mhd_templates.fpp`, `src/srhd/mod_srhd_templates.fpp`) were
   ported from upstream MPI-AMRVAC's `mhd_add_source_geom` (cell-centred
   GLM-MHD branch; this fork has no `stagger_grid`/constrained-transport
@@ -165,7 +164,20 @@ Current limits of the spherical support:
   `to_primitive`/`to_conservative` and `src/srhd/mod_con2prim.fpp`'s
   `xi = tau + D + p`, `v^2 = S^2/xi^2`), so the curvature terms use the
   primitive `xi_`/`lfac_` auxiliaries directly rather than reconstructing the
-  conserved momentum density.
+  conserved momentum density. FFHD's `addsource_geometry`
+  (`src/ffhd/mod_ffhd_templates.fpp`) is empty — matching upstream's
+  `ffhd_add_source_geom`, which is likewise empty — because its conserved
+  quantities (`rho`, the field-aligned momentum `m_par`, the field-aligned
+  energy) are genuine scalars advected along a user-supplied field direction
+  `b-hat`, and Gauss's theorem means a scalar's flux divergence needs no
+  curvature correction in any coordinate system, unlike a vector quantity's
+  components. What *is* geometry-sensitive for `ffhd` is unrelated to
+  `addsource_geometry`: the optional `PDIVB` source term (`p * div(b-hat)`,
+  compile-time `ffhd_pdivb=T`, default off) computes `div(b-hat)` in
+  `addsource_nonlocal` as a plain finite difference over `dx(idir)`, which is
+  only correct on a slab-uniform mesh — it is missing the curvilinear metric
+  factors a true divergence needs in `geometry = 'spherical'`, and this fork
+  has not fixed that.
 - No polar-axis handling. `set_pole`/`poleB` and the pi-periodic root-neighbor
   lookup in `src/amr/mod_amr_neighbors.fpp` survive from upstream, but AGILE's
   rewritten `getbc` in `src/mod_ghostcells_update.fpp` never performs the pole
@@ -184,8 +196,15 @@ exercise the induction equation's and GLM psi's curvature terms too),
 `tests/mhd/spherical_blast`, `tests/srhd/spherical_uniform_flow` (a uniform,
 sub-luminal Cartesian flow, which also converges at second order — the
 Lorentz factor only depends on `|v|`, which a spherical rotation leaves
-invariant, so it stays a single global constant), and
-`tests/srhd/spherical_blast`.
+invariant, so it stays a single global constant), `tests/srhd/spherical_blast`,
+`tests/ffhd/spherical_uniform_flow` (a uniform state along a uniform frozen
+field, which also converges at second order — this test is what caught a
+pre-existing, geometry-independent bug: `phys_init` set `nwgc=nwflux`, but
+the frozen field `iw_b1`/`iw_b2`/`iw_b3` is registered via
+`var_set_extravar`, outside `nwflux`, so it was silently excluded from
+inter-block ghost-cell exchange whenever the field is not spatially uniform;
+fixed to `nwgc=nwflux+nwextra`, matching how `srhd` already includes its own
+auxiliaries via `nwgc=nwflux+nwaux`), and `tests/ffhd/spherical_blast`.
 
 ## Writing a new simulation case (`mod_usr.fpp`)
 

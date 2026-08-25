@@ -126,11 +126,11 @@ contains
 #:if GEOM == 'spherical'
     if (coordinate /= spherical) call mpistop("meshlist geometry is spherical, &
        &but mod_usr set a non-spherical coordinate system")
-  #:if PHYS != 'hd' and PHYS != 'mhd' and PHYS != 'srhd'
+  #:if PHYS != 'hd' and PHYS != 'mhd' and PHYS != 'srhd' and PHYS != 'ffhd'
     ! Only physics modules that define the addsource_geometry macro can be run
     ! curvilinear; without it the momentum equations would silently miss their
     ! curvature terms.
-    call mpistop("geometry='spherical' is only implemented for phys='hd', phys='mhd' and phys='srhd'")
+    call mpistop("geometry='spherical' is only implemented for phys='hd', phys='mhd', phys='srhd' and phys='ffhd'")
   #:endif
 #:else
     if (coordinate /= Cartesian) call mpistop("meshlist geometry is Cartesian, &
