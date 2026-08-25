@@ -394,8 +394,14 @@
     end do
     !$acc update device(flux_type)
 
-    
-! use cycle, needs to be dealt with:    
+    nvector      = 2 ! No. vector vars
+    allocate(iw_vector(nvector))
+    iw_vector(1) = mom(1) - 1
+    iw_vector(2) = mag(1) - 1
+    !$acc update device(nvector, iw_vector)
+
+
+! use cycle, needs to be dealt with:
 !    ! Initialize particles module
 !    if (mhd_particles) then
 !       call particles_init()
