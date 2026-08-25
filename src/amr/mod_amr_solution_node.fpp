@@ -1632,6 +1632,13 @@ contains
    call copy_or_update_pointer(ps(igrid)%ds)
    call copy_or_update_pointer(ps1(igrid)%ds, no_update=.true.)
    call copy_or_update_pointer(ps2(igrid)%ds, no_update=.true.)
+
+   ! The coarse representative (psc) is what coarsen_grid_siblings uses as
+   ! sCo when a fine block's parent lives on a different MPI rank, so its
+   ! geometry factors need to be on the device too, not just ps/ps1/ps2's.
+   call copy_or_update_pointer(psc(igrid)%dvolume)
+   call copy_or_update_pointer(psc(igrid)%surfaceC)
+   call copy_or_update_pointer(psc(igrid)%ds)
 #:endif
 #endif
 
