@@ -1,6 +1,6 @@
-!> AMRVAC solves a set of hyperbolic equations
-!> \f$\vec{u}_t + \nabla_x \cdot \vec{f}(\vec{u}) = \vec{s}\f$
-!> using adaptive mesh refinement.
+!> AGILE solves a set of hyperbolic equations
+!> \[ \vec{u}_t + \nabla_x \cdot \vec{f}(\vec{u}) = \vec{s} \]
+!> using adaptive mesh refinement on (multiple) GPUs
 program agile
   use mpi
   integer        :: ierror
@@ -35,6 +35,7 @@ contains
   end subroutine set_openacc_device
 #endif
 
+  !> The main driver, called after MPI and GPUs are initialized
   subroutine main
     use mod_global_parameters
     use mod_input_output
