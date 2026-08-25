@@ -1616,6 +1616,23 @@ contains
    call copy_or_update_pointer(ps2(igrid)%is_physical_boundary, no_update=.true.)
    call copy_or_update_pointer(psc(igrid)%x)
    call copy_or_update_pointer(psc(igrid)%w, no_update=.true.)
+
+#:if GEOM != 'Cartesian'
+   ! Curvilinear runs need the cell metrics in the finite-volume and timestep
+   ! kernels. In Cartesian runs these are uniform per block and taken from
+   ! rnode instead, so they are left on the host to save device memory.
+   call copy_or_update_pointer(ps(igrid)%dvolume)
+   call copy_or_update_pointer(ps1(igrid)%dvolume, no_update=.true.)
+   call copy_or_update_pointer(ps2(igrid)%dvolume, no_update=.true.)
+
+   call copy_or_update_pointer(ps(igrid)%surfaceC)
+   call copy_or_update_pointer(ps1(igrid)%surfaceC, no_update=.true.)
+   call copy_or_update_pointer(ps2(igrid)%surfaceC, no_update=.true.)
+
+   call copy_or_update_pointer(ps(igrid)%ds)
+   call copy_or_update_pointer(ps1(igrid)%ds, no_update=.true.)
+   call copy_or_update_pointer(ps2(igrid)%ds, no_update=.true.)
+#:endif
 #endif
 
  end subroutine alloc_node

@@ -25,6 +25,9 @@ contains
 @:addsource_local()
 @:addsource_nonlocal()
 @:addsource_compact()
+#:if GEOM != 'Cartesian'
+@:addsource_geometry()
+#:endif
 @:to_primitive()
 @:to_conservative()
 @:get_cmax()
@@ -117,6 +120,11 @@ end subroutine finite_volume_local
     real(dp)               :: xloc(ndim)
     real(dp)               :: xlocC(ndim,2)
     real(dp)               :: wprim(nw_phys), wCT(nw_phys), wnew(nw_phys)
+#:if GEOM != 'Cartesian'
+    ! Inverse cell volume, and the (upper minus lower) face area over volume
+    ! per direction, which the curvilinear geometric source terms need.
+    real(dp)               :: inv_dvol, dAdV(ndim)
+#:endif
     real(dp)       :: fC1(2,ixImin2:ixOmax2,ixImin3:ixOmax3,1:nwflux)
     real(dp)       :: fC2(2,ixImin1:ixOmax1,ixImin3:ixOmax3,1:nwflux)
     real(dp)       :: fC3(2,ixImin1:ixOmax1,ixImin2:ixOmax2,1:nwflux)
@@ -174,89 +182,129 @@ end subroutine finite_volume_local
              end do
           end do
 
-          !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT, wprim #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
-          do ix3=ixOmin3,ixOmax3 
-             do ix2=ixOmin2,ixOmax2 
-                do ix1=ixOmin1,ixOmax1 
-                   ! Compute fluxes in all dimensions
+       !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT #{endif}##{if defined('SOURCE_LOCAL') or GEOM != 'Cartesian'}#, wprim #{endif}##{if GEOM != 'Cartesian'}#, inv_dvol, dAdV #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
+       do ix3=ixOmin3,ixOmax3 
+          do ix2=ixOmin2,ixOmax2 
+             do ix1=ixOmin1,ixOmax1 
+                ! Compute fluxes in all dimensions
 
-                   tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
-                   xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                   xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                   xlocC(1,1) = xlocC(1,1)-0.5_dp*dr(1)
-                   xlocC(1,2) = xlocC(1,2)+0.5_dp*dr(1)
-                   call ${faceflux_proc}$(tmp, xlocC, 1, f, typelim)
-                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                        n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(1)
+#:if GEOM != 'Cartesian'
+                inv_dvol = 1.0_dp / ps(n)%dvolume(ix1, ix2, ix3)
+#:endif
 
-                   ! Store fluxes for flux fixing in direction 1
-                   select case (neighbor_type_1m)
-                   case (neighbor_fine)
-                       if (ix1.eq.ixOmin1) pflux(1,1)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux,n) &
-                               = qdt * inv_dr(1) * f(:,1)
-                   case (neighbor_coarse)
-                       if (ix1.eq.ixOmin1) fC1(1,ix2,ix3,1:nw_flux) = - qdt * inv_dr(1) * f(:,1)
-                   end select
+                tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
+                xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                xlocC(1,1) = xlocC(1,1)-0.5_dp*dr(1)
+                xlocC(1,2) = xlocC(1,2)+0.5_dp*dr(1)
+                call ${faceflux_proc}$(tmp, xlocC, 1, f, typelim)
+#:if GEOM == 'Cartesian'
+                bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                     n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(1)
+#:else
+                bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                     n) + qdt * (f(:, 1) * ps(n)%surfaceC(ix1-1, ix2, ix3, 1) &
+                     - f(:, 2) * ps(n)%surfaceC(ix1, ix2, ix3, 1)) * inv_dvol
+#:endif
 
-                   select case (neighbor_type_1p)
-                   case (neighbor_fine)
-                       if (ix1.eq.ixOmax1) pflux(2,1)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux,n) =  &
-                               - qdt * inv_dr(1) * f(:,2)
-                   case (neighbor_coarse)
-                       if (ix1.eq.ixOmax1) fC1(2,ix2,ix3,1:nw_flux) = qdt * inv_dr(1) * f(:,2)
-                   end select
+                ! Store fluxes for flux fixing in direction 1
+                select case (neighbor_type_1m)
+                case (neighbor_fine)
+                   if (ix1.eq.ixOmin1) pflux(1,1)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux,n) &
+                        = qdt * inv_dr(1) * f(:,1)
+                case (neighbor_coarse)
+                   if (ix1.eq.ixOmin1) fC1(1,ix2,ix3,1:nw_flux) = - qdt * inv_dr(1) * f(:,1)
+                end select
 
-                   tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
-                   xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                   xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                   xlocC(2,1) = xlocC(2,1)-0.5_dp*dr(2)
-                   xlocC(2,2) = xlocC(2,2)+0.5_dp*dr(2)
-                   call ${faceflux_proc}$(tmp, xlocC, 2, f, typelim)
-                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                        n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(2)
+                select case (neighbor_type_1p)
+                case (neighbor_fine)
+                   if (ix1.eq.ixOmax1) pflux(2,1)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux,n) &
+                        = - qdt * inv_dr(1) * f(:,2)
+                case (neighbor_coarse)
+                   if (ix1.eq.ixOmax1) fC1(2,ix2,ix3,1:nw_flux) = qdt * inv_dr(1) * f(:,2)
+                end select
 
-                   ! Store fluxes for flux fixing in direction 2
-                   select case (neighbor_type_2m)
-                   case (neighbor_fine)
-                       if (ix2.eq.ixOmin2) pflux(1,2)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux,n) &
-                                = qdt * inv_dr(2) * f(:,1)
-                   case (neighbor_coarse)
-                       if (ix2.eq.ixOmin2) fC2(1,ix1,ix3,1:nw_flux) = - qdt * inv_dr(2) * f(:,1)
-                   end select
+                tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
+                xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                xlocC(2,1) = xlocC(2,1)-0.5_dp*dr(2)
+                xlocC(2,2) = xlocC(2,2)+0.5_dp*dr(2)
+                call ${faceflux_proc}$(tmp, xlocC, 2, f, typelim)
+#:if GEOM == 'Cartesian'
+                bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                     n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(2)
+#:else
+                bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                     n) + qdt * (f(:, 1) * ps(n)%surfaceC(ix1, ix2-1, ix3, 2) &
+                     - f(:, 2) * ps(n)%surfaceC(ix1, ix2, ix3, 2)) * inv_dvol
+#:endif
 
-                   select case (neighbor_type_2p)
-                   case (neighbor_fine)
-                       if (ix2.eq.ixOmax2) pflux(2,2)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux,n) &
-                               = - qdt * inv_dr(2) * f(:,2)
-                   case (neighbor_coarse)
-                       if (ix2.eq.ixOmax2) fC2(2,ix1,ix3,1:nw_flux) = qdt * inv_dr(2) * f(:,2)
-                   end select
+                ! Store fluxes for flux fixing in direction 2
+                select case (neighbor_type_2m)
+                case (neighbor_fine)
+                   if (ix2.eq.ixOmin2) pflux(1,2)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux,n) &
+                        = qdt * inv_dr(2) * f(:,1)
+                case (neighbor_coarse)
+                   if (ix2.eq.ixOmin2) fC2(1,ix1,ix3,1:nw_flux) = - qdt * inv_dr(2) * f(:,1)
+                end select
 
-                   tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
-                   xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                   xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                   xlocC(3,1) = xlocC(3,1)-0.5_dp*dr(3)
-                   xlocC(3,2) = xlocC(3,2)+0.5_dp*dr(3)
-                   call ${faceflux_proc}$(tmp, xlocC, 3, f, typelim)
-                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                        n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(3)
+                select case (neighbor_type_2p)
+                case (neighbor_fine)
+                   if (ix2.eq.ixOmax2) pflux(2,2)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux,n) &
+                        = - qdt * inv_dr(2) * f(:,2)
+                case (neighbor_coarse)
+                   if (ix2.eq.ixOmax2) fC2(2,ix1,ix3,1:nw_flux) = qdt * inv_dr(2) * f(:,2)
+                end select
 
-                   ! Store fluxes for flux fixing in direction 3               
-                   select case (neighbor_type_3m)
-                   case (neighbor_fine)
-                       if (ix3.eq.ixOmin3) pflux(1,3)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux,n) &
-                               = qdt * inv_dr(3) * f(:,1)
-                   case (neighbor_coarse)
-                       if (ix3.eq.ixOmin3) fC3(1,ix1,ix2,1:nw_flux) = - qdt * inv_dr(3) * f(:,1)
-                   end select
+                tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
+                xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                xlocC(3,1) = xlocC(3,1)-0.5_dp*dr(3)
+                xlocC(3,2) = xlocC(3,2)+0.5_dp*dr(3)
+                call ${faceflux_proc}$(tmp, xlocC, 3, f, typelim)
+#:if GEOM == 'Cartesian'
+                bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                     n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(3)
+#:else
+                bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                     n) + qdt * (f(:, 1) * ps(n)%surfaceC(ix1, ix2, ix3-1, 3) &
+                     - f(:, 2) * ps(n)%surfaceC(ix1, ix2, ix3, 3)) * inv_dvol
+#:endif
 
-                   select case (neighbor_type_3p)
-                   case (neighbor_fine)
-                       if (ix3.eq.ixOmax3) pflux(2,3)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux,n) &
-                               = - qdt * inv_dr(3) * f(:,2)
-                   case (neighbor_coarse)
-                       if (ix3.eq.ixOmax3) fC3(2,ix1,ix2,1:nw_flux) = qdt * inv_dr(3) * f(:,2)
-                   end select
+                ! Store fluxes for flux fixing in direction 3
+                select case (neighbor_type_3m)
+                case (neighbor_fine)
+                   if (ix3.eq.ixOmin3) pflux(1,3)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux,n) &
+                        = qdt * inv_dr(3) * f(:,1)
+                case (neighbor_coarse)
+                   if (ix3.eq.ixOmin3) fC3(1,ix1,ix2,1:nw_flux) = - qdt * inv_dr(3) * f(:,1)
+                end select
+
+                select case (neighbor_type_3p)
+                case (neighbor_fine)
+                   if (ix3.eq.ixOmax3) pflux(2,3)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux,n) &
+                        = - qdt * inv_dr(3) * f(:,2)
+                case (neighbor_coarse)
+                   if (ix3.eq.ixOmax3) fC3(2,ix1,ix2,1:nw_flux) = qdt * inv_dr(3) * f(:,2)
+                end select
+
+#:if GEOM != 'Cartesian'
+                   ! Add the geometric (curvature) source terms that the
+                   ! flux-divergence form of the momentum equations leaves over
+                   ! in a curvilinear coordinate system.
+                   xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   wprim        = uprim(1:nw_phys, ix1, ix2, ix3)
+                   wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
+                   dAdV(1) = (ps(n)%surfaceC(ix1, ix2, ix3, 1) &
+                        - ps(n)%surfaceC(ix1-1, ix2, ix3, 1)) * inv_dvol
+                   dAdV(2) = (ps(n)%surfaceC(ix1, ix2, ix3, 2) &
+                        - ps(n)%surfaceC(ix1, ix2-1, ix3, 2)) * inv_dvol
+                   dAdV(3) = (ps(n)%surfaceC(ix1, ix2, ix3, 3) &
+                        - ps(n)%surfaceC(ix1, ix2, ix3-1, 3)) * inv_dvol
+                   call addsource_geometry(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
+                        wprim, wnew, xloc, dAdV)
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
+#:endif
 
 #:if defined('SOURCE_LOCAL')
                    ! Add local source terms:

@@ -59,6 +59,7 @@ contains
   !  use mod_trac, only: initialize_trac_after_settree
     use mod_convert_files, only: generate_plotfile
     use mod_comm_lib, only: comm_start, comm_finalize,mpistop
+    use mod_geometry, only: set_coordinate_system_from_config
 
 
     double precision :: time0, time_in
@@ -74,6 +75,12 @@ contains
 
     ! read command line arguments first
     call read_arguments()
+
+    ! Derive the coordinate system from the GEOM define before usr_init, so
+    ! that ndir is set before phys_activate needs it and coordinate is set
+    ! before read_par_files converts the angular domain bounds. A case may
+    ! still call set_coordinate_system itself; it need not.
+    call set_coordinate_system_from_config()
 
     ! the user_init routine should load a physics module
     call usr_init()

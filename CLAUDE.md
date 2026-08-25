@@ -6,8 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AGILE is a GPU-enabled fork of MPI-AMRVAC, a Fortran finite-volume code for
 solving hyperbolic PDEs (HD, MHD, FFHD, SRHD) with adaptive mesh refinement.
-Master currently only supports 3D Cartesian grids. Domain decomposition and
-GPU offload use MPI + OpenACC (`!$acc` directives throughout the hot loops).
+Master supports 3D Cartesian and 3D spherical `(r, theta, phi)` grids; see
+"Coordinate systems" below for the limits of the spherical support. Domain
+decomposition and GPU offload use MPI + OpenACC (`!$acc` directives throughout
+the hot loops).
 
 Source is written as `.fpp` files (Fortran + `fypp` preprocessor directives,
 e.g. `#:if PHYS == 'hd'`) which get preprocessed into `.f90` before
@@ -46,9 +48,10 @@ make clean                 # remove this case's build products
 - `arch` selects a file from `arch/*.mk` (`gnu`, `ifx`, `nvidia`, `cray`,
   `llvm`) which sets the compiler/linker and flags. Default is `gnu`
   (`mpif90`/gfortran).
-- Physics-relevant compile-time options (which physics module, tracers,
-  gravity, cooling, thermal conduction, etc.) are declared in `agile.par` and
-  turned into `config.mk`/fypp defines by `make/config_reader.py`, validated
+- Physics-relevant compile-time options (which physics module, the coordinate
+  system, tracers, gravity, cooling, thermal conduction, etc.) are declared in
+  `agile.par` and turned into `config.mk`/fypp defines by
+  `make/config_reader.py`, validated
   against `make/config_schema.toml`. Editing `agile.par` and rerunning `make`
   regenerates `config.mk` automatically — don't hand-edit `config.mk`.
 - Builds are cached under `build/<arch>-<hash>/`, keyed by a hash of the
@@ -93,11 +96,81 @@ Add a new test case by copying an existing case directory (`mod_usr.fpp`,
 `agile.par`/`test.par`, `test.make`, `correct_output/`) and registering it in
 `tests/Makefile` under the appropriate `*_DIRS` variable.
 
+## Coordinate systems
+
+The coordinate system is a **compile-time** choice, because the finite-volume
+kernels are fypp-specialized for it and the Cartesian kernel must stay free of
+curvilinear bookkeeping. Set `geometry` in `&meshlist` of `agile.par`:
+
+```fortran
+ &meshlist
+   geometry = 'spherical'   ! or 'Cartesian' (the default)
+ /
+```
+
+That becomes the `GEOM` fypp define via `make/config_schema.toml`, and it is
+the only place the coordinate system needs stating. `main()` in
+`src/agile.fpp` calls `set_coordinate_system_from_config()` before `usr_init`,
+so a case does **not** have to call `set_coordinate_system` itself. A case may
+still do so — the call is idempotent — but the name then has to agree with
+`GEOM`, and `set_coordinate_system` calls `mpistop` on a mismatch rather than
+silently running the wrong kernel.
+
+Deriving it centrally matters because `set_coordinate_system` is the sole
+writer of `coordinate`, `ndir`, `r_`, `phi_` and `z_`. When it was left to
+each case, forgetting the call left `coordinate` at its `-1` default, and the
+failure was silent rather than loud: `read_par_files` skips the conversion of
+the angular domain bounds, and the `select case (coordinate)` in
+`get_surface_area` and in the cell-volume fill match nothing, so `surfaceC`
+and `dvolume` are never written and the run completes with garbage.
+`tests/hd/spherical_uniform_flow` omits the call and
+`tests/hd/spherical_blast` keeps it, so both paths stay covered.
+
+Two things to know when writing a spherical case:
+
+- **Angular coordinates in `agile.par` are given in units of 2*pi** (an
+  MPI-AMRVAC convention, applied in `src/io/mod_input_output.fpp`). So
+  `xprobmin2 = 0.125d0`, `xprobmax2 = 0.375d0` means `theta` from `pi/4` to
+  `3*pi/4`.
+- `ndim` is a compile-time `parameter` of 3, so spherical means the full
+  3D `(r, theta, phi)` system with `ndir = 3`.
+
+How it works: in a curvilinear build the finite-volume update in
+`src/mod_finite_volume.fpp` divides face fluxes by the cell volume weighted by
+the face areas (`ps(n)%surfaceC`, `ps(n)%dvolume`, filled per block by
+`fillgeo`/`get_surface_area` and copied to the device in
+`src/amr/mod_amr_solution_node.fpp`), instead of by the uniform `rnode` cell
+spacing. The leftover curvature terms of the momentum equations are added by
+`addsource_geometry`, a fypp macro each physics template defines (see
+`src/hd/mod_hd_templates.fpp`); `src/physics/mod_physics_dummies.fpp` provides
+a version that `mpistop`s, so a physics module without one fails loudly.
+`setdt` likewise switches from `rnode` spacing to the physical cell sizes
+`ps(igrid)%ds`.
+
+Current limits of the spherical support:
+
+- Only `phys = 'hd'` implements `addsource_geometry`; mhd, ffhd and srhd will
+  stop at startup if built with `geometry = 'spherical'`.
+- No polar-axis handling. `set_pole`/`poleB` and the pi-periodic root-neighbor
+  lookup in `src/amr/mod_amr_neighbors.fpp` survive from upstream, but AGILE's
+  rewritten `getbc` in `src/mod_ghostcells_update.fpp` never performs the pole
+  copies (`pole_buf` is allocated and otherwise unused). Keep the domain away
+  from `theta = 0` and `theta = pi`.
+- AMR across curvilinear levels is untested here; prolongation in
+  `src/amr/mod_refine.fpp` has the `slab_uniform` branch that uses `dvolume`,
+  but `fix_conserve` is commented out in `src/mod_advance.fpp` for all
+  geometries.
+
+Validated by `tests/hd/spherical_uniform_flow` (a uniform Cartesian flow
+written in spherical components, which converges at second order) and
+`tests/hd/spherical_blast`.
+
 ## Writing a new simulation case (`mod_usr.fpp`)
 
 Every case directory has a `mod_usr.fpp` defining `module mod_usr` with a
 `usr_init()` subroutine that:
-1. calls `set_coordinate_system(...)`,
+1. optionally calls `set_coordinate_system(...)` — the coordinate system is
+   otherwise taken from `geometry` in `agile.par`, see "Coordinate systems",
 2. registers callbacks by assigning the procedure pointers declared in
    `src/mod_usr_methods.fpp` (e.g. `usr_init_one_grid`, `usr_special_bc`,
    `usr_source`, `usr_process_grid`, `usr_refine_threshold`, ...),

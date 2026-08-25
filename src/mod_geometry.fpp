@@ -20,6 +20,27 @@ module mod_geometry
 
 contains
 
+  !> Set the coordinate system from the GEOM compile-time define.
+  !>
+  !> Called once before usr_init, so a case does not have to call
+  !> set_coordinate_system itself. Cases that do are still fine: the call is
+  !> idempotent, and the consistency check in set_coordinate_system catches a
+  !> name that disagrees with what the code was built for.
+  !>
+  !> Doing this centrally matters because set_coordinate_system is the only
+  !> writer of coordinate, ndir, r_, phi_ and z_. Leaving coordinate at its
+  !> -1 default is silently catastrophic rather than loud: read_par_files
+  !> skips the conversion of angular domain bounds, and the select case in
+  !> get_surface_area and in the cell-volume fill match nothing, so surfaceC
+  !> and dvolume are simply never written.
+  subroutine set_coordinate_system_from_config()
+#:if GEOM == 'spherical'
+    call set_coordinate_system("spherical_3D")
+#:else
+    call set_coordinate_system("Cartesian_3D")
+#:endif
+  end subroutine set_coordinate_system_from_config
+
   !> Set the coordinate system to be used
   subroutine set_coordinate_system(geom)
     use mod_global_parameters
@@ -98,6 +119,23 @@ contains
     case default
       call mpistop("Unknown geometry specified")
     end select
+
+    ! The coordinate system is a compile-time choice in AGILE: the GEOM define
+    ! (set from `geometry` in &meshlist) specializes the finite-volume kernels.
+    ! Guard against a mod_usr that disagrees with what the code was built for.
+#:if GEOM == 'spherical'
+    if (coordinate /= spherical) call mpistop("meshlist geometry is spherical, &
+       &but mod_usr set a non-spherical coordinate system")
+  #:if PHYS != 'hd'
+    ! Only physics modules that define the addsource_geometry macro can be run
+    ! curvilinear; without it the momentum equations would silently miss their
+    ! curvature terms.
+    call mpistop("geometry='spherical' is only implemented for phys='hd'")
+  #:endif
+#:else
+    if (coordinate /= Cartesian) call mpistop("meshlist geometry is Cartesian, &
+       &but mod_usr set a non-Cartesian coordinate system")
+#:endif
   end subroutine set_coordinate_system
 
   subroutine set_pole

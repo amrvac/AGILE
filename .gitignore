@@ -1,39 +1,34 @@
+# Generated documentation
 doc/html/*
 doc/ford/html/
 doc/ford/src/
+
+# Build products. Each case directory gets its own build/ cache, an `agile`
+# executable and a config.mk generated from agile.par by make/config_reader.py.
+**/build/
+agile
+config.mk
+*.mod
+*.o
+*.f90
+/tools/fortran/compare_logs
+
+# Simulation output. correct_output/ holds the reference logs the tests diff
+# against, so it has to survive the *.log rule above it.
 *.dat
 *.vtu
 *.vti
 *.out
 *.log
-*.mod
-*.o
-amrvac.h
-*amrvac
-*.amrvac.log.shfp.*
-*F90sources
-!**/correct_output/**
-*.bak
 *.log.shfp.*
-/tests/hd/*/makefile
-/tests/mhd/*/makefile
-/tests/rho/*/makefile
-/tests/multigrid/*/makefile
-/tests/rd/*/makefile
-/tests/rhd/*/makefile
-/tools/fortran/compare_logs
-/tests/*/*/mod_usr.f
-/lib/1d_*
-/lib/2d_*
-/lib/3d_*
+!**/correct_output/**
+
+# Editors, Python, misc
+*.bak
 *~
 *\#
 *__pycache__/
 *.pyc
 .idea/
-*.npy
-/src/new_makefile
 .*.swp
-mod_usr.F90
-**/build/
-*.f90
+*.npy

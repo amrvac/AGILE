@@ -35,7 +35,6 @@ module mod_usr
     subroutine usr_init()
       use mod_random_heating
 
-      call set_coordinate_system("Cartesian_2D")
       call usr_params_read(par_files)
       call rh_init()
   

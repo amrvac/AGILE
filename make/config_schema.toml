@@ -183,3 +183,10 @@ type = "flag"
 name = "REFINE_USR"
 flags = ["fypp", "hash"]
 default = false
+
+[meshlist.geometry]
+type = "option"
+name = "GEOM"
+options = ["Cartesian", "spherical"]
+flags = ["fypp", "hash"]
+default = "Cartesian"
