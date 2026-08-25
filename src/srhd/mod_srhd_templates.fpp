@@ -309,6 +309,46 @@ subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
 
 end subroutine addsource_geometry
 #:enddef
+#:elif GEOM == 'cylindrical'
+!> Curvature source terms for cylindrical (r, z, phi) coordinates. Structurally
+!> identical to this fork's HD addsource_geometry (src/hd/mod_hd_templates.fpp)
+!> with the conserved momentum density S^i = xi * v^i in place of rho * v^i,
+!> and using wprim(iw_mom(:)) = u^i = lfac*v^i as in the spherical branch above
+!> (so S^i v^j = xi * u^i * u^j / lfac^2). Only m_r and m_phi pick up curvature
+!> terms; m_z does not. The pressure term uses the discrete dAdV
+!> well-balancing factor, matching HD's convention; for cylindrical this is
+!> exactly 1/r (not just in the continuum limit), since a cylindrical radial
+!> face area is linear in r.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  !$acc routine seq
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (rho, spatial four-velocity, pressure, xi, lfac)
+  !> at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, z, phi)
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: pth, xi_inv_lfac2, inv_r, source
+
+  pth          = wprim(iw_e)
+  xi_inv_lfac2 = wprim(xi_) / wprim(lfac_)**2
+  inv_r        = 1.0_dp / x(1)
+
+  ! s[m_r] = (p + (xi/lfac^2) u_phi^2) / r
+  source = pth * x(1) * dAdV(1) + xi_inv_lfac2 * wprim(iw_mom(3))**2
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source * inv_r
+
+  ! s[m_phi] = -(xi/lfac^2) u_phi u_r / r
+  source = -xi_inv_lfac2 * wprim(iw_mom(3)) * wprim(iw_mom(1))
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source * inv_r
+
+end subroutine addsource_geometry
+#:enddef
 #:endif
 
 #:def to_primitive()

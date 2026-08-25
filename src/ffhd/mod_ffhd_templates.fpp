@@ -443,21 +443,22 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
 end subroutine addsource_nonlocal
 #:enddef
 
-#:if GEOM == 'spherical'
+#:if GEOM == 'spherical' or GEOM == 'cylindrical'
 !> No curvature source terms are needed for ffhd. Its conserved quantities
 !> (rho, m_par, e_hd_par, q_par) are all genuine scalars advected along the
 !> user-supplied field direction b-hat, fluxed as (quantity) * b-hat; by
 !> Gauss's theorem the divergence of a scalar's flux needs no extra terms in
 !> any coordinate system (unlike a vector quantity's components, which pick
-!> up curvature terms from the position-dependent (r, theta, phi) basis - see
-!> HD's/MHD's/SRHD's addsource_geometry). Matches upstream MPI-AMRVAC's
-!> ffhd_add_source_geom, which is likewise empty.
+!> up curvature terms from the position-dependent (r, theta, phi) or
+!> (r, z, phi) basis - see HD's/MHD's/SRHD's addsource_geometry). Matches
+!> upstream MPI-AMRVAC's ffhd_add_source_geom, which is likewise empty for
+!> every coordinate system.
 !>
 !> Caveat: this does NOT cover the optional PDIVB source term (p * div(b-hat),
 !> compile-time ffhd_pdivb=T), whose div(b-hat) in addsource_nonlocal is a
 !> plain finite difference over dx(idir) - correct on a slab-uniform mesh, but
-!> missing the r^2/sin(theta) metric factors a true curvilinear divergence
-!> needs. PDIVB defaults off and is untouched here.
+!> missing the metric factors a true curvilinear divergence needs (r^2/sin(theta)
+!> for spherical, r for cylindrical). PDIVB defaults off and is untouched here.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
   !$acc routine seq

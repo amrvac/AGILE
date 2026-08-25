@@ -187,6 +187,6 @@ default = false
 [meshlist.geometry]
 type = "option"
 name = "GEOM"
-options = ["Cartesian", "spherical"]
+options = ["Cartesian", "spherical", "cylindrical"]
 flags = ["fypp", "hash"]
 default = "Cartesian"

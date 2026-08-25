@@ -407,6 +407,44 @@ subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
 
 end subroutine addsource_geometry
 #:enddef
+#:elif GEOM == 'cylindrical'
+!> Geometric source terms of the cylindrical (r, z, phi) momentum equations,
+!> ported from upstream MPI-AMRVAC's hd_add_source_geom (cylindrical branch).
+!> Only m_r and m_phi pick up curvature terms; m_z does not, since a
+!> cylindrical volume element's z-extent does not depend on r. As in the
+!> spherical branch above, the pressure term uses the discrete dAdV
+!> well-balancing factor rather than upstream's continuous 1/r prefactor -
+!> here the two are exactly equal (not just in the continuum limit), because
+!> a cylindrical radial face area is linear in r, so x(1)*dAdV(1) = 1 exactly.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  !$acc routine seq
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (density, velocity, pressure) at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, z, phi)
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: rho, pth, inv_r, source
+
+  rho   = wprim(iw_rho)
+  pth   = wprim(iw_e)
+  inv_r = 1.0_dp / x(1)
+
+  ! s[m_r] = (p + rho v_phi^2) / r
+  source = pth * x(1) * dAdV(1) + rho * wprim(iw_mom(3))**2
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source * inv_r
+
+  ! s[m_phi] = -rho v_phi v_r / r
+  source = -rho * wprim(iw_mom(3)) * wprim(iw_mom(1))
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source * inv_r
+
+end subroutine addsource_geometry
+#:enddef
 #:endif
 
 #:def to_primitive()

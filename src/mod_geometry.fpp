@@ -36,6 +36,8 @@ contains
   subroutine set_coordinate_system_from_config()
 #:if GEOM == 'spherical'
     call set_coordinate_system("spherical_3D")
+#:elif GEOM == 'cylindrical'
+    call set_coordinate_system("cylindrical_3D")
 #:else
     call set_coordinate_system("Cartesian_3D")
 #:endif
@@ -131,6 +133,15 @@ contains
     ! curvilinear; without it the momentum equations would silently miss their
     ! curvature terms.
     call mpistop("geometry='spherical' is only implemented for phys='hd', phys='mhd', phys='srhd' and phys='ffhd'")
+  #:endif
+#:elif GEOM == 'cylindrical'
+    if (coordinate /= cylindrical) call mpistop("meshlist geometry is &
+       &cylindrical, but mod_usr set a non-cylindrical coordinate system")
+  #:if PHYS != 'hd' and PHYS != 'mhd' and PHYS != 'srhd' and PHYS != 'ffhd'
+    ! Only physics modules that define the addsource_geometry macro can be run
+    ! curvilinear; without it the momentum equations would silently miss their
+    ! curvature terms.
+    call mpistop("geometry='cylindrical' is only implemented for phys='hd', phys='mhd', phys='srhd' and phys='ffhd'")
   #:endif
 #:else
     if (coordinate /= Cartesian) call mpistop("meshlist geometry is Cartesian, &

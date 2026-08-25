@@ -775,6 +775,56 @@ subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
 
 end subroutine addsource_geometry
 #:enddef
+#:elif GEOM == 'cylindrical'
+!> Curvature source terms for cylindrical (r, z, phi) coordinates, ported
+!> from upstream MPI-AMRVAC's mhd_add_source_geom (cylindrical branch,
+!> cell-centred GLM-MHD). Only m_r, m_phi, B_phi and B_r (via the GLM psi
+!> coupling) pick up curvature terms; m_z and B_z do not. As in the spherical
+!> branch above, the isotropic ptot term uses the discrete dAdV well-balancing
+!> factor rather than upstream's continuous 1/r prefactor - here the two are
+!> exactly equal (not just in the continuum limit), because a cylindrical
+!> radial face area is linear in r, so x(1)*dAdV(1) = 1 exactly.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  !$acc routine seq
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (rho, velocity, pressure, B, psi) at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, z, phi)
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: rho, ptot, inv_r, source
+
+  rho   = wprim(iw_rho)
+  ptot  = wprim(iw_e) + 0.5_dp * (wprim(iw_mag(1))**2 + wprim(iw_mag(2))**2 + &
+     wprim(iw_mag(3))**2)
+  inv_r = 1.0_dp / x(1)
+
+  ! s[m_r] = (ptot - B_phi^2 + rho v_phi^2) / r
+  source = ptot * x(1) * dAdV(1) - wprim(iw_mag(3))**2 + rho * &
+     wprim(iw_mom(3))**2
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source * inv_r
+
+  ! s[m_phi] = (-rho v_phi v_r + B_phi B_r) / r
+  source = -rho * wprim(iw_mom(3)) * wprim(iw_mom(1)) + wprim(iw_mag(3)) * &
+     wprim(iw_mag(1))
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source * inv_r
+
+  ! s[B_r] = psi / r (GLM divergence-cleaning coupling only)
+  source = wprim(psi_) * x(1) * dAdV(1)
+  wnew(iw_mag(1)) = wnew(iw_mag(1)) + qdt * source * inv_r
+
+  ! s[B_phi] = (B_phi v_r - B_r v_phi) / r
+  source = wprim(iw_mag(3)) * wprim(iw_mom(1)) - wprim(iw_mag(1)) * &
+     wprim(iw_mom(3))
+  wnew(iw_mag(3)) = wnew(iw_mag(3)) + qdt * source * inv_r
+
+end subroutine addsource_geometry
+#:enddef
 #:endif
 
 #:def to_primitive()
