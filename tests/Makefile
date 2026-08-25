@@ -9,7 +9,7 @@
 
 HD_DIRS := hd/KH3D hd/RT3D hd/KH3D-SMR hd/KH3D_tracer hd/sphere_advection hd/TRML hd/cloud_crushing \
            hd/spherical_uniform_flow hd/spherical_blast
-MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D
+MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D mhd/spherical_uniform_flow
 FFHD_DIRS := ffhd/TI3D
 SRHD_DIRS := srhd/shockTube
 

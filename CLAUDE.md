@@ -149,8 +149,14 @@ a version that `mpistop`s, so a physics module without one fails loudly.
 
 Current limits of the spherical support:
 
-- Only `phys = 'hd'` implements `addsource_geometry`; mhd, ffhd and srhd will
-  stop at startup if built with `geometry = 'spherical'`.
+- Only `phys = 'hd'` and `phys = 'mhd'` implement `addsource_geometry`; ffhd
+  and srhd will stop at startup if built with `geometry = 'spherical'`. MHD's
+  curvature terms (`src/mhd/mod_mhd_templates.fpp`) were ported from upstream
+  MPI-AMRVAC's `mhd_add_source_geom` (cell-centred GLM-MHD branch; this fork
+  has no `stagger_grid`/constrained-transport support), with the isotropic
+  (`ptot`, `psi`) terms rewritten to use the discrete `dAdV` well-balancing
+  factor instead of the continuous `2/r`, `cot(theta)/r` prefactors upstream
+  uses directly, for consistency with this fork's HD implementation.
 - No polar-axis handling. `set_pole`/`poleB` and the pi-periodic root-neighbor
   lookup in `src/amr/mod_amr_neighbors.fpp` survive from upstream, but AGILE's
   rewritten `getbc` in `src/mod_ghostcells_update.fpp` never performs the pole
@@ -162,8 +168,10 @@ Current limits of the spherical support:
   geometries.
 
 Validated by `tests/hd/spherical_uniform_flow` (a uniform Cartesian flow
-written in spherical components, which converges at second order) and
-`tests/hd/spherical_blast`.
+written in spherical components, which converges at second order),
+`tests/hd/spherical_blast`, and `tests/mhd/spherical_uniform_flow` (the same
+uniform-flow idea extended with a uniform Cartesian magnetic field, to
+exercise the induction equation's and GLM psi's curvature terms too).
 
 ## Writing a new simulation case (`mod_usr.fpp`)
 

@@ -703,6 +703,74 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
 end subroutine addsource_compact
 #:enddef
 
+#:if GEOM == 'spherical'
+!> Curvature source terms for spherical coordinates, ported from upstream
+!> MPI-AMRVAC's mhd_add_source_geom (3D, cell-centred GLM-MHD branch).
+!> The isotropic (ptot, psi) terms use the discrete dAdV factor rather than
+!> the continuous 2/r, cot(theta)/r prefactors upstream uses directly, for
+!> consistency with this fork's HD addsource_geometry (src/hd/mod_hd_templates.fpp),
+!> which applies the same well-balancing trick to its pressure term.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  !$acc routine seq
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (rho, velocity, pressure, B, psi) at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, theta, phi)
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: rho, ptot, inv_r, inv_tan, source
+
+  rho     = wprim(iw_rho)
+  ptot    = wprim(iw_e) + 0.5_dp * (wprim(iw_mag(1))**2 + wprim(iw_mag(2))**2 + &
+     wprim(iw_mag(3))**2)
+  inv_r   = 1.0_dp / x(1)
+  inv_tan = 1.0_dp / tan(x(2))
+
+  ! s[m_r] = (2 ptot + rho (v_theta^2 + v_phi^2) - (B_theta^2 + B_phi^2)) / r
+  source = ptot * x(1) * dAdV(1) + rho * (wprim(iw_mom(2))**2 + &
+     wprim(iw_mom(3))**2) - (wprim(iw_mag(2))**2 + wprim(iw_mag(3))**2)
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source * inv_r
+
+  ! s[m_theta] = (ptot cot(theta) + rho v_phi^2 cot(theta) - B_phi^2 cot(theta)
+  !               - rho v_r v_theta + B_r B_theta) / r
+  source = ptot * x(1) * dAdV(2) + inv_tan * (rho * wprim(iw_mom(3))**2 - &
+     wprim(iw_mag(3))**2) - rho * wprim(iw_mom(1)) * wprim(iw_mom(2)) + &
+     wprim(iw_mag(1)) * wprim(iw_mag(2))
+  wnew(iw_mom(2)) = wnew(iw_mom(2)) + qdt * source * inv_r
+
+  ! s[m_phi] = (-rho v_phi (v_r + v_theta cot(theta))
+  !             + B_phi (B_r + B_theta cot(theta))) / r
+  source = -rho * wprim(iw_mom(3)) * (wprim(iw_mom(1)) + wprim(iw_mom(2)) * &
+     inv_tan) + wprim(iw_mag(3)) * (wprim(iw_mag(1)) + wprim(iw_mag(2)) * inv_tan)
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source * inv_r
+
+  ! s[B_r] = psi * 2/r (GLM divergence-cleaning coupling only)
+  source = wprim(psi_) * x(1) * dAdV(1)
+  wnew(iw_mag(1)) = wnew(iw_mag(1)) + qdt * source * inv_r
+
+  ! s[B_theta] = (v_r B_theta - v_theta B_r + psi cot(theta)) / r
+  source = wprim(iw_mom(1)) * wprim(iw_mag(2)) - wprim(iw_mom(2)) * &
+     wprim(iw_mag(1)) + wprim(psi_) * x(1) * dAdV(2)
+  wnew(iw_mag(2)) = wnew(iw_mag(2)) + qdt * source * inv_r
+
+  ! s[B_phi] = (v_r B_phi - v_phi B_r
+  !             + (v_theta B_phi - v_phi B_theta) cot(theta)) / r
+  source = wprim(iw_mom(1)) * wprim(iw_mag(3)) - wprim(iw_mom(3)) * &
+     wprim(iw_mag(1)) + inv_tan * (wprim(iw_mom(2)) * wprim(iw_mag(3)) - &
+     wprim(iw_mom(3)) * wprim(iw_mag(2)))
+  wnew(iw_mag(3)) = wnew(iw_mag(3)) + qdt * source * inv_r
+
+  ! No geometric source term for psi_ itself (matches upstream).
+
+end subroutine addsource_geometry
+#:enddef
+#:endif
+
 #:def to_primitive()
   pure subroutine to_primitive(u)
     !$acc routine seq
