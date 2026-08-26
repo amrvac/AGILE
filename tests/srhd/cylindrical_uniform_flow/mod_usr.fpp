@@ -69,6 +69,7 @@ contains
        ixGmin3:ixGmax3,1:nw)
     ! .. local ..
     double precision                :: v(1:3), lfac0
+    double precision                :: x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
     lfac0 = 1.0d0 / sqrt(1.0d0 - sum(v0(1:3)**2))
@@ -76,7 +77,8 @@ contains
     do ix3 = ixmin3, ixmax3
        do ix2 = ixmin2, ixmax2
           do ix1 = ixmin1, ixmax1
-             call uniform_velocity(x(ix1,ix2,ix3,1:ndim), v)
+             x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
+             call uniform_velocity(x_loc, v)
              w(ix1,ix2,ix3,rho_)   = rho0
              w(ix1,ix2,ix3,p_)     = p0
              ! primitive mom(:) is the spatial four-velocity lfac*v, not v
@@ -110,18 +112,20 @@ contains
        ixImin3:ixImax3,1:nw)
     ! .. local ..
     double precision                :: v(1:3), lfac0, xi0
+    double precision                :: x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
     lfac0 = 1.0d0 / sqrt(1.0d0 - sum(v0(1:3)**2))
     ! xi = rho*h*lfac^2, gamma-law enthalpy h = 1 + gamma/(gamma-1) * p0/rho0
     xi0 = (rho0 + gamma_to_gamma_1 * p0) * lfac0**2
 
-    !$acc loop collapse(3) vector private(v)
+    !$acc loop collapse(3) vector private(v, x_loc)
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1
 
-             call uniform_velocity(x(ix1,ix2,ix3,1:ndim), v)
+             x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
+             call uniform_velocity(x_loc, v)
 
              ! conserved D = rho*lfac, S_i = xi*v_i, tau = xi - p - D
              w(ix1,ix2,ix3,iw_rho)    = rho0 * lfac0

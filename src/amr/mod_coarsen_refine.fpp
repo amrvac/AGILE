@@ -425,7 +425,6 @@ contains
     use mod_coarsen, only: coarsen_grid
     use mod_initialize_amr, only: initial_condition
     use mod_amr_solution_node, only: alloc_node
-    use mod_geometry, only: sync_positions_host
     use mod_comm_lib, only: mpistop
 
     integer, intent(in) :: igrid, ipe
@@ -443,8 +442,7 @@ contains
     ! New passive cell, coarsen from initial condition:
     if (.not. active) then
        if (ipe == mype) then
-          ! the initial condition reads this block's ps(igrid)%x on the host
-          call sync_positions_host(igrid)
+          ! initial_condition fetches this block's positions back itself
           call initial_condition(igrid)
           do ic3=1,2
              do ic2=1,2

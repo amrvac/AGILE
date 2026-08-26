@@ -115,15 +115,16 @@ contains
          ixCoGmax2,ixCoGmax3, ixCoGmin1,ixCoGmin2,ixCoGmin3, ixCoGmax1,&
          ixCoGmax2,ixCoGmax3)
     !$acc update device(bgeo, bgeoc)
-    ! All of it is device-resident, because the device is what produces it:
-    ! fill_geometry_device builds every member of geo_t there. That includes
-    ! the members no kernel reads (dx, dsC, surface, and in a Cartesian build
-    ! the metrics its kernels take from rnode instead) - they have to live
-    ! where they are written, and are pulled back only on demand.
-    !$acc enter data copyin(bgeo%x, bgeo%ds, bgeo%dvolume, bgeo%surfaceC, &
-    !$acc                   bgeo%dx, bgeo%dsC, bgeo%surface)
-    !$acc enter data copyin(bgeoc%x, bgeoc%ds, bgeoc%dvolume, bgeoc%surfaceC, &
-    !$acc                   bgeoc%dx, bgeoc%dsC, bgeoc%surface)
+    ! What exists is device-resident, because the device is what produces it:
+    ! fill_geometry_device builds every allocated member of geo_t there, dx
+    ! included even though no kernel reads it - it has to live where it is
+    ! written, and is pulled back only on demand.
+    !$acc enter data copyin(bgeo%x)
+    !$acc enter data copyin(bgeoc%x)
+#:if GEOM != 'Cartesian'
+    !$acc enter data copyin(bgeo%ds, bgeo%dvolume, bgeo%surfaceC, bgeo%dx)
+    !$acc enter data copyin(bgeoc%ds, bgeoc%dvolume, bgeoc%surfaceC, bgeoc%dx)
+#:endif
 
     do igrid = 1, max_blocks
        ps(igrid)%igrid  = igrid; ps(igrid)%istep  = 1
@@ -352,6 +353,22 @@ contains
 
     allocate( geo%x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3, 1:ndim,&
          1:max_blocks) )
+
+    ! Everything past the positions is left unallocated in a Cartesian build.
+    ! Nothing there reads it: the kernels that would (mod_finite_volume's flux
+    ! divergence, mod_dt's cell sizes) are fypp-specialized and take their
+    ! values from rnode instead, the AMR paths that would (prolong_2nd,
+    ! coarsen_grid) sit in .not.slab_uniform branches that cannot run when
+    ! GEOM is Cartesian, and get_volume_average has a slab branch.  The
+    ! components stay declared in geo_t so that all of it still compiles; the
+    ! matching state views are left unassociated by point_at_geometry, so a
+    ! host reader that slips through faults instead of reading nonsense.
+    !
+    ! It is worth this much care because these are block-sized arrays for all
+    ! max_blocks blocks a rank could ever own, allocated whether or not the
+    ! blocks exist: on a 12 GB card, max_blocks = 4096 with block_nx = 16 is
+    ! the difference between ~0.9 GB and ~4.1 GB of them.
+#:if GEOM != 'Cartesian'
     allocate( geo%ds(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
          ixGextmin3:ixGextmax3, 1:ndim, 1:max_blocks) )
     allocate( geo%dvolume(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
@@ -359,14 +376,11 @@ contains
     allocate( geo%surfaceC(ixGmin1-1:ixGmax1,ixGmin2-1:ixGmax2,&
          ixGmin3-1:ixGmax3, 1:ndim, 1:max_blocks) )
 
-    ! Host-only from here on: no device kernel reads these yet, so they are
-    ! deliberately left off the device (see the copyin in initialize_vars).
+    ! Read on the host alone (calc_x, the collapsed output, set_B0_grid), but
+    ! built on the device with the rest, so it is copied in too.
     allocate( geo%dx(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
          ixGextmin3:ixGextmax3, 1:ndim, 1:max_blocks) )
-    allocate( geo%dsC(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
-         ixGextmin3:ixGextmax3, 1:3, 1:max_blocks) )
-    allocate( geo%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1:ndim, 1:max_blocks) )
+#:endif
 
   end subroutine alloc_geometry
 

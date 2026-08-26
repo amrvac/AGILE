@@ -33,7 +33,8 @@ contains
        ! prolong igrid to new children
        call prolong_grid(child_igrid,child_ipe,igrid,ipe)
     else
-       ! Fill new created children with initial condition
+       ! Fill new created children with initial condition, which fetches each
+       ! child's positions back from the device itself.
        do ic3=1,2
        do ic2=1,2
        do ic1=1,2

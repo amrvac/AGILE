@@ -77,6 +77,7 @@ contains
     double precision                :: xc1, xc2, xc3, d2
     double precision                :: rc, zc, phic
     double precision                :: b(1:3)
+    double precision                :: x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
     ! xprobmin3/xprobmax3 is in radians by now: read_par_files converts it
@@ -107,7 +108,8 @@ contains
              xcart3 = z
              d2 = (xcart1-xc1)**2 + (xcart2-xc2)**2 + (xcart3-xc3)**2
 
-             call to_cylindrical_vector(x(ix1,ix2,ix3,1:ndim), b0, b)
+             x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
+             call to_cylindrical_vector(x_loc, b0, b)
 
              w(ix1,ix2,ix3,rho_) = rho0
              if (d2 > rblast**2) then

@@ -154,8 +154,8 @@ spacing to the physical cell sizes `bgeo%ds`.
 
 A block's geometry lives in `bgeo` (and `bgeoc` for the one-level-coarser
 representatives), a `geo_t` declared in `src/mod_physicaldata.fpp` that holds
-`x`, `ds`, `dvolume`, `surfaceC`, `dx`, `dsC` and `surface` for *all* blocks
-with the grid index last, exactly as `block_grid_t` holds the solution in
+`x`, `ds`, `dvolume`, `surfaceC` and `dx` for *all* blocks with the grid index
+last, exactly as `block_grid_t` holds the solution in
 `bg%w`. `initialize_vars` allocates them once for `1:max_blocks`, so GPU
 kernels index them directly (`bgeo%x(ix1,ix2,ix3,1:ndim,igrid)`) rather than
 chasing a per-block pointer, and `alloc_node` only has to push the one block's
@@ -177,11 +177,36 @@ most regrids. The per-cell expressions are fypp-specialized on `GEOM`, so a
 build only carries the branch it needs.
 
 Because the device is the producer, *all* of `geo_t` is device-resident in
-every build, including members no kernel reads (`dx`, `dsC`, `surface`, and in
-a Cartesian build the metrics whose values its kernels take from `rnode`
-instead). They have to live where they are written. Only the positions are
-returned to the host by `alloc_node` itself, since `ps(igrid)%x` is read
-immediately for the initial condition, the user hooks and the output.
+every build, including members no kernel reads (`dx`, and in a Cartesian build
+the metrics whose values its kernels take from `rnode` instead). They have to
+live where they are written. Only the positions are returned to the host by
+`alloc_node` itself, since `ps(igrid)%x` is read immediately for the initial
+condition, the user hooks and the output.
+
+That residency is not free: every member is a block-sized array for all
+`max_blocks` blocks a rank could ever own, allocated up front whether or not
+the blocks exist. On a 12 GB card, `max_blocks = 4096` with `block_nx = 16`
+puts `bgeo` plus `bgeoc` at over 4 GB before a single block is allocated, and
+`initialize_vars` fails with `CUDA_ERROR_OUT_OF_MEMORY` at its `enter data`.
+That is a limit of the card, not a bug — the same case runs at
+`max_blocks = 2048` — but it is why a member that nothing reads does not stay
+in `geo_t` on the argument that it is cheap.
+
+Two members were dropped for exactly that reason, and neither the fine nor the
+coarse representative carries them any more:
+
+- `dsC`, the cell-face lengths. Its only reader was
+  `b_from_vector_potentialA` in `src/mod_constrained_transport.fpp`, which
+  needs `stagger_grid` (unsupported here) and in fact has no callers at all.
+- `surface`, the cell-centre face areas. Its only reader was the
+  `Stokesbased` branch of `curlvector` in `src/mod_geometry.fpp`, reachable
+  only via `typecurl = 'Stokesbased'` in `&methodlist`.
+
+The matching `state` components `s%dsC` and `s%surface` are still declared but
+are never associated, so that the two routines above still compile. Both now
+call `mpistop` before they would dereference them, naming what was removed —
+re-enabling either means giving it back a source for its metric, not just
+deleting the guard.
 
 Two consequences of building the metrics analytically:
 
@@ -202,12 +227,13 @@ Two consequences of building the metrics analytically:
 Nothing is copied back by `alloc_node`. That routine runs on every regrid,
 mostly for blocks no host routine will look at, so the fetch is placed at the
 sites that actually read the geometry instead. Two routines in
-`src/mod_geometry.fpp` do it, both taking an optional `igrid` (one block) and
-defaulting to every grid in `igrids`:
+`src/mod_geometry.fpp` do it:
 
 - `sync_positions_host` — just the cell-centre positions, which are what host
-  code asks for most often.
+  code asks for most often. Takes an optional `igrid` for one block, and
+  defaults to every grid in `igrids`.
 - `sync_geometry_host` — the whole of `geo_t`, positions and metrics alike.
+  Takes no arguments: it always covers every grid in `igrids`.
 
 Neither is guarded by a "host is already up to date" flag, deliberately: the
 geometry is per block, so any single flag would have to be cleared after
@@ -228,8 +254,9 @@ themselves. `fix_conserve` is the one non-output metric reader, and calls it
 itself.
 
 `sync_positions_host` is called wherever host code reads `ps(igrid)%x`:
-`initial_condition` (per block, in `initlevelone`'s loop and in
-`coarsen_grid_siblings`), `modify_IC`, `getintbc` (when `usr_internal_bc` is
+`initial_condition` (per block, in `initlevelone`'s loop, in
+`coarsen_grid_siblings`, and in `refine_grids` for each newly created child),
+`modify_IC`, `getintbc` (when `usr_internal_bc` is
 set), `process`/`process_advanced` (when the `usr_process_*_grid` hooks are
 set), `usr_modify_output` in `src/agile.fpp`, `prolong_grid`/`prolong_2nd`
 (when `prolongprimitive` or `fix_small_values` is on), and `alloc_node` itself

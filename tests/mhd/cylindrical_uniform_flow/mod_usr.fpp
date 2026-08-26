@@ -70,13 +70,15 @@ contains
        ixGmin3:ixGmax3,1:nw)
     ! .. local ..
     double precision                :: v(1:3), b(1:3)
+    double precision                :: x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
     do ix3 = ixmin3, ixmax3
        do ix2 = ixmin2, ixmax2
           do ix1 = ixmin1, ixmax1
-             call to_cylindrical_vector(x(ix1,ix2,ix3,1:ndim), v0, v)
-             call to_cylindrical_vector(x(ix1,ix2,ix3,1:ndim), b0, b)
+             x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
+             call to_cylindrical_vector(x_loc, v0, v)
+             call to_cylindrical_vector(x_loc, b0, b)
              w(ix1,ix2,ix3,rho_)   = rho0
              w(ix1,ix2,ix3,p_)     = p0
              w(ix1,ix2,ix3,mom(1)) = v(1)
@@ -113,15 +115,17 @@ contains
        ixImin3:ixImax3,1:nw)
     ! .. local ..
     double precision                :: v(1:3), b(1:3)
+    double precision                :: x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
-    !$acc loop collapse(3) vector private(v, b)
+    !$acc loop collapse(3) vector private(v, b, x_loc)
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1
 
-             call to_cylindrical_vector(x(ix1,ix2,ix3,1:ndim), v0, v)
-             call to_cylindrical_vector(x(ix1,ix2,ix3,1:ndim), b0, b)
+             x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
+             call to_cylindrical_vector(x_loc, v0, v)
+             call to_cylindrical_vector(x_loc, b0, b)
 
              w(ix1,ix2,ix3,iw_rho)    = rho0
              w(ix1,ix2,ix3,iw_mom(1)) = rho0 * v(1)

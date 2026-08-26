@@ -21,7 +21,6 @@ contains
     use mod_functions_connectivity, only: build_connectivity, getigrids 
     use mod_functions_forest, only: init_forest_root
     use mod_amr_solution_node, only: alloc_node
-    use mod_geometry, only: sync_positions_host
  
     integer :: iigrid, igrid
     integer :: itimelevel
@@ -39,9 +38,7 @@ contains
 
        call alloc_node(igrid)
 
-       ! alloc_node builds the geometry on the device and leaves it there;
-       ! the initial condition reads this block's ps(igrid)%x on the host
-       call sync_positions_host(igrid)
+       ! initial_condition fetches this block's positions back itself
        call initial_condition(igrid)
 
     end do
@@ -56,9 +53,18 @@ contains
     ! Need only to set the mesh values (can leave ghost cells untouched)
     use mod_usr_methods, only: usr_init_one_grid
     use mod_global_parameters
+    use mod_geometry, only: sync_positions_host
     use mod_comm_lib, only: mpistop
 
     integer, intent(in) :: igrid
+
+    ! usr_init_one_grid below reads ps(igrid)%x on the host, while alloc_node
+    ! built this block's geometry on the device and left it there.  The fetch
+    ! belongs here rather than at each call site: every caller needs it, and a
+    ! call site can be forgotten - refine_grids once was, so blocks created by
+    ! refinement were initialised at whatever coordinates the previous occupant
+    ! of that igrid slot had left in the host array.
+    call sync_positions_host(igrid)
 
     ! in case gradient routine used in initial condition, ensure geometry known
     block=>ps(igrid)

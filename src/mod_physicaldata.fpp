@@ -18,10 +18,10 @@ module mod_physicaldata
   !> components (ps(igrid)%x, %dx, ...) are bounds-remapped views into these
   !> arrays, so host code keeps working unchanged.
   !>
-  !> Only the first four members are copied to the device, and only in a
-  !> curvilinear build (see alloc_geometry); the rest are read on the host
-  !> alone, and holding them here as well is what keeps all of a block's
-  !> geometry in one place.
+  !> All of it is device-resident, because the device is what produces it:
+  !> fill_geometry_device builds every member there.  That includes dx, which
+  !> no kernel reads - it has to live where it is written, and is pulled back
+  !> only on demand (see sync_geometry_host).
   type geo_t
      !> Cell-center positions
      double precision, dimension(:,:,:,:,:), allocatable  :: x
@@ -31,12 +31,9 @@ module mod_physicaldata
      double precision, dimension(:,:,:,:), allocatable    :: dvolume
      !> Areas of cell-face surfaces
      double precision, dimension(:,:,:,:,:), allocatable  :: surfaceC
-     !> Cell sizes in coordinate units
+     !> Cell sizes in coordinate units.  Read on the host alone - by calc_x,
+     !> by the collapsed output and by set_B0_grid - never by a kernel.
      double precision, dimension(:,:,:,:,:), allocatable  :: dx
-     !> Cell sizes at cell face in length unit
-     double precision, dimension(:,:,:,:,:), allocatable  :: dsC
-     !> Areas of cell-center surfaces
-     double precision, dimension(:,:,:,:,:), allocatable  :: surface
   end type geo_t
 
   
@@ -77,11 +74,16 @@ module mod_physicaldata
      double precision, dimension(:,:,:), pointer :: dt=>Null()
      !> Cell sizes at cell center in length unit
      double precision, dimension(:,:,:,:), pointer :: ds=>Null()
-     !> Cell sizes at cell face in length unit
+     !> Cell sizes at cell face in length unit.  Never associated: the
+     !> matching geo_t member was dropped because its only reader,
+     !> b_from_vector_potentialA, needs stagger_grid, which this fork does
+     !> not support.  That routine mpistops before touching this.
      double precision, dimension(:,:,:,:), pointer :: dsC=>Null()
      !> Volumes of a cell
      double precision, dimension(:,:,:), pointer :: dvolume=>Null()
-     !> Areas of cell-center surfaces
+     !> Areas of cell-center surfaces.  Never associated: the matching geo_t
+     !> member was dropped because its only reader is curlvector's
+     !> Stokesbased branch, which mpistops before touching this.
      double precision, dimension(:,:,:,:), pointer :: surface=>Null()
      !> Areas of cell-face surfaces
      double precision, dimension(:,:,:,:), pointer :: surfaceC=>Null()

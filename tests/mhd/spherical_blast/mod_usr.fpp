@@ -78,6 +78,7 @@ contains
     double precision                :: xc1, xc2, xc3, d2
     double precision                :: rc, thetac, phic
     double precision                :: b(1:3)
+    double precision                :: x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
     ! xprobmin2/xprobmax2 and xprobmin3/xprobmax3 are in radians by now:
@@ -108,7 +109,8 @@ contains
              xcart3 = r * cos(theta)
              d2 = (xcart1-xc1)**2 + (xcart2-xc2)**2 + (xcart3-xc3)**2
 
-             call to_spherical_vector(x(ix1,ix2,ix3,1:ndim), b0, b)
+             x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
+             call to_spherical_vector(x_loc, b0, b)
 
              w(ix1,ix2,ix3,rho_) = rho0
              if (d2 > rblast**2) then

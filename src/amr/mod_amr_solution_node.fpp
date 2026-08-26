@@ -330,43 +330,57 @@ contains
     ixCoGmax2=(ixGhi2-2*nghostcells)/2+2*nghostcells
     ixCoGmax3=(ixGhi3-2*nghostcells)/2+2*nghostcells
 
-    ! ---- positions, and the face and cell areas built from them ----
+    ! q1 and q2 are the centres of the first cell in the radial and polar
+    ! directions.  They do not depend on the loop indices, so they are scalars
+    ! computed once here and read by the kernel, rather than recomputed inside
+    ! it.  (ixGlo is always inside the mesh, so only the lower-corner form of
+    ! the two-sided rule below can apply.)
+    q1 = xmin1 + (dble(ixGlo1-nghostcells)-half)*d1
+    q2 = xmin2 + (dble(ixGlo2-nghostcells)-half)*d2
+
+    ! ---- positions, and (curvilinear only) the face areas built from them ----
     ! The three "if (ix==ixGlo)" branches fill the lower face of the first
     ! cell in each direction, which the flux update reaches as surfaceC(ix-1,.)
-    !$acc parallel loop collapse(3) default(present) private(p1,p2,p3,q1,q2)
+    ! A Cartesian build has no face areas to fill: its flux update divides by
+    ! the uniform rnode spacing instead, so surfaceC is never allocated.
+    ! The cell centre is measured from the block's lower corner inside the
+    ! mesh, and from its upper corner in the outer ghost layer, so that the
+    ! overlapping ghost cells of two neighbouring blocks come out identical to
+    ! the last bit.  Written out here rather than called as a helper: as an
+    ! !$acc routine seq inside this loop, nvfortran's -Minline hoisted the call
+    ! and gave every cell of the block the position of the first one.
+    !$acc parallel loop collapse(3) default(present) private(p1,p2,p3)
     do ix3=ixGlo3,ixGhi3
        do ix2=ixGlo2,ixGhi2
           do ix1=ixGlo1,ixGhi1
-             p1 = cell_centre(ix1, iup1, xmin1, xmax1, ixMhi1, d1, nghostcells)
-             p2 = cell_centre(ix2, iup2, xmin2, xmax2, ixMhi2, d2, nghostcells)
-             p3 = cell_centre(ix3, iup3, xmin3, xmax3, ixMhi3, d3, nghostcells)
+             if (ix1 <= iup1) then
+                p1 = xmin1 + (dble(ix1-nghostcells)-half)*d1
+             else
+                p1 = xmax1 + (dble(ix1-ixMhi1)-half)*d1
+             end if
+             if (ix2 <= iup2) then
+                p2 = xmin2 + (dble(ix2-nghostcells)-half)*d2
+             else
+                p2 = xmax2 + (dble(ix2-ixMhi2)-half)*d2
+             end if
+             if (ix3 <= iup3) then
+                p3 = xmin3 + (dble(ix3-nghostcells)-half)*d3
+             else
+                p3 = xmax3 + (dble(ix3-ixMhi3)-half)*d3
+             end if
              bgeo%x(ix1,ix2,ix3,1,igrid) = p1
              bgeo%x(ix1,ix2,ix3,2,igrid) = p2
              bgeo%x(ix1,ix2,ix3,3,igrid) = p3
 
-#:if GEOM == 'Cartesian'
-             bgeo%surfaceC(ix1,ix2,ix3,1,igrid) = d2*d3
-             bgeo%surfaceC(ix1,ix2,ix3,2,igrid) = d1*d3
-             bgeo%surfaceC(ix1,ix2,ix3,3,igrid) = d1*d2
-             bgeo%surface(ix1,ix2,ix3,1,igrid)  = d2*d3
-             bgeo%surface(ix1,ix2,ix3,2,igrid)  = d1*d3
-             bgeo%surface(ix1,ix2,ix3,3,igrid)  = d1*d2
-             if (ix1==ixGlo1) bgeo%surfaceC(ixGlo1-1,ix2,ix3,1,igrid) = d2*d3
-             if (ix2==ixGlo2) bgeo%surfaceC(ix1,ixGlo2-1,ix3,2,igrid) = d1*d3
-             if (ix3==ixGlo3) bgeo%surfaceC(ix1,ix2,ixGlo3-1,3,igrid) = d1*d2
-#:elif GEOM == 'cylindrical'
+#:if GEOM != 'Cartesian'
+#:if GEOM == 'cylindrical'
              ! 3D cylindrical is (r, z, phi): set_coordinate_system fixes
              ! r_=1, z_=2, phi_=3, so the z and phi faces are named directly
              bgeo%surfaceC(ix1,ix2,ix3,1,igrid) = dabs(p1+half*d1)*d2*d3
              bgeo%surfaceC(ix1,ix2,ix3,2,igrid) = p1*d1*d3
              bgeo%surfaceC(ix1,ix2,ix3,3,igrid) = d1*d2
-             bgeo%surface(ix1,ix2,ix3,1,igrid)  = dabs(p1)*d2*d3
-             bgeo%surface(ix1,ix2,ix3,2,igrid)  = p1*d1*d3
-             bgeo%surface(ix1,ix2,ix3,3,igrid)  = d1*d2
-             if (ix1==ixGlo1) then
-                q1 = cell_centre(ixGlo1, iup1, xmin1, xmax1, ixMhi1, d1, nghostcells)
-                bgeo%surfaceC(ixGlo1-1,ix2,ix3,1,igrid) = dabs(q1-half*d1)*d2*d3
-             end if
+             if (ix1==ixGlo1) bgeo%surfaceC(ixGlo1-1,ix2,ix3,1,igrid) = &
+                  dabs(q1-half*d1)*d2*d3
              ! the z and phi face areas do not depend on the index being
              ! stepped back, so the extra plane repeats the same expression
              if (ix2==ixGlo2) bgeo%surfaceC(ix1,ixGlo2-1,ix3,2,igrid) = p1*d1*d3
@@ -376,26 +390,22 @@ contains
                   *two*dsin(p2)*dsin(half*d2)*d3
              bgeo%surfaceC(ix1,ix2,ix3,2,igrid) = p1*d1*dsin(p2+half*d2)*d3
              bgeo%surfaceC(ix1,ix2,ix3,3,igrid) = p1*d1*d2
-             bgeo%surface(ix1,ix2,ix3,1,igrid)  = p1**2 &
-                  *two*dsin(p2)*dsin(half*d2)*d3
-             bgeo%surface(ix1,ix2,ix3,2,igrid)  = p1*d1*dsin(p2)*d3
-             bgeo%surface(ix1,ix2,ix3,3,igrid)  = p1*d1*d2
-             if (ix1==ixGlo1) then
-                q1 = cell_centre(ixGlo1, iup1, xmin1, xmax1, ixMhi1, d1, nghostcells)
-                bgeo%surfaceC(ixGlo1-1,ix2,ix3,1,igrid) = (q1-half*d1)**2 &
-                     *two*dsin(p2)*dsin(half*d2)*d3
-             end if
-             if (ix2==ixGlo2) then
-                q2 = cell_centre(ixGlo2, iup2, xmin2, xmax2, ixMhi2, d2, nghostcells)
-                bgeo%surfaceC(ix1,ixGlo2-1,ix3,2,igrid) = p1*d1*dsin(q2-half*d2)*d3
-             end if
+             if (ix1==ixGlo1) bgeo%surfaceC(ixGlo1-1,ix2,ix3,1,igrid) = &
+                  (q1-half*d1)**2*two*dsin(p2)*dsin(half*d2)*d3
+             if (ix2==ixGlo2) bgeo%surfaceC(ix1,ixGlo2-1,ix3,2,igrid) = &
+                  p1*d1*dsin(q2-half*d2)*d3
              if (ix3==ixGlo3) bgeo%surfaceC(ix1,ix2,ixGlo3-1,3,igrid) = p1*d1*d2
+#:endif
 #:endif
           end do
        end do
     end do
 
+#:if GEOM != 'Cartesian'
     ! ---- volumes and cell sizes, over the extended range ----
+    ! Curvilinear only: in a Cartesian build every one of these is the uniform
+    ! rnode spacing, which its kernels read from rnode directly, so none of
+    ! dx, dvolume or ds is allocated there.
     !$acc parallel loop collapse(3) default(present) private(e1,e2)
     do ix3=ixGextmin3,ixGextmax3
        do ix2=ixGextmin2,ixGextmax2
@@ -407,40 +417,28 @@ contains
              bgeo%dx(ix1,ix2,ix3,2,igrid) = d2
              bgeo%dx(ix1,ix2,ix3,3,igrid) = d3
 
-#:if GEOM == 'Cartesian'
-             bgeo%dvolume(ix1,ix2,ix3,igrid) = d1*d2*d3
-             bgeo%ds(ix1,ix2,ix3,1,igrid)  = d1
-             bgeo%ds(ix1,ix2,ix3,2,igrid)  = d2
-             bgeo%ds(ix1,ix2,ix3,3,igrid)  = d3
-             bgeo%dsC(ix1,ix2,ix3,1,igrid) = d1
-             bgeo%dsC(ix1,ix2,ix3,2,igrid) = d2
-             bgeo%dsC(ix1,ix2,ix3,3,igrid) = d3
-#:elif GEOM == 'cylindrical'
+#:if GEOM == 'cylindrical'
              bgeo%dvolume(ix1,ix2,ix3,igrid) = dabs(e1)*d1*d2*d3
              bgeo%ds(ix1,ix2,ix3,1,igrid)  = d1
              bgeo%ds(ix1,ix2,ix3,2,igrid)  = d2
              bgeo%ds(ix1,ix2,ix3,3,igrid)  = e1*d3
-             bgeo%dsC(ix1,ix2,ix3,1,igrid) = d1
-             bgeo%dsC(ix1,ix2,ix3,2,igrid) = d2
-             bgeo%dsC(ix1,ix2,ix3,3,igrid) = (e1+half*d1)*d3
 #:else
              bgeo%dvolume(ix1,ix2,ix3,igrid) = (e1**2+d1**2/12.0d0)*d1 &
                   *two*dabs(dsin(e2))*dsin(half*d2)*d3
              bgeo%ds(ix1,ix2,ix3,1,igrid)  = d1
              bgeo%ds(ix1,ix2,ix3,2,igrid)  = e1*d2
              bgeo%ds(ix1,ix2,ix3,3,igrid)  = e1*dsin(e2)*d3
-             bgeo%dsC(ix1,ix2,ix3,1,igrid) = d1
-             bgeo%dsC(ix1,ix2,ix3,2,igrid) = (e1+half*d1)*d2
-             bgeo%dsC(ix1,ix2,ix3,3,igrid) = (e1+half*d1)*dsin(e2+half*d2)*d3
 #:endif
           end do
        end do
     end do
+#:endif
 
     ! ---- the one-level-coarser representative ----
     ! Its positions are measured from the lower corner throughout - there is no
     ! neighbouring coarse block whose ghost cells have to match - and its
     ! spacing is doubled, so one loop covers positions, volumes and areas.
+    ! As above, only the positions exist in a Cartesian build.
     !$acc parallel loop collapse(3) default(present) private(p1,p2,q1,q2)
     do ix3=1,ixCoGmax3
        do ix2=1,ixCoGmax2
@@ -452,37 +450,23 @@ contains
              bgeoc%x(ix1,ix2,ix3,3,igrid) = &
                   xmin3 + (dble(ix3-nghostcells)-half)*c3
 
+#:if GEOM != 'Cartesian'
              bgeoc%dx(ix1,ix2,ix3,1,igrid) = c1
              bgeoc%dx(ix1,ix2,ix3,2,igrid) = c2
              bgeoc%dx(ix1,ix2,ix3,3,igrid) = c3
-             ! nothing reads the coarse ds/dsC today, but leaving them
+             ! nothing reads the coarse ds today, but leaving it
              ! uninitialised would be a trap for whoever first does
              bgeoc%ds(ix1,ix2,ix3,1,igrid)  = c1
              bgeoc%ds(ix1,ix2,ix3,2,igrid)  = c2
              bgeoc%ds(ix1,ix2,ix3,3,igrid)  = c3
-             bgeoc%dsC(ix1,ix2,ix3,1,igrid) = c1
-             bgeoc%dsC(ix1,ix2,ix3,2,igrid) = c2
-             bgeoc%dsC(ix1,ix2,ix3,3,igrid) = c3
+#:endif
 
-#:if GEOM == 'Cartesian'
-             bgeoc%dvolume(ix1,ix2,ix3,igrid)    = c1*c2*c3
-             bgeoc%surfaceC(ix1,ix2,ix3,1,igrid) = c2*c3
-             bgeoc%surfaceC(ix1,ix2,ix3,2,igrid) = c1*c3
-             bgeoc%surfaceC(ix1,ix2,ix3,3,igrid) = c1*c2
-             bgeoc%surface(ix1,ix2,ix3,1,igrid)  = c2*c3
-             bgeoc%surface(ix1,ix2,ix3,2,igrid)  = c1*c3
-             bgeoc%surface(ix1,ix2,ix3,3,igrid)  = c1*c2
-             if (ix1==1) bgeoc%surfaceC(0,ix2,ix3,1,igrid) = c2*c3
-             if (ix2==1) bgeoc%surfaceC(ix1,0,ix3,2,igrid) = c1*c3
-             if (ix3==1) bgeoc%surfaceC(ix1,ix2,0,3,igrid) = c1*c2
-#:elif GEOM == 'cylindrical'
+#:if GEOM != 'Cartesian'
+#:if GEOM == 'cylindrical'
              bgeoc%dvolume(ix1,ix2,ix3,igrid)    = dabs(p1)*c1*c2*c3
              bgeoc%surfaceC(ix1,ix2,ix3,1,igrid) = dabs(p1+half*c1)*c2*c3
              bgeoc%surfaceC(ix1,ix2,ix3,2,igrid) = p1*c1*c3
              bgeoc%surfaceC(ix1,ix2,ix3,3,igrid) = c1*c2
-             bgeoc%surface(ix1,ix2,ix3,1,igrid)  = dabs(p1)*c2*c3
-             bgeoc%surface(ix1,ix2,ix3,2,igrid)  = p1*c1*c3
-             bgeoc%surface(ix1,ix2,ix3,3,igrid)  = c1*c2
              if (ix1==1) then
                 q1 = xmin1 + (dble(1-nghostcells)-half)*c1
                 bgeoc%surfaceC(0,ix2,ix3,1,igrid) = dabs(q1-half*c1)*c2*c3
@@ -496,10 +480,6 @@ contains
                   *two*dsin(p2)*dsin(half*c2)*c3
              bgeoc%surfaceC(ix1,ix2,ix3,2,igrid) = p1*c1*dsin(p2+half*c2)*c3
              bgeoc%surfaceC(ix1,ix2,ix3,3,igrid) = p1*c1*c2
-             bgeoc%surface(ix1,ix2,ix3,1,igrid)  = p1**2 &
-                  *two*dsin(p2)*dsin(half*c2)*c3
-             bgeoc%surface(ix1,ix2,ix3,2,igrid)  = p1*c1*dsin(p2)*c3
-             bgeoc%surface(ix1,ix2,ix3,3,igrid)  = p1*c1*c2
              if (ix1==1) then
                 q1 = xmin1 + (dble(1-nghostcells)-half)*c1
                 bgeoc%surfaceC(0,ix2,ix3,1,igrid) = (q1-half*c1)**2 &
@@ -511,6 +491,7 @@ contains
              end if
              if (ix3==1) bgeoc%surfaceC(ix1,ix2,0,3,igrid) = p1*c1*c2
 #:endif
+#:endif
           end do
        end do
     end do
@@ -521,24 +502,6 @@ contains
     ! that needs ps(igrid)%x, sync_geometry_host before output.
 
   end subroutine fill_geometry_device
-
-  !> Centre of cell ix along one direction of a uniform block: measured from
-  !> the block's lower corner inside the mesh, and from its upper corner in
-  !> the outer ghost layer, so that the overlapping ghost cells of two
-  !> neighbouring blocks come out identical to the last bit.
-  pure function cell_centre(ix, iup, xmin, xmax, ixMhi, dx, nghost) result(xc)
-    !$acc routine seq
-    integer, intent(in)          :: ix, iup, ixMhi, nghost
-    double precision, intent(in) :: xmin, xmax, dx
-    double precision             :: xc
-
-    if (ix <= iup) then
-       xc = xmin + (dble(ix-nghost)-0.5d0)*dx
-    else
-       xc = xmax + (dble(ix-ixMhi)-0.5d0)*dx
-    end if
-
-  end function cell_centre
 
   !> allocate memory to physical state of igrid node
   subroutine alloc_state(igrid, s, ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&
@@ -610,10 +573,8 @@ contains
       s%x=>ps(igrid)%x
       s%dx=>ps(igrid)%dx
       s%ds=>ps(igrid)%ds
-      s%dsC=>ps(igrid)%dsC
       s%dvolume=>ps(igrid)%dvolume
       s%surfaceC=>ps(igrid)%surfaceC
-      s%surface=>ps(igrid)%surface
       s%is_physical_boundary=>ps(igrid)%is_physical_boundary
       if(B0field) then
         s%B0=>ps(igrid)%B0
@@ -645,6 +606,12 @@ contains
 
     s%x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:ndim) => &
        geo%x(:,:,:,:,igrid)
+
+    ! A Cartesian build allocates nothing but the positions, so the metric
+    ! views are left unassociated rather than remapped onto an unallocated
+    ! array.  That is deliberate: any host reader that turns out to need one
+    ! after all faults here instead of quietly reading nonsense.
+#:if GEOM != 'Cartesian'
     s%ds(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,ixGextmin3:ixGextmax3,&
        1:ndim) => geo%ds(:,:,:,:,igrid)
     s%dvolume(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
@@ -653,10 +620,7 @@ contains
        => geo%surfaceC(:,:,:,:,igrid)
     s%dx(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,ixGextmin3:ixGextmax3,&
        1:ndim) => geo%dx(:,:,:,:,igrid)
-    s%dsC(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,ixGextmin3:ixGextmax3,&
-       1:3) => geo%dsC(:,:,:,:,igrid)
-    s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:ndim) => &
-       geo%surface(:,:,:,:,igrid)
+#:endif
 
   end subroutine point_at_geometry
 
@@ -714,7 +678,7 @@ contains
     if(dealloc_x) then
       if(nw_extra>0) deallocate(s%wextra)
       ! the geometry in bgeo outlives the block, only drop the views on it
-      nullify(s%x,s%ds,s%dvolume,s%surfaceC,s%dx,s%dsC,s%surface)
+      nullify(s%x,s%ds,s%dvolume,s%surfaceC,s%dx)
       deallocate(s%is_physical_boundary)
       if(B0field) then
         deallocate(s%B0)
@@ -724,7 +688,7 @@ contains
         deallocate(s%equi_vars)
       end if
     else
-      nullify(s%x,s%dx,s%ds,s%dsC,s%dvolume,s%surfaceC,s%surface)
+      nullify(s%x,s%dx,s%ds,s%dvolume,s%surfaceC)
       nullify(s%is_physical_boundary)
       if(B0field) nullify(s%B0,s%J0)
       if(number_equi_vars > 0) then
@@ -747,7 +711,7 @@ contains
       deallocate(s%B0)
     end if
     ! the geometry in bgeoc outlives the block, only drop the views on it
-    nullify(s%x,s%ds,s%dvolume,s%surfaceC,s%dx,s%dsC,s%surface)
+    nullify(s%x,s%ds,s%dvolume,s%surfaceC,s%dx)
     deallocate(s%is_physical_boundary)
   end subroutine dealloc_state_coarse
   

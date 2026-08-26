@@ -280,18 +280,28 @@ contains
   subroutine sync_geometry_host()
     use mod_global_parameters
 
-    integer :: iigrid, igrid
+    integer :: iigrid
 
+    ! Index igrids(iigrid) directly rather than through a local igrid: a
+    ! variable whose only uses are inside !$acc directives looks dead to the
+    ! Fortran front end, the assignment to it is dropped, and the update then
+    ! silently targets the wrong block.  sync_positions_host below is written
+    ! the same way for the same reason.
     do iigrid = 1, igridstail
-       igrid = igrids(iigrid)
-       !$acc update self(bgeo%x(:,:,:,:,igrid), bgeo%dvolume(:,:,:,igrid), &
-       !$acc             bgeo%surfaceC(:,:,:,:,igrid), bgeo%ds(:,:,:,:,igrid), &
-       !$acc             bgeo%dsC(:,:,:,:,igrid), bgeo%dx(:,:,:,:,igrid), &
-       !$acc             bgeo%surface(:,:,:,:,igrid))
-       !$acc update self(bgeoc%x(:,:,:,:,igrid), bgeoc%dvolume(:,:,:,igrid), &
-       !$acc             bgeoc%surfaceC(:,:,:,:,igrid), bgeoc%ds(:,:,:,:,igrid), &
-       !$acc             bgeoc%dsC(:,:,:,:,igrid), bgeoc%dx(:,:,:,:,igrid), &
-       !$acc             bgeoc%surface(:,:,:,:,igrid))
+       !$acc update self(bgeo%x(:,:,:,:,igrids(iigrid)))
+       !$acc update self(bgeoc%x(:,:,:,:,igrids(iigrid)))
+#:if GEOM != 'Cartesian'
+       ! A Cartesian build has no metrics to fetch - they are not allocated -
+       ! so there this reduces to exactly sync_positions_host.
+       !$acc update self(bgeo%dvolume(:,:,:,igrids(iigrid)), &
+       !$acc             bgeo%surfaceC(:,:,:,:,igrids(iigrid)), &
+       !$acc             bgeo%ds(:,:,:,:,igrids(iigrid)), &
+       !$acc             bgeo%dx(:,:,:,:,igrids(iigrid)))
+       !$acc update self(bgeoc%dvolume(:,:,:,igrids(iigrid)), &
+       !$acc             bgeoc%surfaceC(:,:,:,:,igrids(iigrid)), &
+       !$acc             bgeoc%ds(:,:,:,:,igrids(iigrid)), &
+       !$acc             bgeoc%dx(:,:,:,:,igrids(iigrid)))
+#:endif
     end do
 
   end subroutine sync_geometry_host
@@ -332,6 +342,15 @@ contains
     ! Calculate curl within ixL: CurlV_i=eps_ijk*d_j V_k
     ! Curl can have components (idirmin:3)
     ! Determine exact value of idirmin while doing the loop.
+
+    ! The Stokesbased discretisation divides by block%surface, the cell-centre
+    ! face areas.  Those are no longer built: no other routine reads them, and
+    ! carrying a block-sized array per direction for 1:max_blocks purely for
+    ! this branch is not worth the memory.  Fail here rather than divide by an
+    ! unassociated pointer.
+    if (type_curl == Stokesbased) call mpistop(&
+       "curlvector: typecurl='Stokesbased' needs block%surface, which is no &
+       &longer built - see geo_t in mod_physicaldata")
 
     use_4th_order = .false.
     if (present(fourthorder)) use_4th_order = fourthorder
