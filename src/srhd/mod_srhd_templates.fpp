@@ -545,7 +545,24 @@ end function get_Rfactor
 #:enddef
 
 #:def estimate_speeds_minmax()
-!> used in HLL flux estimation.
+!> Davis (1988) min/max wave speed estimates for HLL, in their relativistic
+!> form: wL = min(lambda^-), wR = max(lambda^+) over the left and right states.
+!>
+!> The relativistic characteristic speeds in direction n are
+!>
+!>   lambda^+- = ( v_n (1 - c_s^2)
+!>                 +- sqrt( c_s^2 (1 - v^2) (1 - v^2 c_s^2 - v_n^2 (1 - c_s^2)) ) )
+!>               / (1 - v^2 c_s^2)
+!>
+!> (Anile 1989; Mignone & Bodo 2005), which reduce to v_n +- c_s in the
+!> Newtonian limit. Unlike the HD and MHD versions of this routine, the
+!> velocity is already contained in lambda^+-, so the min/max is taken over the
+!> characteristic speeds themselves rather than over v_n +- c.
+!>
+!> This is the same algebra get_cmax uses; get_cmax collapses the two roots
+!> into max(|lambda^+|, |lambda^-|) for the time-step limit, whereas HLL needs
+!> them separately and signed. wprim(iw_mom(:)) holds the spatial four-velocity
+!> u^i = lfac*v^i, so v^i is recovered as u^i/lfac.
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   !$acc routine seq
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
@@ -553,7 +570,58 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   integer, intent(in)   :: flux_dim
   real(dp), intent(out) :: wL, wR
 
-  ! TODO
+  real(dp) :: rho, rhoh, pth, E, csound2
+  real(dp) :: v2, vidim, root, denom
+  real(dp) :: cminL, cmaxL, cminR, cmaxR
+
+  ! Left state
+  rho  = uL(iw_rho)
+  rhoh = uL(xi_) / uL(lfac_)**2
+  pth  = uL(iw_e)
+  if (srhd_eos) then
+     E = (rhoh + dsqrt(rhoh**2 + (srhd_gamma**2 - 1.0_dp)*rho**2)) &
+          /(srhd_gamma + 1.0_dp)
+     csound2 = (pth*((srhd_gamma + 1.0_dp) + gamma_1*(rho/E)**2))/(2.0_dp*rhoh)
+  else
+     csound2 = srhd_gamma*pth/rhoh
+  end if
+
+  v2    = 1.0_dp - 1.0_dp/uL(lfac_)**2
+  vidim = uL(iw_mom(flux_dim))/uL(lfac_)
+  denom = 1.0_dp - v2*csound2
+  ! the radicand is positive analytically; clip the roundoff-level negatives
+  ! that would otherwise produce a NaN wave speed
+  root  = dsqrt(max(csound2*(1.0_dp - v2) &
+       *(1.0_dp - v2*csound2 - vidim**2*(1.0_dp - csound2)), 0.0_dp))
+  cmaxL = (vidim*(1.0_dp - csound2) + root)/denom
+  cminL = (vidim*(1.0_dp - csound2) - root)/denom
+
+  ! Right state
+  rho  = uR(iw_rho)
+  rhoh = uR(xi_) / uR(lfac_)**2
+  pth  = uR(iw_e)
+  if (srhd_eos) then
+     E = (rhoh + dsqrt(rhoh**2 + (srhd_gamma**2 - 1.0_dp)*rho**2)) &
+          /(srhd_gamma + 1.0_dp)
+     csound2 = (pth*((srhd_gamma + 1.0_dp) + gamma_1*(rho/E)**2))/(2.0_dp*rhoh)
+  else
+     csound2 = srhd_gamma*pth/rhoh
+  end if
+
+  v2    = 1.0_dp - 1.0_dp/uR(lfac_)**2
+  vidim = uR(iw_mom(flux_dim))/uR(lfac_)
+  denom = 1.0_dp - v2*csound2
+  root  = dsqrt(max(csound2*(1.0_dp - v2) &
+       *(1.0_dp - v2*csound2 - vidim**2*(1.0_dp - csound2)), 0.0_dp))
+  cmaxR = (vidim*(1.0_dp - csound2) + root)/denom
+  cminR = (vidim*(1.0_dp - csound2) - root)/denom
+
+  wL = min(cminL, cminR)
+  wR = max(cmaxL, cmaxR)
+
+  ! no signal can outrun light
+  wL = min(max(wL, -1.0_dp), 1.0_dp)
+  wR = min(max(wR, -1.0_dp), 1.0_dp)
 
 end subroutine estimate_speeds_minmax
 #:enddef
