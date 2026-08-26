@@ -23,7 +23,9 @@ numerical schemes. The emphasis is on (near) conservation laws and on
 shock-dominated problems in particular. A number of *physics modules* are
 included; the hydrodynamics and the magnetohydrodynamics module are most
 frequently used. Users can add their own physics module or modify existing ones.
-At present, the framework supports only 3D simulations in Cartesian grid geometries.  
+At present, the framework supports only 3D simulations, in Cartesian,
+spherical or cylindrical grid geometries -- see [Coordinate
+systems](coordinate_systems.html).  
 
 AGILE is written in Fortran 2003, uses OpenACC for GPU offloading and MPI for parallelization.
 

@@ -7,22 +7,27 @@
 #
 # 3. You can hide the Entering/leaving directory messages with: -s
 
-HD_DIRS := hd/KH3D hd/RT3D hd/KH3D-SMR hd/KH3D_tracer hd/sphere_advection hd/TRML hd/cloud_crushing
-MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D
-FFHD_DIRS := ffhd/TI3D
-SRHD_DIRS := srhd/shockTube
+HD_DIRS := hd/KH3D hd/RT3D hd/KH3D-SMR hd/KH3D_tracer hd/sphere_advection hd/TRML hd/cloud_crushing \
+           hd/spherical_uniform_flow hd/spherical_blast hd/cylindrical_uniform_flow hd/cylindrical_blast
+MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D mhd/spherical_uniform_flow mhd/spherical_blast \
+            mhd/cylindrical_uniform_flow mhd/cylindrical_blast
+FFHD_DIRS := ffhd/TI3D ffhd/spherical_uniform_flow ffhd/spherical_blast \
+             ffhd/cylindrical_uniform_flow ffhd/cylindrical_blast
+SRHD_DIRS := srhd/shockTube srhd/spherical_uniform_flow srhd/spherical_blast \
+             srhd/cylindrical_uniform_flow srhd/cylindrical_blast
 
-TEST_DIRS := $(HD_DIRS) $(MHD_DIRS) $(FFHD_DIRS)
+TEST_DIRS := $(HD_DIRS) $(MHD_DIRS) $(FFHD_DIRS) $(SRHD_DIRS)
 
 # Directories with altered names (useful for cleaning)
 CLEAN_TEST := $(TEST_DIRS:%=clean-%)
 
 .PHONY: $(TEST_DIRS) $(CLEAN_TEST)
 
-all: hd mhd ffhd
+all: hd mhd ffhd srhd
 hd: $(HD_DIRS)
 mhd: $(MHD_DIRS)
 ffhd: $(FFHD_DIRS)
+srhd: $(SRHD_DIRS)
 
 $(TEST_DIRS):
 	@$(MAKE) -C $@ -f test.make

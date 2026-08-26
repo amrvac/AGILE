@@ -290,7 +290,8 @@ contains
         block_nx1,block_nx2,block_nx3,domain_nx1,&
        domain_nx2,domain_nx3,iprob,xprobmin1,xprobmin2,xprobmin3,xprobmax1,&
        xprobmax2,xprobmax3, w_refine_weight, prolongprimitive,coarsenprimitive,&
-        typeprolonglimit, logflag,tfixgrid,itfixgrid,ditregrid, refine_usr
+        typeprolonglimit, logflag,tfixgrid,itfixgrid,ditregrid, refine_usr,&
+        geometry
     namelist /paramlist/  courantpar, dtpar, dtdiffpar, typecourant, slowsteps
 
     namelist /emissionlist/ filename_euv,wavelength,filename_sxr,emin_sxr,&

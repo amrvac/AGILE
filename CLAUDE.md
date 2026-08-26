@@ -6,8 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AGILE is a GPU-enabled fork of MPI-AMRVAC, a Fortran finite-volume code for
 solving hyperbolic PDEs (HD, MHD, FFHD, SRHD) with adaptive mesh refinement.
-Master currently only supports 3D Cartesian grids. Domain decomposition and
-GPU offload use MPI + OpenACC (`!$acc` directives throughout the hot loops).
+Master supports 3D Cartesian, 3D spherical `(r, theta, phi)` and 3D
+cylindrical `(r, z, phi)` grids; see "Coordinate systems" below for the
+limits of the curvilinear support. Domain
+decomposition and GPU offload use MPI + OpenACC (`!$acc` directives throughout
+the hot loops).
 
 Source is written as `.fpp` files (Fortran + `fypp` preprocessor directives,
 e.g. `#:if PHYS == 'hd'`) which get preprocessed into `.f90` before
@@ -46,9 +49,10 @@ make clean                 # remove this case's build products
 - `arch` selects a file from `arch/*.mk` (`gnu`, `ifx`, `nvidia`, `cray`,
   `llvm`) which sets the compiler/linker and flags. Default is `gnu`
   (`mpif90`/gfortran).
-- Physics-relevant compile-time options (which physics module, tracers,
-  gravity, cooling, thermal conduction, etc.) are declared in `agile.par` and
-  turned into `config.mk`/fypp defines by `make/config_reader.py`, validated
+- Physics-relevant compile-time options (which physics module, the coordinate
+  system, tracers, gravity, cooling, thermal conduction, etc.) are declared in
+  `agile.par` and turned into `config.mk`/fypp defines by
+  `make/config_reader.py`, validated
   against `make/config_schema.toml`. Editing `agile.par` and rerunning `make`
   regenerates `config.mk` automatically — don't hand-edit `config.mk`.
 - Builds are cached under `build/<arch>-<hash>/`, keyed by a hash of the
@@ -73,6 +77,7 @@ cd tests
 make hd            # run all hd/* test cases
 make mhd           # run all mhd/* test cases
 make ffhd          # run all ffhd/* test cases
+make srhd          # run all srhd/* test cases
 make -j4 hd         # run in parallel
 make -s hd          # suppress "Entering/leaving directory" noise
 make clean          # clean all test build artifacts
@@ -93,15 +98,158 @@ Add a new test case by copying an existing case directory (`mod_usr.fpp`,
 `agile.par`/`test.par`, `test.make`, `correct_output/`) and registering it in
 `tests/Makefile` under the appropriate `*_DIRS` variable.
 
+## Coordinate systems
+
+The coordinate system is a **compile-time** choice, because the finite-volume
+kernels are fypp-specialized for it and the Cartesian kernel must stay free of
+curvilinear bookkeeping. Set `geometry` in `&meshlist` of `agile.par`:
+
+```fortran
+ &meshlist
+   geometry = 'spherical'   ! or 'cylindrical', or 'Cartesian' (the default)
+ /
+```
+
+That becomes the `GEOM` fypp define via `make/config_schema.toml`, and it is
+the only place the coordinate system needs stating. `main()` in
+`src/agile.fpp` calls `set_coordinate_system_from_config()` before `usr_init`,
+so a case does **not** have to call `set_coordinate_system` itself. A case may
+still do so — the call is idempotent — but the name then has to agree with
+`GEOM`, and `set_coordinate_system` calls `mpistop` on a mismatch rather than
+silently running the wrong kernel.
+
+Deriving it centrally matters because `set_coordinate_system` is the sole
+writer of `coordinate`, `ndir`, `r_`, `phi_` and `z_`. When it was left to
+each case, forgetting the call left `coordinate` at its `-1` default, and the
+failure was silent rather than loud: `read_par_files` skips the conversion of
+the angular domain bounds, and the `select case (coordinate)` in
+`get_surface_area` and in the cell-volume fill match nothing, so `surfaceC`
+and `dvolume` are never written and the run completes with garbage.
+`tests/hd/spherical_uniform_flow` omits the call and
+`tests/hd/spherical_blast` keeps it, so both paths stay covered.
+
+Two things to know when writing a spherical or cylindrical case:
+
+- **Angular coordinates in `agile.par` are given in units of 2*pi** (an
+  MPI-AMRVAC convention, applied in `src/io/mod_input_output.fpp`). So for
+  spherical, `xprobmin2 = 0.125d0`, `xprobmax2 = 0.375d0` means `theta` from
+  `pi/4` to `3*pi/4`. For cylindrical, `set_coordinate_system` assigns
+  `r_ = 1`, `z_ = 2`, `phi_ = 3` for the 3D case (`"cylindrical"` /
+  `"cylindrical_3D"`), so only `xprobmin3`/`xprobmax3` get the 2*pi
+  conversion; `xprobmin2`/`xprobmax2` (`z`) is a plain length like `r`.
+- `ndim` is a compile-time `parameter` of 3, so spherical or cylindrical
+  means the full 3D `(r, theta, phi)` or `(r, z, phi)` system with
+  `ndir = 3`.
+
+How it works: in a curvilinear build the finite-volume update in
+`src/mod_finite_volume.fpp` divides face fluxes by the cell volume weighted by
+the face areas (`ps(n)%surfaceC`, `ps(n)%dvolume`, filled per block by
+`fillgeo`/`get_surface_area` and copied to the device in
+`src/amr/mod_amr_solution_node.fpp`), instead of by the uniform `rnode` cell
+spacing. The leftover curvature terms of the momentum equations are added by
+`addsource_geometry`, a fypp macro each physics template defines (see
+`src/hd/mod_hd_templates.fpp`); `src/physics/mod_physics_dummies.fpp` provides
+a version that `mpistop`s, so a physics module without one fails loudly.
+`setdt` likewise switches from `rnode` spacing to the physical cell sizes
+`ps(igrid)%ds`.
+
+Current limits of the curvilinear (spherical and cylindrical) support:
+
+- `phys = 'hd'`, `phys = 'mhd'`, `phys = 'srhd'` and `phys = 'ffhd'` all
+  implement `addsource_geometry` for both `geometry = 'spherical'` and
+  `geometry = 'cylindrical'`, each guarded by its own `#:if GEOM == '...'`
+  branch in the physics module's `mod_*_templates.fpp` (a build only compiles
+  the branch matching its `GEOM` define). MHD's and SRHD's curvature terms
+  (`src/mhd/mod_mhd_templates.fpp`, `src/srhd/mod_srhd_templates.fpp`) were
+  ported from upstream MPI-AMRVAC's `mhd_add_source_geom` (cell-centred
+  GLM-MHD branch; this fork has no `stagger_grid`/constrained-transport
+  support) and `srhd_add_source_geom`, with the isotropic pressure-like terms
+  (`ptot`/`psi` for MHD, `p` for SRHD) rewritten to use the discrete `dAdV`
+  well-balancing factor instead of the continuous `2/r`, `cot(theta)/r`
+  (spherical) or `1/r` (cylindrical) prefactors upstream uses directly, for
+  consistency with this fork's HD implementation. For cylindrical, `x(1)*
+  dAdV(1)` works out to exactly `1/r` rather than merely converging to it,
+  because a cylindrical radial face area is linear in `r` (unlike spherical's
+  `r^2`), so the well-balancing rewrite is exact there, not just consistent
+  in the continuum limit. SRHD's primitive `mom(:)` slot holds the spatial
+  four-velocity `u^i = lfac*v^i` rather than `v^i` itself (see
+  `to_primitive`/`to_conservative` and `src/srhd/mod_con2prim.fpp`'s
+  `xi = tau + D + p`, `v^2 = S^2/xi^2`), so the curvature terms use the
+  primitive `xi_`/`lfac_` auxiliaries directly rather than reconstructing the
+  conserved momentum density. Cylindrical's curvature terms only touch the
+  `m_r`/`m_phi` (and, for MHD, `B_r`/`B_phi`) components — `m_z`/`B_z` pick up
+  none, since a cylindrical volume element's `z`-extent does not depend on
+  `r`. FFHD's `addsource_geometry` (`src/ffhd/mod_ffhd_templates.fpp`) is
+  empty for both spherical and cylindrical — matching upstream's
+  `ffhd_add_source_geom`, which is likewise empty for every coordinate system
+  — because its conserved quantities (`rho`, the field-aligned momentum
+  `m_par`, the field-aligned energy) are genuine scalars advected along a
+  user-supplied field direction `b-hat`, and Gauss's theorem means a scalar's
+  flux divergence needs no curvature correction in any coordinate system,
+  unlike a vector quantity's components. What *is* geometry-sensitive for
+  `ffhd` is unrelated to `addsource_geometry`: the optional `PDIVB` source
+  term (`p * div(b-hat)`, compile-time `ffhd_pdivb=T`, default off) computes
+  `div(b-hat)` in `addsource_nonlocal` as a plain finite difference over
+  `dx(idir)`, which is only correct on a slab-uniform mesh — it is missing
+  the curvilinear metric factors a true divergence needs in
+  `geometry = 'spherical'` or `geometry = 'cylindrical'`, and this fork has
+  not fixed that.
+- No polar-axis/cylindrical-axis handling. `set_pole`/`poleB` and the
+  pi-periodic root-neighbor lookup in `src/amr/mod_amr_neighbors.fpp` survive
+  from upstream, but AGILE's rewritten `getbc` in
+  `src/mod_ghostcells_update.fpp` never performs the pole copies (`pole_buf`
+  is allocated and otherwise unused). Keep the domain away from `theta = 0`
+  and `theta = pi` (spherical), or from `r = 0` (cylindrical).
+- AMR across curvilinear levels is untested here; prolongation in
+  `src/amr/mod_refine.fpp` has the `slab_uniform` branch that uses `dvolume`,
+  but `fix_conserve` is commented out in `src/mod_advance.fpp` for all
+  geometries.
+
+Validated by `tests/hd/spherical_uniform_flow` (a uniform Cartesian flow
+written in spherical components, which converges at second order),
+`tests/hd/spherical_blast`, `tests/mhd/spherical_uniform_flow` (the same
+uniform-flow idea extended with a uniform Cartesian magnetic field, to
+exercise the induction equation's and GLM psi's curvature terms too),
+`tests/mhd/spherical_blast`, `tests/srhd/spherical_uniform_flow` (a uniform,
+sub-luminal Cartesian flow, which also converges at second order — the
+Lorentz factor only depends on `|v|`, which a spherical rotation leaves
+invariant, so it stays a single global constant), `tests/srhd/spherical_blast`,
+`tests/ffhd/spherical_uniform_flow` (a uniform state along a uniform frozen
+field, which also converges at second order — this test is what caught a
+pre-existing, geometry-independent bug: `phys_init` set `nwgc=nwflux`, but
+the frozen field `iw_b1`/`iw_b2`/`iw_b3` is registered via
+`var_set_extravar`, outside `nwflux`, so it was silently excluded from
+inter-block ghost-cell exchange whenever the field is not spatially uniform;
+fixed to `nwgc=nwflux+nwextra`, matching how `srhd` already includes its own
+auxiliaries via `nwgc=nwflux+nwaux`), and `tests/ffhd/spherical_blast`.
+
+The cylindrical counterparts follow the same pattern, one `cylindrical_*`
+test directory per `spherical_*` one: `tests/hd/cylindrical_uniform_flow`
+(the analogous uniform Cartesian flow written in cylindrical `(r, z, phi)`
+components — only the radial and azimuthal velocity are non-trivial
+functions of `phi`, since the axial component stays literally constant;
+confirmed at second-order convergence by doubling the resolution),
+`tests/hd/cylindrical_blast`, `tests/mhd/cylindrical_uniform_flow` (adding a
+uniform Cartesian magnetic field, also confirmed at second order),
+`tests/mhd/cylindrical_blast`, `tests/srhd/cylindrical_uniform_flow` (a
+uniform, sub-luminal Cartesian flow, also confirmed at roughly second-order
+convergence), `tests/srhd/cylindrical_blast`,
+`tests/ffhd/cylindrical_uniform_flow` (a uniform state along a uniform
+frozen field), and `tests/ffhd/cylindrical_blast`.
+
 ## Writing a new simulation case (`mod_usr.fpp`)
 
 Every case directory has a `mod_usr.fpp` defining `module mod_usr` with a
 `usr_init()` subroutine that:
-1. calls `set_coordinate_system(...)`,
-2. registers callbacks by assigning the procedure pointers declared in
+1. registers callbacks by assigning the procedure pointers declared in
    `src/mod_usr_methods.fpp` (e.g. `usr_init_one_grid`, `usr_special_bc`,
    `usr_source`, `usr_process_grid`, `usr_refine_threshold`, ...),
-3. calls `phys_activate()` last.
+2. calls `phys_activate()` last.
+
+The coordinate system comes from `geometry` in `agile.par` (see "Coordinate
+systems" above); `usr_init()` does not need to call `set_coordinate_system`
+itself. Older cases may still call it explicitly — the call is idempotent as
+long as the name agrees with `geometry` — but new cases shouldn't.
 
 The physics module itself (hd/mhd/ffhd/srhd) is selected via `phys` in
 `agile.par`'s `&methodlist`, which the config system turns into a `PHYS`

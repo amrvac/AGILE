@@ -196,7 +196,12 @@
     end if
     !$acc update device(flux_type)
 
-! use cycle, needs to be dealt with:    
+    nvector      = 1 ! No. vector vars
+    allocate(iw_vector(nvector))
+    iw_vector(1) = mom(1) - 1
+    !$acc update device(nvector, iw_vector)
+
+! use cycle, needs to be dealt with:
 !    ! Initialize particles module
 !    if (srhd_particles) then
 !       call particles_init()
@@ -253,6 +258,98 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 
 end subroutine addsource_local
 #:enddef
+
+#:if GEOM == 'spherical'
+!> Curvature source terms for spherical coordinates, ported from upstream
+!> MPI-AMRVAC's srhd_add_source_geom. Structurally identical to this fork's
+!> HD addsource_geometry (src/hd/mod_hd_templates.fpp): the relativistic
+!> spatial stress tensor is T^ij = S^i v^j + p delta^ij, i.e. HD's rho v^i v^j
+!> with the conserved momentum density S^i = xi * v^i in place of rho * v^i.
+!> wprim(iw_mom(:)) holds the spatial four-velocity (celerity) u^i = lfac*v^i
+!> rather than v^i itself (see to_primitive/to_conservative and
+!> mod_con2prim.fpp's xi = tau + D + p, v^2 = S^2/xi^2), so
+!> S^i v^j = xi * v^i * v^j = xi * u^i * u^j / lfac^2. The isotropic pressure
+!> term uses the discrete dAdV factor rather than the continuous 2/r,
+!> cot(theta)/r prefactors upstream uses directly, matching HD's convention.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  !$acc routine seq
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (rho, spatial four-velocity, pressure, xi, lfac)
+  !> at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, theta, phi)
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: pth, xi_inv_lfac2, inv_r, inv_tan, source
+
+  pth          = wprim(iw_e)
+  xi_inv_lfac2 = wprim(xi_) / wprim(lfac_)**2
+  inv_r        = 1.0_dp / x(1)
+  inv_tan      = 1.0_dp / tan(x(2))
+
+  ! s[m_r] = (2 p + (xi/lfac^2) (u_theta^2 + u_phi^2)) / r
+  source = pth * x(1) * dAdV(1) + xi_inv_lfac2 * (wprim(iw_mom(2))**2 + &
+     wprim(iw_mom(3))**2)
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source * inv_r
+
+  ! s[m_theta] = (p cot(theta) + (xi/lfac^2) (u_phi^2 cot(theta) - u_r u_theta)) / r
+  source = pth * x(1) * dAdV(2) + xi_inv_lfac2 * (wprim(iw_mom(3))**2 * &
+     inv_tan - wprim(iw_mom(1)) * wprim(iw_mom(2)))
+  wnew(iw_mom(2)) = wnew(iw_mom(2)) + qdt * source * inv_r
+
+  ! s[m_phi] = -(xi/lfac^2) u_phi (u_r + u_theta cot(theta)) / r
+  source = -xi_inv_lfac2 * wprim(iw_mom(3)) * (wprim(iw_mom(1)) + &
+     wprim(iw_mom(2)) * inv_tan)
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source * inv_r
+
+end subroutine addsource_geometry
+#:enddef
+#:elif GEOM == 'cylindrical'
+!> Curvature source terms for cylindrical (r, z, phi) coordinates. Structurally
+!> identical to this fork's HD addsource_geometry (src/hd/mod_hd_templates.fpp)
+!> with the conserved momentum density S^i = xi * v^i in place of rho * v^i,
+!> and using wprim(iw_mom(:)) = u^i = lfac*v^i as in the spherical branch above
+!> (so S^i v^j = xi * u^i * u^j / lfac^2). Only m_r and m_phi pick up curvature
+!> terms; m_z does not. The pressure term uses the discrete dAdV
+!> well-balancing factor, matching HD's convention; for cylindrical this is
+!> exactly 1/r (not just in the continuum limit), since a cylindrical radial
+!> face area is linear in r.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  !$acc routine seq
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (rho, spatial four-velocity, pressure, xi, lfac)
+  !> at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, z, phi)
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: pth, xi_inv_lfac2, inv_r, source
+
+  pth          = wprim(iw_e)
+  xi_inv_lfac2 = wprim(xi_) / wprim(lfac_)**2
+  inv_r        = 1.0_dp / x(1)
+
+  ! s[m_r] = (p + (xi/lfac^2) u_phi^2) / r
+  source = pth * x(1) * dAdV(1) + xi_inv_lfac2 * wprim(iw_mom(3))**2
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source * inv_r
+
+  ! s[m_phi] = -(xi/lfac^2) u_phi u_r / r
+  source = -xi_inv_lfac2 * wprim(iw_mom(3)) * wprim(iw_mom(1))
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source * inv_r
+
+end subroutine addsource_geometry
+#:enddef
+#:endif
 
 #:def to_primitive()
   pure subroutine to_primitive(u)
@@ -448,7 +545,24 @@ end function get_Rfactor
 #:enddef
 
 #:def estimate_speeds_minmax()
-!> used in HLL flux estimation.
+!> Davis (1988) min/max wave speed estimates for HLL, in their relativistic
+!> form: wL = min(lambda^-), wR = max(lambda^+) over the left and right states.
+!>
+!> The relativistic characteristic speeds in direction n are
+!>
+!>   lambda^+- = ( v_n (1 - c_s^2)
+!>                 +- sqrt( c_s^2 (1 - v^2) (1 - v^2 c_s^2 - v_n^2 (1 - c_s^2)) ) )
+!>               / (1 - v^2 c_s^2)
+!>
+!> (Anile 1989; Mignone & Bodo 2005), which reduce to v_n +- c_s in the
+!> Newtonian limit. Unlike the HD and MHD versions of this routine, the
+!> velocity is already contained in lambda^+-, so the min/max is taken over the
+!> characteristic speeds themselves rather than over v_n +- c.
+!>
+!> This is the same algebra get_cmax uses; get_cmax collapses the two roots
+!> into max(|lambda^+|, |lambda^-|) for the time-step limit, whereas HLL needs
+!> them separately and signed. wprim(iw_mom(:)) holds the spatial four-velocity
+!> u^i = lfac*v^i, so v^i is recovered as u^i/lfac.
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   !$acc routine seq
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
@@ -456,7 +570,58 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   integer, intent(in)   :: flux_dim
   real(dp), intent(out) :: wL, wR
 
-  ! TODO
+  real(dp) :: rho, rhoh, pth, E, csound2
+  real(dp) :: v2, vidim, root, denom
+  real(dp) :: cminL, cmaxL, cminR, cmaxR
+
+  ! Left state
+  rho  = uL(iw_rho)
+  rhoh = uL(xi_) / uL(lfac_)**2
+  pth  = uL(iw_e)
+  if (srhd_eos) then
+     E = (rhoh + dsqrt(rhoh**2 + (srhd_gamma**2 - 1.0_dp)*rho**2)) &
+          /(srhd_gamma + 1.0_dp)
+     csound2 = (pth*((srhd_gamma + 1.0_dp) + gamma_1*(rho/E)**2))/(2.0_dp*rhoh)
+  else
+     csound2 = srhd_gamma*pth/rhoh
+  end if
+
+  v2    = 1.0_dp - 1.0_dp/uL(lfac_)**2
+  vidim = uL(iw_mom(flux_dim))/uL(lfac_)
+  denom = 1.0_dp - v2*csound2
+  ! the radicand is positive analytically; clip the roundoff-level negatives
+  ! that would otherwise produce a NaN wave speed
+  root  = dsqrt(max(csound2*(1.0_dp - v2) &
+       *(1.0_dp - v2*csound2 - vidim**2*(1.0_dp - csound2)), 0.0_dp))
+  cmaxL = (vidim*(1.0_dp - csound2) + root)/denom
+  cminL = (vidim*(1.0_dp - csound2) - root)/denom
+
+  ! Right state
+  rho  = uR(iw_rho)
+  rhoh = uR(xi_) / uR(lfac_)**2
+  pth  = uR(iw_e)
+  if (srhd_eos) then
+     E = (rhoh + dsqrt(rhoh**2 + (srhd_gamma**2 - 1.0_dp)*rho**2)) &
+          /(srhd_gamma + 1.0_dp)
+     csound2 = (pth*((srhd_gamma + 1.0_dp) + gamma_1*(rho/E)**2))/(2.0_dp*rhoh)
+  else
+     csound2 = srhd_gamma*pth/rhoh
+  end if
+
+  v2    = 1.0_dp - 1.0_dp/uR(lfac_)**2
+  vidim = uR(iw_mom(flux_dim))/uR(lfac_)
+  denom = 1.0_dp - v2*csound2
+  root  = dsqrt(max(csound2*(1.0_dp - v2) &
+       *(1.0_dp - v2*csound2 - vidim**2*(1.0_dp - csound2)), 0.0_dp))
+  cmaxR = (vidim*(1.0_dp - csound2) + root)/denom
+  cminR = (vidim*(1.0_dp - csound2) - root)/denom
+
+  wL = min(cminL, cminR)
+  wR = max(cmaxL, cmaxR)
+
+  ! no signal can outrun light
+  wL = min(max(wL, -1.0_dp), 1.0_dp)
+  wR = min(max(wR, -1.0_dp), 1.0_dp)
 
 end subroutine estimate_speeds_minmax
 #:enddef

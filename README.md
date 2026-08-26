@@ -23,7 +23,7 @@ module load OpenMPI/4.1.5-NVHPC-24.5-CUDA-12.1.1
 
 
 ## Currently supported features on master
-- Cartesian grids
+- Cartesian, spherical `(r, theta, phi)`, and cylindrical `(r, z, phi)` grids (away from the polar/cylindrical axis)
 - Physics modules: hd, mhd [glm], ffhd, srhd
 - Source terms (gravity, radiative cooling, hyperbolic thermal conduction, user defined) and boundary conditions (`symm, asymm, cont` etc. but also `special`)
 - Multi-GPU (MPI)

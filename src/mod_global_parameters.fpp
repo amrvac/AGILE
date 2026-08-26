@@ -335,6 +335,11 @@ module mod_global_parameters
   
   !> type of physics to build
   character(len=std_len) :: phys
+
+  !> coordinate system to build for, one of 'Cartesian' or 'spherical'.
+  !> Read from &meshlist and turned into the GEOM fypp define by the config
+  !> system; must be consistent with the set_coordinate_system call in mod_usr.
+  character(len=std_len) :: geometry='Cartesian'
   
   ! Physics factors
 

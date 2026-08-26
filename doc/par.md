@@ -41,18 +41,20 @@ modules:
 
 The parameter file consists of a sequence of namelists, which look like this:
 
-     &listname
-      var_a = value
+```fortran
+&listname
+ var_a = value
 
-      ! A comment
-      var_b = value
-      array = value1, value2, ...
-      array(1,1) = value
+ ! A comment
+ var_b = value
+ array = value1, value2, ...
+ array(1,1) = value
 
-      ! Repeat value 5 times in array
-      array = 5*value
-      ...
-     /
+ ! Repeat value 5 times in array
+ array = 5*value
+ ...
+/
+```
 
 If you do not define a variable the default value is used. 
 
@@ -69,9 +71,11 @@ or extra words in strings.
 
 # Physics-independent Namelists {: #par_pidnamelists }
 ## Filelist {: #par_filelist }
-     &filelist
-       <variable definitions, see below>
-     /
+```fortran
+&filelist
+  <variable definitions, see below>
+/
+```
 
 
 name | type | default | description
@@ -232,14 +236,16 @@ convert types are activited.
 ## Savelist {: #par_savelist }
 Example:
 
-    &savelist
-        itsave(1,1)=0
-        itsave(1,2)=0
-        dtsave_log=0.01d0 
-        dtsave_dat=0.1d0
-        dtsave_slice=0.05d0
-        dtsave_collapsed=0.05d0
-    /
+```fortran
+&savelist
+    itsave(1,1)=0
+    itsave(1,2)=0
+    dtsave_log=0.01d0 
+    dtsave_dat=0.1d0
+    dtsave_slice=0.05d0
+    dtsave_collapsed=0.05d0
+/
+```
 
 
 name | type | default | description
@@ -274,17 +280,19 @@ output is always saved after the stop condition has been fulfilled. If
 `itsave(1,2)=0` is set, the initial state is saved before advancing.
 
 ## Stoplist {: #par_stoplist }
-    &stoplist
-    	it_max =INTEGER
-    	time_max =DOUBLE
-    	wall_time_max =DOUBLE
-    	dtmin =DOUBLE
-    	it_init =INTEGER
-    	time_init =DOUBLE
-    	reset_time =F | T
-    	reset_it   =F | T
-        final_dt_reduction=T | F
-    /
+```fortran
+&stoplist
+	it_max =INTEGER
+	time_max =DOUBLE
+	wall_time_max =DOUBLE
+	dtmin =DOUBLE
+	it_init =INTEGER
+	time_init =DOUBLE
+	reset_time =F | T
+	reset_it   =F | T
+    final_dt_reduction=T | F
+/
+```
 name | type | default | description
 ---|---|---|---
 `it_max` | integer | `biginteger` | a run ends when the number of time steps reaches it
@@ -317,49 +325,51 @@ setting `reset_time=T`. If you want only to reset the iteration count
 without changing time, set `reset_it=T`.
 
 ## Methodlist {: #par_methodlist }
-    &methodlist
+```fortran
+&methodlist
 
-    time_stepper='twostep' | 'onestep' | 'threestep' | 'fourstep' | 'fivestep'
-    time_integrator= choices depends on time_stepper
-    flux_scheme=nlevelshi strings from: 'hll'|'hllc'|'hlld','hllcd'|'tvdlf'|'tvdmu'|'tvd'|'cd'|'fd'|'source'|'nul'
-    limiter= nlevelshi strings from: 'minmod' | 'woodward' | 'superbee' | 'vanleer' | 'albada' | 'ppm' | 'mcbeta' | 'koren' | 'cada' | 'cada3' | 'mp5' | 'schmid1' | 'schimid2' | 'venk' | 'weno3' | 'wenoyc3' | 'weno5' | 'weno5nm'| 'wenoz5' | 'wenoz5nm' | 'wenozp5' | 'wenozp5nm' | 'weno5cu6' | 'teno5ad' | 'weno7' | 'mpweno7'
-    gradient_limiter= nlevelshi strings from: 'minmod' | 'woodward' | 'superbee' | 'vanleer' | 'albada' | 'ppm' | 'mcbeta' | 'koren' | 'cada' | 'cada3'
-    loglimit= nw logicals, all false by default
-    flatsh = F | T
-    flatcd = F | T
-    mcbeta= DOUBLE
+time_stepper='twostep' | 'onestep' | 'threestep' | 'fourstep' | 'fivestep'
+time_integrator= choices depends on time_stepper
+flux_scheme=nlevelshi strings from: 'hll'|'hllc'|'hlld','hllcd'|'tvdlf'|'tvdmu'|'tvd'|'cd'|'fd'|'source'|'nul'
+limiter= nlevelshi strings from: 'minmod' | 'woodward' | 'superbee' | 'vanleer' | 'albada' | 'ppm' | 'mcbeta' | 'koren' | 'cada' | 'cada3' | 'mp5' | 'schmid1' | 'schimid2' | 'venk' | 'weno3' | 'wenoyc3' | 'weno5' | 'weno5nm'| 'wenoz5' | 'wenoz5nm' | 'wenozp5' | 'wenozp5nm' | 'weno5cu6' | 'teno5ad' | 'weno7' | 'mpweno7'
+gradient_limiter= nlevelshi strings from: 'minmod' | 'woodward' | 'superbee' | 'vanleer' | 'albada' | 'ppm' | 'mcbeta' | 'koren' | 'cada' | 'cada3'
+loglimit= nw logicals, all false by default
+flatsh = F | T
+flatcd = F | T
+mcbeta= DOUBLE
 
-    typeentropy= 'nul'|'powell'|'harten'|'ratio'|'yee'
-    entropycoef= DOUBLE, DOUBLE, DOUBLE, ....
+typeentropy= 'nul'|'powell'|'harten'|'ratio'|'yee'
+entropycoef= DOUBLE, DOUBLE, DOUBLE, ....
 
-    typetvd= 'roe' | 'yee' | 'harten' | 'sweby'
-    typeaverage='default' | 'roe' | 'arithmetic'
+typetvd= 'roe' | 'yee' | 'harten' | 'sweby'
+typeaverage='default' | 'roe' | 'arithmetic'
 
-    typeboundspeed= 'Einfeldt' | 'cmaxmean' | 'cmaxleftright'
-    tvdlfeps = DOUBLE
+typeboundspeed= 'Einfeldt' | 'cmaxmean' | 'cmaxleftright'
+tvdlfeps = DOUBLE
 
-    flathllc= F | T
-    nxdiffusehllc = INTEGER
+flathllc= F | T
+nxdiffusehllc = INTEGER
 
-    source_split_usr= F | T
-    typesourcesplit= 'sfs' | 'sf' | 'ssfss' | 'ssf'
-    dimsplit= F | T
-    typedimsplit= 'default' | 'xyyx'| 'xy'
+source_split_usr= F | T
+typesourcesplit= 'sfs' | 'sf' | 'ssfss' | 'ssf'
+dimsplit= F | T
+typedimsplit= 'default' | 'xyyx'| 'xy'
 
-    small_density= DOUBLE
-    small_pressure= DOUBLE
-    small_temperature= DOUBLE
-    small_values_method='error' | 'replace' | 'average'
-    small_values_daverage=1
-    check_small_values= F | T
-    fix_small_values= F | T
-    trace_small_values= F | T
-    small_values_fix_iw= LOGICAL, LOGICAL, LOGICAL, ...
+small_density= DOUBLE
+small_pressure= DOUBLE
+small_temperature= DOUBLE
+small_values_method='error' | 'replace' | 'average'
+small_values_daverage=1
+check_small_values= F | T
+fix_small_values= F | T
+trace_small_values= F | T
+small_values_fix_iw= LOGICAL, LOGICAL, LOGICAL, ...
 
-    typegrad = 'central' | 'limited'
-    typediv = 'central' | 'limited'
-    typecurl = 'central' | 'Gaussbased' | 'Stokesbased'
-    /
+typegrad = 'central' | 'limited'
+typediv = 'central' | 'limited'
+typecurl = 'central' | 'Gaussbased' | 'Stokesbased'
+/
+```
 
 ### time_stepper, time_integrator, flux_scheme {: #par_time_integrator }
 The `time_stepper` variable determines the time integration procedure. The
@@ -536,13 +546,15 @@ _geometry.t_ module. Similarly, a switch for the divergence of a vector is the
 corresponding gradient_limiter array to select a limiter (per level).
 
 ## Boundlist {: #par_boundlist }
-    &boundlist
-     nghostcells= INTEGER
-     typeboundary_min^D= 'cont'|'symm'|'asymm'|'periodic'|'special'|'noinflow'
-     typeboundary_max^D= 'cont'|'symm'|'asymm'|'periodic'|'special'|'noinflow'
-     internalboundary = F | T
-     ghost_copy= F | T
-    /
+```fortran
+&boundlist
+ nghostcells= INTEGER
+ typeboundary_min^D= 'cont'|'symm'|'asymm'|'periodic'|'special'|'noinflow'
+ typeboundary_max^D= 'cont'|'symm'|'asymm'|'periodic'|'special'|'noinflow'
+ internalboundary = F | T
+ ghost_copy= F | T
+/
+```
 
 The boundary types have to be defined for each **conserved variable**, except for 
 psi (in GLM-MHD) and tracer fluids, at each physical edge of the grid. For 2D hydrodynamics they are:
@@ -577,12 +589,14 @@ instance, in a two dimensional hydrodynamical simulation space
 bottom boundary is a plane of symmetry, the upper boundary is opened and the
 lateral boundaries are periodic, we would write :
 
-    &boundlist
-     typeboundary_min1= 5*'periodic'
-     typeboundary_max1= 5*'periodic'
-     typeboundary_min2= 'symm','symm','asymm','symm','symm'
-     typeboundary_max2= 5*'cont'
-    /
+```fortran
+&boundlist
+ typeboundary_min1= 5*'periodic'
+ typeboundary_max1= 5*'periodic'
+ typeboundary_min2= 'symm','symm','asymm','symm','symm'
+ typeboundary_max2= 5*'cont'
+/
+```
 
 The default number of ghost cell layers used to surround the grid (and in fact
 each grid at each level and location) is set by default to `nghostcells=2` and
@@ -635,12 +649,14 @@ The case of periodic boundaries can be handled with setting 'periodic' for all
 variables at both boundaries that make up a periodic pair. Hence triple
 periodic in 3D MHD where 8 variables are at play means setting
 
-    typeboundary_min1=8*'periodic'
-    typeboundary_max1=8*'periodic'
-    typeboundary_min2=8*'periodic'
-    typeboundary_max2=8*'periodic'
-    typeboundary_min3=8*'periodic'
-    typeboundary_max3=8*'periodic'
+```fortran
+typeboundary_min1=8*'periodic'
+typeboundary_max1=8*'periodic'
+typeboundary_min2=8*'periodic'
+typeboundary_max2=8*'periodic'
+typeboundary_min3=8*'periodic'
+typeboundary_max3=8*'periodic'
+```
 
 
 The possibility exists to put a boundary condition mimicking zero
@@ -674,41 +690,57 @@ exist due to the AMR hierarchy. If `ghost_copy=T`, a first order 'copy' is
 used 'unlimit'. To retain second order accuracy, the default set is needed.
 
 ## meshlist {: #par_meshlist }
-    &meshlist
-     refine_max_level= INTEGER
-     domain_nx1= INTEGER
-     domain_nx2= INTEGER
-     domain_nx3= INTEGER
-     block_nx1= INTEGER
-     block_nx2= INTEGER
-     block_nx3= INTEGER
-     xprobmin1= DOUBLE
-     xprobmax1= DOUBLE
-     xprobmin2= DOUBLE
-     xprobmax2= DOUBLE
-     xprobmin3= DOUBLE
-     xprobmax3= DOUBLE
-     refine_criterion= INTEGER
-     nbufferx1= INTEGER
-     nbufferx2= INTEGER
-     nbufferx3= INTEGER
-     max_blocks= INTEGER
-     amr_wavefilter= nlevelshi DOUBLE values
-     refine_threshold= nlevelshi DOUBLE values
-     derefine_ratio= nlevelshi DOUBLE values
-     w_refine_weight= DOUBLE array nw+1 values that must sum up to 1.0d0
-     logflag= nw logical values, all F by default
-     iprob= INTEGER
-     prolongprimitive= F | T
-     coarsenprimitive= F | T
-     tfixgrid= DOUBLE
-     itfixgrid= INTEGER
-     ditregrid= INTEGER
-     stretch_dim= ndim STRING values ('uni','symm','none')
-     stretch_uncentered = F | T
-     qstretch_baselevel= DOUBLE
-     nstretchedblocks_baselevel= INTEGER
-    /
+```fortran
+&meshlist
+ geometry= 'Cartesian' | 'spherical' | 'cylindrical'
+ refine_max_level= INTEGER
+ domain_nx1= INTEGER
+ domain_nx2= INTEGER
+ domain_nx3= INTEGER
+ block_nx1= INTEGER
+ block_nx2= INTEGER
+ block_nx3= INTEGER
+ xprobmin1= DOUBLE
+ xprobmax1= DOUBLE
+ xprobmin2= DOUBLE
+ xprobmax2= DOUBLE
+ xprobmin3= DOUBLE
+ xprobmax3= DOUBLE
+ refine_criterion= INTEGER
+ refine_usr= F | T
+ nbufferx1= INTEGER
+ nbufferx2= INTEGER
+ nbufferx3= INTEGER
+ max_blocks= INTEGER
+ amr_wavefilter= nlevelshi DOUBLE values
+ refine_threshold= nlevelshi DOUBLE values
+ derefine_ratio= nlevelshi DOUBLE values
+ w_refine_weight= DOUBLE array nw+1 values that must sum up to 1.0d0
+ logflag= nw logical values, all F by default
+ iprob= INTEGER
+ prolongprimitive= F | T
+ coarsenprimitive= F | T
+ typeprolonglimit= 'default' | 'unlimit' | 'minmod' | 'woodward' | 'koren'
+ tfixgrid= DOUBLE
+ itfixgrid= INTEGER
+ ditregrid= INTEGER
+ stretch_dim= ndim STRING values ('uni','symm','none')
+ stretch_uncentered = F | T
+ qstretch_baselevel= DOUBLE
+ nstretchedblocks_baselevel= INTEGER
+/
+```
+
+### geometry {: #par_geometry }
+`geometry` selects the coordinate system: `'Cartesian'` (the default),
+`'spherical'` (r, theta, phi) or `'cylindrical'` (r, z, phi). This is a
+**compile-time** choice -- changing it and re-running `make` regenerates the
+build's `config.mk` and recompiles the finite-volume kernels for the new
+geometry, rather than switching at runtime. See [Coordinate
+systems](coordinate_systems.html) for the axis conventions, the geometric
+source terms each non-Cartesian choice adds, and its current limitations
+(no polar-axis/cylindrical-axis handling, and only the `hd`, `mhd`, `srhd`
+and `ffhd` physics modules support it).
 
 ### refine_max_level, max_blocks, domain_nx^D, block_nx^D, xprobmin^D, xprobmax^D {: #par_refine_max_level }
 `refine_max_level` indicates the maximum number of grid levels that can be used 
@@ -727,7 +759,8 @@ The computational domain is set by specifying the minimal and maximal
 coordinate value per direction in the _xprob^L_ settings. When cylindrical or
 spherical coordinates are selected, the angle ranges (for phi in
 the cylindrical case, and for both theta and phi in the spherical case) are to
-be given in 2 pi units.
+be given in 2 pi units -- see [geometry](#par_geometry) above and
+[Coordinate systems](coordinate_systems.html) for more detail.
 
 The base grid resolution (i.e. on the coarsest level 1) is best specified by
 providing _domain_nx^D_, the number of grid cells per dimension, to cover the full
@@ -755,7 +788,15 @@ problems. When `refine_criterion=3`, the original Lohner method is used.
 
 A call to the user defined subroutine _usr_refine_grid_ follows the error 
 estimator, making it possible to use this routine for augmented user-controlled 
-refinement, or even derefinement.
+refinement, or even derefinement. This call is only compiled in and invoked
+when `refine_usr=T` (default `F`); unlike most other `usr_*` hooks, which are
+registered as procedure pointers in `usr_init()`, `usr_refine_grid` must be
+defined directly as a `subroutine` in `mod_usr` (with the exact interface
+`forcedrefine_grid` in `src/amr/mod_errest.fpp` calls it with), because
+`refine_usr` also gates a compile-time `REFINE_USR` fypp define -- like
+`geometry` above, this is a case where AGILE resolves a user hook at compile
+time rather than through a runtime procedure pointer, since the call needs
+to be inlined into GPU-offloaded code.
 
 Depending on the error estimator used, it is needed or advisable to
 additionally provide a buffer zone of a certain number of grid cells in width,
@@ -808,6 +849,15 @@ which may not be a wise choice, but is perhaps better behaved with respect to
 positivity of pressure etc. This is activated seperately for prolongation by
 `prolongprimitive=T`, and for coarsen by `coarsenprimitive=T`. 
 
+`typeprolonglimit` selects the slope limiter used when linearly
+interpolating a coarse cell onto its finer children during prolongation
+(`'unlimit'`, `'minmod'`, `'woodward'` or `'koren'`; default `'default'`).
+**Note:** in this fork, the `select case(typeprolonglimit)` branch in
+`src/amr/mod_refine.fpp` that would act on this choice is currently
+commented out, so prolongation always falls through to its `case default`
+(a minmod-like limiter) regardless of what `typeprolonglimit` is set to --
+the parameter is parsed but has no effect yet.
+
 The parameters `tfixgrid, itfixgrid` are available to fix the AMR
 hierarchical grid from a certain time onwards (tfixgrid) or iteration (the it-
 counter for the timesteps) onwards (itfixgrid). This may be handy for steady-
@@ -822,7 +872,9 @@ We allow stretching of the grid, in combination with any coordinate system
 (cartesian/polar/cylindrical/spherical) you choose. You activate grid stretching 
 by setting `stretch_dim(1:ndim)`, for example for the second dimension:
 
-    stretch_dim(2) = 'none' | 'uni' | 'symm'
+```fortran
+stretch_dim(2) = 'none' | 'uni' | 'symm'
+```
 
 * 'none' means don't stretch this dimension, which is the default.
 * 'uni' means unidirectional stretching, where the grid cells change by a 
@@ -845,13 +897,15 @@ account in the reconstruction and symm/asymm boundary conditions, which may lead
 to issues, which can sometimes be avoided by setting `stretch_uncentered` to false.
 
 ## Paramlist {: #par_paramlist }
-    &paramlist
-      dtpar= DOUBLE
-      courantpar= DOUBLE
-      typecourant= 'maxsum' | 'summax' | 'minimum'
-      dtdiffpar= DOUBLE
-      slowsteps= INTEGER
-    /
+```fortran
+&paramlist
+  dtpar= DOUBLE
+  courantpar= DOUBLE
+  typecourant= 'maxsum' | 'summax' | 'minimum'
+  dtdiffpar= DOUBLE
+  slowsteps= INTEGER
+/
+```
 
 ### dtpar, courantpar, typecourant, dtdiffpar, dtTCpar, slowsteps {: #par_dt }
 If `dtpar` is positive, it sets the timestep `dt`, otherwise
@@ -878,78 +932,86 @@ sharp discontinuities. It is normally inactive with a default value -1.
 
 # Physics-dependent Namelists {: #par_pdpnamelists }
 ## rho list {: #par_rholist }
-    &rho_list
-      rho_v= ndim doubles for advection velocity
-    /
+```fortran
+&rho_list
+  rho_v= ndim doubles for advection velocity
+/
+```
 
 
 ## nonlinear list {: #par_nonlinearlist }
-    &nonlinear_list
-      nonlinear_flux_type= INTEGER
-      kdv_source_term= F | T
-    /
+```fortran
+&nonlinear_list
+  nonlinear_flux_type= INTEGER
+  kdv_source_term= F | T
+/
+```
 
 ## HD list {: #par_hdlist }
-    &hd_list
-      hd_energy= T | F
-      hd_n_tracer= INTEGER
-      hd_gamma= DOUBLE 
-      hd_adiab= DOUBLE
-      hd_dust= F | T
-      hd_thermal_conduction= F | T
-      hd_radiative_cooling= F | T
-      hd_gravity= F | T
-      hd_viscosity= F | T
-      hd_particles= F | T
-      He_abundance= DOUBLE from 0 to 1
-      SI_unit= F | T
-    /
+```fortran
+&hd_list
+  hd_energy= T | F
+  hd_n_tracer= INTEGER
+  hd_gamma= DOUBLE 
+  hd_adiab= DOUBLE
+  hd_dust= F | T
+  hd_thermal_conduction= F | T
+  hd_radiative_cooling= F | T
+  hd_gravity= F | T
+  hd_viscosity= F | T
+  hd_particles= F | T
+  He_abundance= DOUBLE from 0 to 1
+  SI_unit= F | T
+/
+```
 
 ## MHD list {: #par_mhdlist }
-    &mhd_list
-     mhd_energy= T | F
-     mhd_n_tracer= INTEGER
-     mhd_gamma= DOUBLE 
-     mhd_adiab= DOUBLE
-     mhd_eta= DOUBLE
-     mhd_eta_hyper= DOUBLE
-     mhd_etah= DOUBLE 
-     mhd_glm_alpha= 0.5d0 between 0 and 1
-     mhd_glm_extended= T | F
-     mhd_magnetofriction= F | T
-     mhd_thermal_conduction= F | T
-     mhd_radiative_cooling= F | T
-     mhd_Hall= F | T
-     mhd_gravity= F | T
-     mhd_viscosity= F | T
-     mhd_particles= F | T
-     mhd_4th_order= F | T
-     mhd_internal_e= F | T
-     mhd_hydrodynamic_e= F | T
-     mhd_semirelativistic= F | T
-     mhd_boris_simplification= F | T
-     mhd_reduced_c = 6.d8
-     mhd_trac= F | T
-     mhd_trac_type= INTEGER from 1 to 6
-     mhd_trac_mask= bigdouble
-     mhd_trac_finegrid= INTEGER
-     typedivbfix= 'linde'|'ct'|'glm'|'powel'|'lindejanhunen'|'lindepowel'|'lindeglm'|'multigrid'|'none'
-     type_ct='uct_contact'|'uct_hll'|'average'
-     source_split_divb= F | T
-     boundary_divbfix= 2*ndim logicals, all false by default
-     divbdiff= 0.8d0 between 0 and 2
-     typedivbdiff= 'all' | 'ind'
-     clean_initial_divb= F | T
-     divbwave= T | F
-     B0field= F | T
-     B0field_forcefree= T | F
-     Bdip= DOUBLE
-     Bquad= DOUBLE
-     Boct= DOUBLE
-     Busr= DOUBLE
-     He_abundance= DOUBLE from 0 to 1
-     SI_unit= F | T
-    /
+```fortran
+&mhd_list
+ mhd_energy= T | F
+ mhd_n_tracer= INTEGER
+ mhd_gamma= DOUBLE 
+ mhd_adiab= DOUBLE
+ mhd_eta= DOUBLE
+ mhd_eta_hyper= DOUBLE
+ mhd_etah= DOUBLE 
+ mhd_glm_alpha= 0.5d0 between 0 and 1
+ mhd_glm_extended= T | F
+ mhd_magnetofriction= F | T
+ mhd_thermal_conduction= F | T
+ mhd_radiative_cooling= F | T
+ mhd_Hall= F | T
+ mhd_gravity= F | T
+ mhd_viscosity= F | T
+ mhd_particles= F | T
+ mhd_4th_order= F | T
+ mhd_internal_e= F | T
+ mhd_hydrodynamic_e= F | T
+ mhd_semirelativistic= F | T
+ mhd_boris_simplification= F | T
+ mhd_reduced_c = 6.d8
+ mhd_trac= F | T
+ mhd_trac_type= INTEGER from 1 to 6
+ mhd_trac_mask= bigdouble
+ mhd_trac_finegrid= INTEGER
+ typedivbfix= 'linde'|'ct'|'glm'|'powel'|'lindejanhunen'|'lindepowel'|'lindeglm'|'multigrid'|'none'
+ type_ct='uct_contact'|'uct_hll'|'average'
+ source_split_divb= F | T
+ boundary_divbfix= 2*ndim logicals, all false by default
+ divbdiff= 0.8d0 between 0 and 2
+ typedivbdiff= 'all' | 'ind'
+ clean_initial_divb= F | T
+ divbwave= T | F
+ B0field= F | T
+ B0field_forcefree= T | F
+ Bdip= DOUBLE
+ Bquad= DOUBLE
+ Boct= DOUBLE
+ Busr= DOUBLE
+ He_abundance= DOUBLE from 0 to 1
+ SI_unit= F | T
+/
+```
 
 ### Magnetic field divergence fixes {: #par_divbfix }
 The upwind constrained transport methods  **typedivbfix='ct'** by Gardiner and Stone in _Journal of 
@@ -1131,36 +1193,38 @@ but user can set 'activate_unit_arcsec' to F to use the simulation length unit.
 Only Cartesian and spherical coordinate system are supported currently. In spherical coordinate,
 region below 'R_opt_thick' (in solar radius, default value is 1) is assumed as not transparent.
 
-    &emissionlist
-      filename_euv= CHARACTER
-      wavelength= 94 | 131 | 171 | 193 | 211 | 304 | 335 | 1354 | 263 | 264 | 192 | 255
-      LOS_theta= DOUBLE
-      LOS_phi= DOUBLE
-      image_rotate= DOUBLE
-      x_origin(1:3)= DOUBLE
-      big_image= LOGICAL
-      filename_sxr= CHARACTER
-      emin_sxr= INTEGER
-      emax_sxr= INTEGER
-      filename_spectrum= CHARACTER
-      spectrum_wl= 1354 | 263 | 264| 192 | 255
-      spectrum_window_min= DOUBLE
-      spectrum_window_max= DOUBLE
-      location_slit= DOUBLE
-      filename_whitelight= CHARACTER
-      whitelight_instrument= 'LASCO/C1' | 'LASCO/C2' | 'LASCO/C3'
-      R_occultor= DOUBLE
-      R_opt_thick= DOUBLE
-      activate_unit_arcsec= LOGICAL
-      dat_resolution=LOGICAL
-      instrument_resolution_factor=INTEGER
-    /
+```fortran
+&emissionlist
+  filename_euv= CHARACTER
+  wavelength= 94 | 131 | 171 | 193 | 211 | 304 | 335 | 1354 | 263 | 264 | 192 | 255
+  LOS_theta= DOUBLE
+  LOS_phi= DOUBLE
+  image_rotate= DOUBLE
+  x_origin(1:3)= DOUBLE
+  big_image= LOGICAL
+  filename_sxr= CHARACTER
+  emin_sxr= INTEGER
+  emax_sxr= INTEGER
+  filename_spectrum= CHARACTER
+  spectrum_wl= 1354 | 263 | 264| 192 | 255
+  spectrum_window_min= DOUBLE
+  spectrum_window_max= DOUBLE
+  location_slit= DOUBLE
+  filename_whitelight= CHARACTER
+  whitelight_instrument= 'LASCO/C1' | 'LASCO/C2' | 'LASCO/C3'
+  R_occultor= DOUBLE
+  R_opt_thick= DOUBLE
+  activate_unit_arcsec= LOGICAL
+  dat_resolution=LOGICAL
+  instrument_resolution_factor=INTEGER
+/
+```
 
 
 ## Splitting of the hydrostatic equilibrium
 
 set 
-```
+```fortran
 
         has_equi_pe0 = .true.
         has_equi_rho0 = .true.
@@ -1171,7 +1235,7 @@ and implement usr\_set\_equi\_vars in mod\_ust.t file
 
 
 
-```
+```fortran
   subroutine usr_init()
 
   ...

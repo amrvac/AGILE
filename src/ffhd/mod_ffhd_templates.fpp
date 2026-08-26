@@ -268,7 +268,13 @@
     !$acc update device(iw_b1, iw_b2, iw_b3)
 
     ! set number of variables which need update ghostcells
-    nwgc=nwflux
+    ! The frozen field (b1,b2,b3) is set by mod_usr per block, not advected,
+    ! so it is registered via var_set_extravar rather than being part of
+    ! nwflux; it still needs to reach inter-block ghost cells via getbc
+    ! (physical-boundary ghost cells come from usr_special_bc instead), so
+    ! nwgc has to cover it too - otherwise a non-uniform frozen field is only
+    ! ever correct within each block's own interior.
+    nwgc=nwflux+nwextra
     !$acc update device(nwgc)
 
     ! Define custom flux types:
@@ -279,7 +285,15 @@
        call mpistop("phys_check error: flux_type has wrong shape")
     end if
     !$acc update device(flux_type)
-    
+
+    ! Only the frozen field (b1,b2,b3) is a genuine vector here: mom(1) is a
+    ! scalar (the field-aligned momentum m_par), not 3 consecutive slots, so
+    ! it must not be registered as one.
+    nvector      = 1 ! No. vector vars
+    allocate(iw_vector(nvector))
+    iw_vector(1) = iw_b1 - 1
+    !$acc update device(nvector, iw_vector)
+
 #:if defined('COOLING')
     call radiative_cooling_init_params(phys_gamma,He_abundance)
     call radiative_cooling_init(rc_fl)
@@ -429,6 +443,36 @@ subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir
 end subroutine addsource_nonlocal
 #:enddef
 
+#:if GEOM == 'spherical' or GEOM == 'cylindrical'
+!> No curvature source terms are needed for ffhd. Its conserved quantities
+!> (rho, m_par, e_hd_par, q_par) are all genuine scalars advected along the
+!> user-supplied field direction b-hat, fluxed as (quantity) * b-hat; by
+!> Gauss's theorem the divergence of a scalar's flux needs no extra terms in
+!> any coordinate system (unlike a vector quantity's components, which pick
+!> up curvature terms from the position-dependent (r, theta, phi) or
+!> (r, z, phi) basis - see HD's/MHD's/SRHD's addsource_geometry). Matches
+!> upstream MPI-AMRVAC's ffhd_add_source_geom, which is likewise empty for
+!> every coordinate system.
+!>
+!> Caveat: this does NOT cover the optional PDIVB source term (p * div(b-hat),
+!> compile-time ffhd_pdivb=T), whose div(b-hat) in addsource_nonlocal is a
+!> plain finite difference over dx(idir) - correct on a slab-uniform mesh, but
+!> missing the metric factors a true curvilinear divergence needs (r^2/sin(theta)
+!> for spherical, r for cylindrical). PDIVB defaults off and is untouched here.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  !$acc routine seq
+
+  real(dp), intent(in)     :: qdt
+  real(dp), intent(in)     :: wprim(nw_phys)
+  real(dp), intent(in)     :: x(1:ndim)
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+
+end subroutine addsource_geometry
+#:enddef
+#:endif
+
 #:def to_primitive()
 pure subroutine to_primitive(u)
   !$acc routine seq
@@ -498,7 +542,7 @@ pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
   real(dp)              :: mag
 
   mag = u(iw_b1-1+flux_dim)
-  
+
   wC = dsqrt(phys_gamma*u(iw_e)/u(iw_rho)) + abs(u(iw_mom(1))*mag)
 
 end function get_cmax
