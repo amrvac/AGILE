@@ -867,6 +867,7 @@ module mod_fix_conserve
 
    subroutine fix_conserve(psb,idimmin,idimmax,nw0,nwfluxin)
      use mod_global_parameters
+     use mod_geometry, only: sync_geometry_host
 
      integer, intent(in) :: idimmin,idimmax, nw0, nwfluxin
      type(state) :: psb(max_blocks)
@@ -877,6 +878,9 @@ module mod_fix_conserve
      integer :: nxCo1,nxCo2,nxCo3, iw, ix, ipe_neighbor, ineighbor, nbuf,&
          ibufnext, nw1
      double precision :: CoFiratio
+
+     ! the flux correction divides by dvolume on the host
+     call sync_geometry_host()
 
      nw1=nw0-1+nwfluxin
      if (slab_uniform) then

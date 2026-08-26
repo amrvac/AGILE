@@ -189,12 +189,12 @@ end subroutine finite_volume_local
                 ! Compute fluxes in all dimensions
 
 #:if GEOM != 'Cartesian'
-                inv_dvol = 1.0_dp / ps(n)%dvolume(ix1, ix2, ix3)
+                inv_dvol = 1.0_dp / bgeo%dvolume(ix1, ix2, ix3, n)
 #:endif
 
                 tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
-                xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                xlocC(1:ndim,1) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
+                xlocC(1:ndim,2) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                 xlocC(1,1) = xlocC(1,1)-0.5_dp*dr(1)
                 xlocC(1,2) = xlocC(1,2)+0.5_dp*dr(1)
                 call ${faceflux_proc}$(tmp, xlocC, 1, f, typelim)
@@ -203,8 +203,8 @@ end subroutine finite_volume_local
                      n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(1)
 #:else
                 bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                     n) + qdt * (f(:, 1) * ps(n)%surfaceC(ix1-1, ix2, ix3, 1) &
-                     - f(:, 2) * ps(n)%surfaceC(ix1, ix2, ix3, 1)) * inv_dvol
+                     n) + qdt * (f(:, 1) * bgeo%surfaceC(ix1-1, ix2, ix3, 1, n) &
+                     - f(:, 2) * bgeo%surfaceC(ix1, ix2, ix3, 1, n)) * inv_dvol
 #:endif
 
                 ! Store fluxes for flux fixing in direction 1
@@ -225,8 +225,8 @@ end subroutine finite_volume_local
                 end select
 
                 tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
-                xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                xlocC(1:ndim,1) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
+                xlocC(1:ndim,2) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                 xlocC(2,1) = xlocC(2,1)-0.5_dp*dr(2)
                 xlocC(2,2) = xlocC(2,2)+0.5_dp*dr(2)
                 call ${faceflux_proc}$(tmp, xlocC, 2, f, typelim)
@@ -235,8 +235,8 @@ end subroutine finite_volume_local
                      n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(2)
 #:else
                 bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                     n) + qdt * (f(:, 1) * ps(n)%surfaceC(ix1, ix2-1, ix3, 2) &
-                     - f(:, 2) * ps(n)%surfaceC(ix1, ix2, ix3, 2)) * inv_dvol
+                     n) + qdt * (f(:, 1) * bgeo%surfaceC(ix1, ix2-1, ix3, 2, n) &
+                     - f(:, 2) * bgeo%surfaceC(ix1, ix2, ix3, 2, n)) * inv_dvol
 #:endif
 
                 ! Store fluxes for flux fixing in direction 2
@@ -257,8 +257,8 @@ end subroutine finite_volume_local
                 end select
 
                 tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
-                xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                xlocC(1:ndim,1) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
+                xlocC(1:ndim,2) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                 xlocC(3,1) = xlocC(3,1)-0.5_dp*dr(3)
                 xlocC(3,2) = xlocC(3,2)+0.5_dp*dr(3)
                 call ${faceflux_proc}$(tmp, xlocC, 3, f, typelim)
@@ -267,8 +267,8 @@ end subroutine finite_volume_local
                      n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(3)
 #:else
                 bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                     n) + qdt * (f(:, 1) * ps(n)%surfaceC(ix1, ix2, ix3-1, 3) &
-                     - f(:, 2) * ps(n)%surfaceC(ix1, ix2, ix3, 3)) * inv_dvol
+                     n) + qdt * (f(:, 1) * bgeo%surfaceC(ix1, ix2, ix3-1, 3, n) &
+                     - f(:, 2) * bgeo%surfaceC(ix1, ix2, ix3, 3, n)) * inv_dvol
 #:endif
 
                 ! Store fluxes for flux fixing in direction 3
@@ -292,15 +292,15 @@ end subroutine finite_volume_local
                    ! Add the geometric (curvature) source terms that the
                    ! flux-divergence form of the momentum equations leaves over
                    ! in a curvilinear coordinate system.
-                   xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                    wprim        = uprim(1:nw_phys, ix1, ix2, ix3)
                    wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
-                   dAdV(1) = (ps(n)%surfaceC(ix1, ix2, ix3, 1) &
-                        - ps(n)%surfaceC(ix1-1, ix2, ix3, 1)) * inv_dvol
-                   dAdV(2) = (ps(n)%surfaceC(ix1, ix2, ix3, 2) &
-                        - ps(n)%surfaceC(ix1, ix2-1, ix3, 2)) * inv_dvol
-                   dAdV(3) = (ps(n)%surfaceC(ix1, ix2, ix3, 3) &
-                        - ps(n)%surfaceC(ix1, ix2, ix3-1, 3)) * inv_dvol
+                   dAdV(1) = (bgeo%surfaceC(ix1, ix2, ix3, 1, n) &
+                        - bgeo%surfaceC(ix1-1, ix2, ix3, 1, n)) * inv_dvol
+                   dAdV(2) = (bgeo%surfaceC(ix1, ix2, ix3, 2, n) &
+                        - bgeo%surfaceC(ix1, ix2-1, ix3, 2, n)) * inv_dvol
+                   dAdV(3) = (bgeo%surfaceC(ix1, ix2, ix3, 3, n) &
+                        - bgeo%surfaceC(ix1, ix2, ix3-1, 3, n)) * inv_dvol
                    call addsource_geometry(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         wprim, wnew, xloc, dAdV)
                    bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
@@ -308,7 +308,7 @@ end subroutine finite_volume_local
 
 #:if defined('SOURCE_LOCAL')
                    ! Add local source terms:
-                   xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                    wprim        = uprim(1:nw_phys, ix1, ix2, ix3)
                    wCT          = bga%w(ix1, ix2, ix3, 1:nw_phys, n)
                    wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
@@ -320,7 +320,7 @@ end subroutine finite_volume_local
 
 #:if defined('SOURCE_NONLOCAL')
                    ! Add non-local (gradient) source terms:
-                   xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                    wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
 
                    tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
@@ -343,7 +343,7 @@ end subroutine finite_volume_local
 
 #:if defined('SOURCE_COMPACT')
                    ! Add non-local compact source terms:
-                   xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                   xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                    wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
                    tmp1 = uprim(1:nw_phys, ix1-1:ix1+1, ix2, ix3)
                    tmp2 = uprim(1:nw_phys, ix1, ix2-1:ix2+1, ix3)

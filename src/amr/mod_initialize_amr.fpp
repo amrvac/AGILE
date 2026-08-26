@@ -21,6 +21,7 @@ contains
     use mod_functions_connectivity, only: build_connectivity, getigrids 
     use mod_functions_forest, only: init_forest_root
     use mod_amr_solution_node, only: alloc_node
+    use mod_geometry, only: sync_positions_host
  
     integer :: iigrid, igrid
     integer :: itimelevel
@@ -38,7 +39,9 @@ contains
 
        call alloc_node(igrid)
 
-       ! in case gradient routine used in initial condition, ensure geometry known
+       ! alloc_node builds the geometry on the device and leaves it there;
+       ! the initial condition reads this block's ps(igrid)%x on the host
+       call sync_positions_host(igrid)
        call initial_condition(igrid)
 
     end do
@@ -76,10 +79,14 @@ contains
     subroutine modify_IC
       use mod_usr_methods, only: usr_init_one_grid
       use mod_global_parameters
+      use mod_geometry, only: sync_positions_host
       use mod_comm_lib, only: mpistop
 
       integer :: iigrid, igrid
-  
+
+    ! usr_init_one_grid reads ps(igrid)%x on the host
+    call sync_positions_host()
+
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        block=>ps(igrid)
        dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)

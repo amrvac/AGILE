@@ -60,7 +60,7 @@ contains
   !  use mod_trac, only: initialize_trac_after_settree
     use mod_convert_files, only: generate_plotfile
     use mod_comm_lib, only: comm_start, comm_finalize,mpistop
-    use mod_geometry, only: set_coordinate_system_from_config
+    use mod_geometry, only: set_coordinate_system_from_config, sync_geometry_host
 
 
     double precision :: time0, time_in
@@ -178,6 +178,9 @@ contains
            call phys_special_advance(global_time,ps)
          end if
 
+         ! standalone convert bypasses saveamrfile, so this is where the
+         ! device-side cell metrics have to come back to the host
+         call sync_geometry_host()
          call generate_plotfile
          call comm_finalize
          stop
@@ -248,6 +251,7 @@ contains
     use mod_dt, only: setdt
     use mod_particles
     use mod_usr_methods
+    use mod_geometry, only: sync_positions_host
 
     double precision, intent(in) :: time0
 
@@ -330,6 +334,8 @@ contains
        if (any(save_file)) then
          if(associated(usr_modify_output)) then
            ! Users can modify or set variables before output is written
+           ! (usr_modify_output reads ps(igrid)%x on the host)
+           call sync_positions_host()
            do iigrid=1,igridstail; igrid=igrids(iigrid);
              dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
              dxlevel(3)=rnode(rpdx3_,igrid);

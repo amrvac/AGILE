@@ -8,7 +8,8 @@
 # 3. You can hide the Entering/leaving directory messages with: -s
 
 HD_DIRS := hd/KH3D hd/RT3D hd/KH3D-SMR hd/KH3D_tracer hd/sphere_advection hd/TRML hd/cloud_crushing \
-           hd/spherical_uniform_flow hd/spherical_blast hd/cylindrical_uniform_flow hd/cylindrical_blast
+           hd/spherical_uniform_flow hd/spherical_blast hd/spherical_blast_amr \
+           hd/cylindrical_uniform_flow hd/cylindrical_blast
 MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D mhd/spherical_uniform_flow mhd/spherical_blast \
             mhd/cylindrical_uniform_flow mhd/cylindrical_blast
 FFHD_DIRS := ffhd/TI3D ffhd/spherical_uniform_flow ffhd/spherical_blast \

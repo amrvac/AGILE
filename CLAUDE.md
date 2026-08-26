@@ -143,15 +143,106 @@ Two things to know when writing a spherical or cylindrical case:
 
 How it works: in a curvilinear build the finite-volume update in
 `src/mod_finite_volume.fpp` divides face fluxes by the cell volume weighted by
-the face areas (`ps(n)%surfaceC`, `ps(n)%dvolume`, filled per block by
-`fillgeo`/`get_surface_area` and copied to the device in
-`src/amr/mod_amr_solution_node.fpp`), instead of by the uniform `rnode` cell
-spacing. The leftover curvature terms of the momentum equations are added by
-`addsource_geometry`, a fypp macro each physics template defines (see
-`src/hd/mod_hd_templates.fpp`); `src/physics/mod_physics_dummies.fpp` provides
-a version that `mpistop`s, so a physics module without one fails loudly.
-`setdt` likewise switches from `rnode` spacing to the physical cell sizes
-`ps(igrid)%ds`.
+the face areas (`bgeo%surfaceC`, `bgeo%dvolume`, filled per block by
+`fillgeo`/`get_surface_area` in `src/amr/mod_amr_solution_node.fpp`), instead
+of by the uniform `rnode` cell spacing. The leftover curvature terms of the
+momentum equations are added by `addsource_geometry`, a fypp macro each physics
+template defines (see `src/hd/mod_hd_templates.fpp`);
+`src/physics/mod_physics_dummies.fpp` provides a version that `mpistop`s, so a
+physics module without one fails loudly. `setdt` likewise switches from `rnode`
+spacing to the physical cell sizes `bgeo%ds`.
+
+A block's geometry lives in `bgeo` (and `bgeoc` for the one-level-coarser
+representatives), a `geo_t` declared in `src/mod_physicaldata.fpp` that holds
+`x`, `ds`, `dvolume`, `surfaceC`, `dx`, `dsC` and `surface` for *all* blocks
+with the grid index last, exactly as `block_grid_t` holds the solution in
+`bg%w`. `initialize_vars` allocates them once for `1:max_blocks`, so GPU
+kernels index them directly (`bgeo%x(ix1,ix2,ix3,1:ndim,igrid)`) rather than
+chasing a per-block pointer, and `alloc_node` only has to push the one block's
+slice it just filled. The matching `state` components (`ps(igrid)%x`, `%dx`,
+...) are bounds-remapped pointer views into those arrays (see
+`point_at_geometry` in `src/amr/mod_amr_solution_node.fpp`) — remapping rather
+than plain pointer assignment, because `surfaceC` starts at index 0 and
+`dvolume`/`ds` do too when `nghostcells` is odd. Keeping the views is what lets
+the large body of host code that uses `ps(igrid)%x` and friends, including
+every case's `mod_usr.fpp`, work unchanged.
+
+A block's metrics are built on the device, by `fill_geometry_device` in
+`src/amr/mod_amr_solution_node.fpp`, which `alloc_node` calls once per block.
+There is a single path for all three coordinate systems: a uniform block is an
+analytic function of nothing but its corner and spacing in `rnode`, so every
+member of `geo_t` is derived on the GPU rather than computed on the CPU and
+shipped across the bus on each (re)allocation of a node — which, with AMR, is
+most regrids. The per-cell expressions are fypp-specialized on `GEOM`, so a
+build only carries the branch it needs.
+
+Because the device is the producer, *all* of `geo_t` is device-resident in
+every build, including members no kernel reads (`dx`, `dsC`, `surface`, and in
+a Cartesian build the metrics whose values its kernels take from `rnode`
+instead). They have to live where they are written. Only the positions are
+returned to the host by `alloc_node` itself, since `ps(igrid)%x` is read
+immediately for the initial condition, the user hooks and the output.
+
+Two consequences of building the metrics analytically:
+
+- **Grid stretching is rejected.** `stretch_dim` in `&meshlist` makes the cell
+  spacing vary within a block, which the analytic derivation cannot express,
+  so `initialize_vars` calls `mpistop` if any dimension is stretched. The
+  ~1300-line host path that used to handle it (`fill_geometry_host`), and
+  `get_surface_area` in `src/mod_geometry.fpp`, are gone. Upstream
+  MPI-AMRVAC's stretched-grid machinery (`qstretch`, `dxfirst`, ...) still
+  sits in `mod_global_parameters` and `read_par_files` but now has no
+  consumer.
+- `Cartesian_expansion` was already unreachable here — `set_coordinate_system`
+  `mpistop`s on it unless `ndim == 1`, and `ndim` is a compile-time 3 — so the
+  `usr_set_surface` hook in `src/mod_usr_methods.fpp` is likewise now unused.
+
+### Getting the geometry back to the host
+
+Nothing is copied back by `alloc_node`. That routine runs on every regrid,
+mostly for blocks no host routine will look at, so the fetch is placed at the
+sites that actually read the geometry instead. Two routines in
+`src/mod_geometry.fpp` do it, both taking an optional `igrid` (one block) and
+defaulting to every grid in `igrids`:
+
+- `sync_positions_host` — just the cell-centre positions, which are what host
+  code asks for most often.
+- `sync_geometry_host` — the whole of `geo_t`, positions and metrics alike.
+
+Neither is guarded by a "host is already up to date" flag, deliberately: the
+geometry is per block, so any single flag would have to be cleared after
+refreshing whatever set of blocks happened to be listed at the time — after
+which the next regrid or `selectgrids` can put a block that was not in that
+set straight back in front of host code. The bulk form is not cheaper per
+block either (the arrays are strided by `igrid`, so it issues one `update` per
+block regardless); pick whichever form matches the caller's shape, and only
+avoid calling the bulk form from inside a per-block loop.
+
+`sync_geometry_host` is called where `bg%w` is pulled back for output —
+`saveamrfile`, next to its `!$acc update host(ps(igrid)%w)` loop — which
+covers the log, the snapshot, the slices, the collapsed views and
+`autoconvert`; standalone `convert` mode bypasses `saveamrfile`, so
+`src/agile.fpp` syncs before `generate_plotfile` too. Individual output
+readers (`get_volume_average`, `calc_grid`, ...) therefore do not sync
+themselves. `fix_conserve` is the one non-output metric reader, and calls it
+itself.
+
+`sync_positions_host` is called wherever host code reads `ps(igrid)%x`:
+`initial_condition` (per block, in `initlevelone`'s loop and in
+`coarsen_grid_siblings`), `modify_IC`, `getintbc` (when `usr_internal_bc` is
+set), `process`/`process_advanced` (when the `usr_process_*_grid` hooks are
+set), `usr_modify_output` in `src/agile.fpp`, `prolong_grid`/`prolong_2nd`
+(when `prolongprimitive` or `fix_small_values` is on), and `alloc_node` itself
+just before `set_B0_grid`/`phys_set_equi_vars`, which read positions on the
+host.
+
+**Adding a host reader of `ps(igrid)%x` or of any metric means adding the
+matching sync call.** A missed one reads whatever the host copy held for the
+block that previously occupied that `igrid` slot — plausible-looking numbers,
+no crash. Readers in code paths this fork does not currently exercise —
+`mod_thermal_emission`, `mod_particle_*`, `mod_point_searching`,
+`mod_interpolation`, `mod_functions_bfield`, `mod_constrained_transport` —
+will need the same treatment when they are brought back into use.
 
 Current limits of the curvilinear (spherical and cylindrical) support:
 

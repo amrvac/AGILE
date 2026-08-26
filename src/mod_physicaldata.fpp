@@ -10,6 +10,36 @@ module mod_physicaldata
      double precision, dimension(:,:,:,:,:), allocatable :: ws
   end type block_grid_t
 
+  !> Cell metrics for all blocks at once, with the grid index last, exactly
+  !> like block_grid_t holds the solution.  One instance covers every block
+  !> a rank can own (1:max_blocks), so the arrays are allocated once at startup
+  !> instead of per block, and device kernels can index them directly by igrid
+  !> rather than chasing a per-block pointer.  The corresponding state
+  !> components (ps(igrid)%x, %dx, ...) are bounds-remapped views into these
+  !> arrays, so host code keeps working unchanged.
+  !>
+  !> Only the first four members are copied to the device, and only in a
+  !> curvilinear build (see alloc_geometry); the rest are read on the host
+  !> alone, and holding them here as well is what keeps all of a block's
+  !> geometry in one place.
+  type geo_t
+     !> Cell-center positions
+     double precision, dimension(:,:,:,:,:), allocatable  :: x
+     !> Cell sizes in length unit
+     double precision, dimension(:,:,:,:,:), allocatable  :: ds
+     !> Volumes of a cell
+     double precision, dimension(:,:,:,:), allocatable    :: dvolume
+     !> Areas of cell-face surfaces
+     double precision, dimension(:,:,:,:,:), allocatable  :: surfaceC
+     !> Cell sizes in coordinate units
+     double precision, dimension(:,:,:,:,:), allocatable  :: dx
+     !> Cell sizes at cell face in length unit
+     double precision, dimension(:,:,:,:,:), allocatable  :: dsC
+     !> Areas of cell-center surfaces
+     double precision, dimension(:,:,:,:,:), allocatable  :: surface
+  end type geo_t
+
+  
   type state
      !> ID of a grid block
      integer :: igrid=-1
@@ -118,6 +148,11 @@ module mod_physicaldata
   !> one block grid to rule them all
   type(block_grid_t), dimension(:), allocatable, target   :: bg, bgc
   !$acc declare create(bg, bgc)
+
+  !> one geometry to rule them all: bgeo for the blocks themselves, bgeoc for
+  !> their one-level-coarser representatives
+  type(geo_t), target                                     :: bgeo, bgeoc
+  !$acc declare create(bgeo, bgeoc)
 
   !> array of physical blocks in reduced dimension
   type(state_sub), dimension(:), allocatable, target :: ps_sub

@@ -118,6 +118,12 @@ module mod_global_parameters
   integer :: ixGshi1,ixGshi2,ixGshi3
   !$acc declare create(ixGshi1,ixGshi2,ixGshi3)
 
+  !> Index range over which the cell metrics (dvolume, ds) are known.  This is
+  !> the ghosted block range ixG, plus one extra layer on either side when the
+  !> number of ghost cells is odd (or the grid is staggered), because ghost
+  !> cell prolongation then needs volumes and dx-intervals one cell beyond it.
+  integer :: ixGextmin1,ixGextmin2,ixGextmin3,ixGextmax1,ixGextmax2,ixGextmax3
+
   !> Number of ghost cells surrounding a grid
   integer :: nghostcells = 2
   !$acc declare copyin(nghostcells)

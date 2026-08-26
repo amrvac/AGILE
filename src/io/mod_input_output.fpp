@@ -2108,6 +2108,7 @@ contains
     use mod_convert_files, only: generate_plotfile
     use mod_physics, only: phys_req_diagonal
     use mod_ghostcells_update
+    use mod_geometry, only: sync_geometry_host
     integer:: ifile, iigrid, igrid
 
     ! update (diagonal) ghostcells before moving to host:
@@ -2118,6 +2119,10 @@ contains
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        !$acc update host(ps(igrid)%w)
     end do
+
+    ! Same idea for the cell metrics: everything below here that weights by
+    ! dvolume, or builds corner positions from dx, reads them on the host.
+    call sync_geometry_host()
 
     select case (ifile)
     case (fileout_)

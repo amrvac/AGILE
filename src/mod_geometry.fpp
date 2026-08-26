@@ -230,245 +230,71 @@ contains
 
   end subroutine set_pole
 
-  !> Deallocate geometry-related variables
-  subroutine putgridgeo(igrid)
+  !> Return cell-centre positions from the device to the host.
+  !>
+  !> fill_geometry_device builds a block's geometry on the GPU and leaves it
+  !> there. Positions are the part host code asks for most often - the initial
+  !> condition, the user hooks and the output all read ps(igrid)%x - but it
+  !> asks rarely compared to how often blocks are (re)allocated, so the copy
+  !> back does not belong in alloc_node: with AMR that would pay for it on
+  !> every regrid, for blocks nothing on the host is going to look at.
+  !>
+  !> Call this instead immediately before host code that reads ps(igrid)%x,
+  !> passing igrid when it is about to read a single block. Every such site is
+  !> listed in CLAUDE.md; a missed one reads whatever the host copy held for
+  !> the block that previously occupied that slot.
+  subroutine sync_positions_host(igrid)
     use mod_global_parameters
-    integer, intent(in) :: igrid
 
-    deallocate(ps(igrid)%surfaceC,ps(igrid)%surface,ps(igrid)%dvolume,&
-       ps(igrid)%dx,psc(igrid)%dx,ps(igrid)%ds,psc(igrid)%dvolume)
+    integer, intent(in), optional :: igrid
 
-  end subroutine putgridgeo
+    integer :: iigrid
 
-  !> calculate area of surfaces of cells
-  subroutine get_surface_area(s,ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&
-     ixGmax3)
+    if (present(igrid)) then
+       !$acc update self(bgeo%x(:,:,:,:,igrid), bgeoc%x(:,:,:,:,igrid))
+    else
+       do iigrid = 1, igridstail
+          !$acc update self(bgeo%x(:,:,:,:,igrids(iigrid)), &
+          !$acc             bgeoc%x(:,:,:,:,igrids(iigrid)))
+       end do
+    end if
+
+  end subroutine sync_positions_host
+
+  !> Return a block's whole geometry - positions and metrics alike - from the
+  !> device to the host, for every grid the host is about to read.
+  !>
+  !> This is the output-time counterpart of sync_positions_host: saveamrfile
+  !> calls it in the same place it pulls back bg%w, which covers the log, the
+  !> snapshot, the slices, the collapsed views and autoconvert, and the
+  !> standalone convert path does the same before generate_plotfile.
+  !>
+  !> The fetch is unconditional and covers the whole grid in one pass, on
+  !> purpose. Remembering "the host is already up to date" in a flag cannot be
+  !> made honest, because the geometry is per block: any such flag would have
+  !> to be cleared after refreshing whatever set of blocks happened to be
+  !> listed at the time, and the next regrid or selectgrids can put a block
+  !> that was not in that set straight back in front of host code. Doing every
+  !> grid at once also keeps this to a few update directives per block rather
+  !> than paying the per-call overhead once per reader.
+  subroutine sync_geometry_host()
     use mod_global_parameters
-    use mod_usr_methods, only: usr_set_surface
 
-    type(state) :: s
-    integer, intent(in) :: ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3
+    integer :: iigrid, igrid
 
-    double precision :: x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-       ndim), xext(ixGmin1-1:ixGmax1,1), drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-       ixGmin3:ixGmax3), drs_ext(ixGmin1-1:ixGmax1), dx2(ixGmin1:ixGmax1,&
-       ixGmin2:ixGmax2,ixGmin3:ixGmax3), dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-       ixGmin3:ixGmax3)
-    double precision :: exp_factor_ext(ixGmin1-1:ixGmax1),&
-       del_exp_factor_ext(ixGmin1-1:ixGmax1),&
-       exp_factor_primitive_ext(ixGmin1-1:ixGmax1)
-    double precision :: exp_factor(ixGmin1:ixGmax1),&
-       del_exp_factor(ixGmin1:ixGmax1),exp_factor_primitive(ixGmin1:ixGmax1)
+    do iigrid = 1, igridstail
+       igrid = igrids(iigrid)
+       !$acc update self(bgeo%x(:,:,:,:,igrid), bgeo%dvolume(:,:,:,igrid), &
+       !$acc             bgeo%surfaceC(:,:,:,:,igrid), bgeo%ds(:,:,:,:,igrid), &
+       !$acc             bgeo%dsC(:,:,:,:,igrid), bgeo%dx(:,:,:,:,igrid), &
+       !$acc             bgeo%surface(:,:,:,:,igrid))
+       !$acc update self(bgeoc%x(:,:,:,:,igrid), bgeoc%dvolume(:,:,:,igrid), &
+       !$acc             bgeoc%surfaceC(:,:,:,:,igrid), bgeoc%ds(:,:,:,:,igrid), &
+       !$acc             bgeoc%dsC(:,:,:,:,igrid), bgeoc%dx(:,:,:,:,igrid), &
+       !$acc             bgeoc%surface(:,:,:,:,igrid))
+    end do
 
-    select case (coordinate)
-
-    case (Cartesian_expansion)
-      drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)
-      x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=s%x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)
-      
-
-    case (Cartesian,Cartesian_stretched)
-      drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)
-      
-      dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)
-      
-      dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)
-
-      
-      
-      
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)= dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)= drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)= drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,2)
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,3)
-     
-      s%surfaceC(0,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=s%surfaceC(1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1);
-      s%surfaceC(ixGmin1:ixGmax1,0,ixGmin3:ixGmax3,&
-         2)=s%surfaceC(ixGmin1:ixGmax1,1,ixGmin3:ixGmax3,2);
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,0,&
-         3)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,1,3);
-    case (spherical)
-      x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=s%x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)
-      
-      x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,2)=s%x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,2)
-     
-      drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)
-      
-      dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)
-     
-      
-      dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)
-     
-
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)=(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)+half*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))**2  *two*dsin(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3,2))*dsin(half*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-
-      
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dsin(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3,2)+half*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-
-      
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-     
-
-      
-      
-      
-      s%surfaceC(0,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=(x(1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3,1)-half*drs(1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))**2*two*dsin(x(1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2))*dsin(half*dx2(1,ixGmin2:ixGmax2,ixGmin3:ixGmax3))*dx3(1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      s%surfaceC(ixGmin1:ixGmax1,0,ixGmin3:ixGmax3,2)=x(ixGmin1:ixGmax1,1,&
-         ixGmin3:ixGmax3,1)*drs(ixGmin1:ixGmax1,1,&
-         ixGmin3:ixGmax3)*dsin(x(ixGmin1:ixGmax1,1,ixGmin3:ixGmax3,&
-         2)-half*dx2(ixGmin1:ixGmax1,1,ixGmin3:ixGmax3))*dx3(ixGmin1:ixGmax1,1,&
-         ixGmin3:ixGmax3)
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,0,&
-         3)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,1,3)
-     
-
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)**2  *two*dsin(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2))*dsin(half*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-      
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dsin(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3,2))*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-
-      
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-
-    case (cylindrical)
-      x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=s%x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)
-      drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)
-      
-      dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)
-      
-      dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)
-
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)=dabs(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)+half*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3) *dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-      
-      if (z_==2) s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      if (phi_==2) s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-     
-      
-      if (z_==3) s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      if (phi_==3) s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-     
-      
-      
-      
-      s%surfaceC(0,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=dabs(x(1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3,1)-half*drs(1,ixGmin2:ixGmax2,ixGmin3:ixGmax3))*dx2(1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3)*dx3(1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-     
-      s%surfaceC(ixGmin1:ixGmax1,0,ixGmin3:ixGmax3,&
-         2)=s%surfaceC(ixGmin1:ixGmax1,1,ixGmin3:ixGmax3,2);
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,0,&
-         3)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,1,3);
-
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)=dabs(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1))*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3) *dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-      
-      if (z_==2) s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      if (phi_==2) s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      
-      if (z_==3) s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      if (phi_==3) s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-
-    case default
-      call mpistop("Sorry, coordinate unknown")
-    end select
-
-  end subroutine get_surface_area
+  end subroutine sync_geometry_host
 
   !> Calculate curl of a vector qvec within ixL
   !> Options to

@@ -11,16 +11,22 @@ contains
 
 
   !> coarsen one grid to its coarser representative
+  !>
+  !> geoFi/igridFi and geoCo/igridCo say where the cell volumes of the two
+  !> states live: the target is bgeo when a block is coarsened into a
+  !> same-level parent on this rank, and bgeoc when it is coarsened into its
+  !> own coarse representative for sending to another rank.
   subroutine coarsen_grid(sFi,ixFiGmin1,ixFiGmin2,ixFiGmin3,ixFiGmax1,&
      ixFiGmax2,ixFiGmax3,ixFimin1,ixFimin2,ixFimin3,ixFimax1,ixFimax2,ixFimax3,&
      sCo,ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3,ixComin1,&
-     ixComin2,ixComin3,ixComax1,ixComax2,ixComax3)
+     ixComin2,ixComin3,ixComax1,ixComax2,ixComax3,geoFi,igridFi,geoCo,igridCo)
 
     type(state), intent(inout)      :: sFi, sCo
+    type(geo_t), intent(in)         :: geoFi, geoCo
     integer, intent(in) :: ixFiGmin1,ixFiGmin2,ixFiGmin3,ixFiGmax1,ixFiGmax2,&
        ixFiGmax3, ixFimin1,ixFimin2,ixFimin3,ixFimax1,ixFimax2,ixFimax3,&
         ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3, ixComin1,&
-       ixComin2,ixComin3,ixComax1,ixComax2,ixComax3
+       ixComin2,ixComin3,ixComax1,ixComax2,ixComax3, igridFi, igridCo
 
     integer :: ixCo1,ixCo2,ixCo3, ixFi1,ixFi2,ixFi3, iw
     double precision :: CoFiratio
@@ -61,9 +67,9 @@ contains
                    ixFi3=2*(ixCo3-ixComin3)+ixFimin3+ixFiGmin3-1
                    ixFi2=2*(ixCo2-ixComin2)+ixFimin2+ixFiGmin2-1
                    ixFi1=2*(ixCo1-ixComin1)+ixFimin1+ixFiGmin1-1
-                   sCo%w(ixCo1+ixCoGmin1-1,ixCo2+ixCoGmin2-1,ixCo3+ixCoGmin3-1,iw)= sum(sFi%dvolume(ixFi1:ixFi1+1,&
-                        ixFi2:ixFi2+1,ixFi3:ixFi3+1)*sFi%w(ixFi1:ixFi1+1,ixFi2:ixFi2+1,&
-                        ixFi3:ixFi3+1,iw)) /sCo%dvolume(ixCo1,ixCo2,ixCo3)
+                   sCo%w(ixCo1+ixCoGmin1-1,ixCo2+ixCoGmin2-1,ixCo3+ixCoGmin3-1,iw)= sum(geoFi%dvolume(ixFi1:ixFi1+1,&
+                        ixFi2:ixFi2+1,ixFi3:ixFi3+1,igridFi)*sFi%w(ixFi1:ixFi1+1,ixFi2:ixFi2+1,&
+                        ixFi3:ixFi3+1,iw)) /geoCo%dvolume(ixCo1,ixCo2,ixCo3,igridCo)
                 end do
              end do
           end do

@@ -78,7 +78,7 @@ contains
                do ix2=ixOmin2,ixOmax2 
                   do ix1=ixOmin1,ixOmax1
                      
-                     xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
+                     xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                      wCT   = bg(1)%w(ix1,ix2,ix3, 1:nw_phys, n)
                      wnew  = wCT
                      wprim = wCT

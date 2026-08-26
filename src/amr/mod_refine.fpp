@@ -51,6 +51,7 @@ contains
   subroutine prolong_grid(child_igrid,child_ipe,igrid,ipe)
     use mod_physics, only: phys_to_primitive, phys_to_conserved
     use mod_global_parameters
+    use mod_geometry, only: sync_positions_host
     use mod_amr_fct, only: old_neighbors
 
     integer, dimension(2,2,2), intent(in) :: child_igrid, child_ipe
@@ -64,6 +65,8 @@ contains
     ixmin1=ixMlo1-1;ixmin2=ixMlo2-1;ixmin3=ixMlo3-1;ixmax1=ixMhi1+1
     ixmax2=ixMhi2+1;ixmax3=ixMhi3+1;
 
+    ! phys_to_primitive/phys_to_conserved below read ps(igrid)%x on the host
+    if(prolongprimitive) call sync_positions_host(igrid)
     if(prolongprimitive) call phys_to_primitive(ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
        ixGhi2,ixGhi3,ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,ps(igrid)%w,&
        ps(igrid)%x)
@@ -116,6 +119,7 @@ contains
      xFimin1,xFimin2,xFimin3,igridCo,igridFi)
     use mod_physics, only: phys_to_conserved, phys_handle_small_values
     use mod_global_parameters
+    use mod_geometry, only: sync_positions_host
     use mod_amr_fct, only: already_fine, prolong_2nd_stg
 
     integer, intent(in) :: ixComin1,ixComin2,ixComin3,ixComax1,ixComax2,&
@@ -200,14 +204,14 @@ contains
                          eta3=0.5d0*(dble(ix3-ixFi3)-0.5d0);
                       else
                          ! forefactor is -0.5d0 when ix=ixFi and +0.5d0 for ixFi+1
-                         eta1=(dble(ix1-ixFi1)-0.5d0)*(one-sFi%dvolume(ix1,ix2,&
-                              ix3) /sum(sFi%dvolume(ixFi1:ixFi1+1,ix2,ix3)))
+                         eta1=(dble(ix1-ixFi1)-0.5d0)*(one-bgeo%dvolume(ix1,ix2,&
+                              ix3,igridFi) /sum(bgeo%dvolume(ixFi1:ixFi1+1,ix2,ix3,igridFi)))
                          ! forefactor is -0.5d0 when ix=ixFi and +0.5d0 for ixFi+1
-                         eta2=(dble(ix2-ixFi2)-0.5d0)*(one-sFi%dvolume(ix1,ix2,&
-                              ix3) /sum(sFi%dvolume(ix1,ixFi2:ixFi2+1,ix3)))
+                         eta2=(dble(ix2-ixFi2)-0.5d0)*(one-bgeo%dvolume(ix1,ix2,&
+                              ix3,igridFi) /sum(bgeo%dvolume(ix1,ixFi2:ixFi2+1,ix3,igridFi)))
                          ! forefactor is -0.5d0 when ix=ixFi and +0.5d0 for ixFi+1
-                         eta3=(dble(ix3-ixFi3)-0.5d0)*(one-sFi%dvolume(ix1,ix2,&
-                              ix3) /sum(sFi%dvolume(ix1,ix2,ixFi3:ixFi3+1)))
+                         eta3=(dble(ix3-ixFi3)-0.5d0)*(one-bgeo%dvolume(ix1,ix2,&
+                              ix3,igridFi) /sum(bgeo%dvolume(ix1,ix2,ixFi3:ixFi3+1,igridFi)))
                       end if
                       bg(1)%w(ix1,ix2,ix3,1:nw, igridFi) = bg(1)%w(ixCo1,ixCo2,ixCo3,1:nw, igridCo) + (slope(1:nw,&
                            1)*eta1)+(slope(1:nw,2)*eta2)+(slope(1:nw,3)*eta3)
@@ -227,6 +231,8 @@ contains
             fine_max3)
     end if
 
+    ! these two read sFi%x on the host
+    if(fix_small_values .or. prolongprimitive) call sync_positions_host(igridFi)
     if(fix_small_values) call phys_handle_small_values(prolongprimitive,sFi%w,&
          sFi%x,ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,ixMlo2,ixMlo3,&
          ixMhi1,ixMhi2,ixMhi3,'prolong_2nd')

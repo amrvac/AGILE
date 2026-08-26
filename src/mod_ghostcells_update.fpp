@@ -1971,7 +1971,8 @@ contains
              if (abs(i1)==1.and.abs(ii1)==1.or.abs(i2)==1.and.abs(ii2)==&
                   1.or.abs(i3)==1.and.abs(ii3)==1) cycle
              if (neighbor_type(ii1,ii2,ii3,igrid)/=neighbor_boundary) cycle
-             call bc_phys(iside,idims,time,0.d0,psc(igrid),ixCoGmin1,&
+             call bc_phys(iside,idims,time,0.d0,psc(igrid),&
+                  bgeoc%x(:,:,:,:,igrid),ixCoGmin1,&
                   ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3,ixBmin1,&
                   ixBmin2,ixBmin3,ixBmax1,ixBmax2,ixBmax3)
           end do
@@ -2035,7 +2036,8 @@ contains
           else
              if (neighbor_type(i1,i2,i3,igrid) /= neighbor_boundary) cycle
           end if
-          call bc_phys(iside,idims,time,qdt,s,ixGlo1,ixGlo2,ixGlo3,&
+          call bc_phys(iside,idims,time,qdt,s,bgeo%x(:,:,:,:,igrid),&
+               ixGlo1,ixGlo2,ixGlo3,&
                ixGhi1,ixGhi2,ixGhi3,ixBmin1,ixBmin2,ixBmin3,ixBmax1,ixBmax2,&
                ixBmax3)
        end do
@@ -2085,7 +2087,8 @@ contains
           else
              if (neighbor_type(i1,i2,i3,igrid) /= neighbor_boundary) cycle
           end if
-          call bc_phys(iside,idims,time,qdt,s,ixGlo1,ixGlo2,ixGlo3,&
+          call bc_phys(iside,idims,time,qdt,s,bgeo%x(:,:,:,:,igrid),&
+               ixGlo1,ixGlo2,ixGlo3,&
                ixGhi1,ixGhi2,ixGhi3,ixBmin1,ixBmin2,ixBmin3,ixBmax1,ixBmax2,&
                ixBmax3)
        end do

@@ -99,6 +99,32 @@ contains
      !$acc update device( bgc(1) )
      !$acc enter data copyin( bgc(1)%w ) 
 
+    ! The cell metrics follow the same layout as bg%w: one allocation for all
+    ! blocks with the grid index last. They are built per block on the device
+    ! by fill_geometry_device, which assumes a uniform block - it derives every
+    ! metric analytically from the block's corner and spacing in rnode. A
+    ! stretched mesh breaks that assumption, and this fork has no device path
+    ! for it, so refuse it loudly rather than compute nonsense.
+    if (any(stretched_dim)) call mpistop("Grid stretching (stretch_dim) is not &
+       &supported: the cell metrics are built on the device assuming uniform &
+       &block spacing. Remove stretch_dim from &meshlist.")
+    call set_geometry_index_ranges()
+    call alloc_geometry(bgeo, ixGlo1,ixGlo2,ixGlo3, ixGhi1,ixGhi2,ixGhi3, &
+         ixGextmin1,ixGextmin2,ixGextmin3, ixGextmax1,ixGextmax2,ixGextmax3)
+    call alloc_geometry(bgeoc, ixCoGmin1,ixCoGmin2,ixCoGmin3, ixCoGmax1,&
+         ixCoGmax2,ixCoGmax3, ixCoGmin1,ixCoGmin2,ixCoGmin3, ixCoGmax1,&
+         ixCoGmax2,ixCoGmax3)
+    !$acc update device(bgeo, bgeoc)
+    ! All of it is device-resident, because the device is what produces it:
+    ! fill_geometry_device builds every member of geo_t there. That includes
+    ! the members no kernel reads (dx, dsC, surface, and in a Cartesian build
+    ! the metrics its kernels take from rnode instead) - they have to live
+    ! where they are written, and are pulled back only on demand.
+    !$acc enter data copyin(bgeo%x, bgeo%ds, bgeo%dvolume, bgeo%surfaceC, &
+    !$acc                   bgeo%dx, bgeo%dsC, bgeo%surface)
+    !$acc enter data copyin(bgeoc%x, bgeoc%ds, bgeoc%dvolume, bgeoc%surfaceC, &
+    !$acc                   bgeoc%dx, bgeoc%dsC, bgeoc%surface)
+
     do igrid = 1, max_blocks
        ps(igrid)%igrid  = igrid; ps(igrid)%istep  = 1
        ps1(igrid)%igrid = igrid; ps1(igrid)%istep = 2
@@ -286,6 +312,63 @@ contains
     call init_bc()
 
   end subroutine initialize_vars
+
+  !> Set the index range over which the cell metrics are known.  With an even
+  !> number of ghost cells this is just the ghosted block; with an odd number
+  !> (or a staggered grid) ghost-cell prolongation needs one extra layer.
+  subroutine set_geometry_index_ranges()
+    use mod_global_parameters
+
+    integer :: icase
+
+    icase = mod(nghostcells,2)
+    if (stagger_grid) icase = 1
+    select case (icase)
+    case (0)
+       ixGextmin1=ixGlo1;ixGextmin2=ixGlo2;ixGextmin3=ixGlo3
+       ixGextmax1=ixGhi1;ixGextmax2=ixGhi2;ixGextmax3=ixGhi3;
+    case (1)
+       ixGextmin1=ixGlo1-1;ixGextmin2=ixGlo2-1;ixGextmin3=ixGlo3-1
+       ixGextmax1=ixGhi1+1;ixGextmax2=ixGhi2+1;ixGextmax3=ixGhi3+1;
+    case default
+       call mpistop("no such case")
+    end select
+
+  end subroutine set_geometry_index_ranges
+
+  !> Allocate the cell metrics of all max_blocks blocks in one go.  The
+  !> ixGext range is the one over which dvolume and ds are known, the face
+  !> areas start one cell lower than ixG in every direction.
+  subroutine alloc_geometry(geo, ixGmin1,ixGmin2,ixGmin3, ixGmax1,ixGmax2,&
+       ixGmax3, ixGextmin1,ixGextmin2,ixGextmin3, ixGextmax1,ixGextmax2,&
+       ixGextmax3)
+    use mod_physicaldata, only: geo_t
+    use mod_global_parameters, only: max_blocks, ndim
+
+    type(geo_t), intent(inout) :: geo
+    integer, intent(in)        :: ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&
+       ixGmax3, ixGextmin1,ixGextmin2,ixGextmin3,ixGextmax1,ixGextmax2,&
+       ixGextmax3
+
+    allocate( geo%x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3, 1:ndim,&
+         1:max_blocks) )
+    allocate( geo%ds(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
+         ixGextmin3:ixGextmax3, 1:ndim, 1:max_blocks) )
+    allocate( geo%dvolume(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
+         ixGextmin3:ixGextmax3, 1:max_blocks) )
+    allocate( geo%surfaceC(ixGmin1-1:ixGmax1,ixGmin2-1:ixGmax2,&
+         ixGmin3-1:ixGmax3, 1:ndim, 1:max_blocks) )
+
+    ! Host-only from here on: no device kernel reads these yet, so they are
+    ! deliberately left off the device (see the copyin in initialize_vars).
+    allocate( geo%dx(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
+         ixGextmin3:ixGextmax3, 1:ndim, 1:max_blocks) )
+    allocate( geo%dsC(ixGextmin1:ixGextmax1,ixGextmin2:ixGextmax2,&
+         ixGextmin3:ixGextmax3, 1:3, 1:max_blocks) )
+    allocate( geo%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
+         1:ndim, 1:max_blocks) )
+
+  end subroutine alloc_geometry
 
 
 end module mod_initialize
