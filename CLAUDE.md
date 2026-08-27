@@ -454,13 +454,36 @@ Validated by `tests/hd/spherical_pole_uniform_flow` and
 `tests/mhd/spherical_pole_uniform_flow` (a uniform Cartesian flow, and field,
 on a domain running onto both poles), `tests/hd/cylindrical_pole_uniform_flow`
 and `tests/mhd/cylindrical_pole_uniform_flow` (the same onto the cylindrical
-axis — these are what pin down the radial sign discussed above), and
+axis — these are what pin down the radial sign discussed above),
 `tests/hd/spherical_pole_amr`, which refines half the domain in `phi` so that
 blocks meet across the axis at different levels and the restricting and
-prolonging pole paths are exercised too. The AMR case checks its pole ghosts
-at a loose tolerance, since across a level jump they carry the scheme's own
-second-order error (measured at 3.4e-2) rather than being exact; that is still
-far below the O(1) error a wrong sign or offset produces.
+prolonging pole paths are exercised too, and
+`tests/hd/spherical_pole_blast_amr`.
+
+That last one is the demanding case, and the one to reach for when changing
+any of this. The uniform-flow cases keep a state that is *smooth* across the
+axis, which is exactly the situation in which a wrong ghost value cannot hurt:
+zero face area on one side, TVD clipping on the other. The blast case sends a
+strong shock over the pole instead, so the state either side of the axis
+genuinely differs, nothing is clipped, and the Lohner criterion drags the
+refinement across the axis with the shell — the pole paths therefore run on
+blocks that are regridded as the shock moves rather than on a static mesh. It
+is the only pole case whose `correct_output/test.log` is itself sensitive to
+the copy: reversing the `theta` sign makes `compare_logs` fail on
+`mean(m_r)`, `mean(m_theta)` and `mean(m_phi)`, where the same break leaves the
+uniform-flow logs comfortably inside tolerance. Its hot spot starts off the
+axis and is carried onto it by a uniform Cartesian background velocity, which
+is what gives the momentum components non-trivial values for
+`check_pole_ghosts` to test at `it = 0`; the axis-adjacent energy rises from
+the ambient 1.5675 to about 5.6 within twenty steps and stays shocked for the
+rest of the run.
+
+Both AMR cases check their pole ghosts at a tolerance that depends on the
+neighbour: round-off (1e-10) when the pole neighbour is at the same level, and
+loose (1e-1) across a level jump, where the values are restricted or prolonged
+on the way and carry the scheme's own second-order error — measured at 3.4e-2
+and 8.1e-4 respectively, both far below the O(1) a wrong sign or offset
+produces (0.18 and 2.3 when measured).
 
 ## Writing a new simulation case (`mod_usr.fpp`)
 
