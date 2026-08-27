@@ -227,6 +227,10 @@ contains
 
     poleB=.false.
     if (.not.slab) call set_pole
+    call check_pole_setup
+    ! poleB is declare create'd but had no device copy; nothing on the device
+    ! reads it today, and an uninitialised one is a trap for whoever first does
+    !$acc update device(poleB)
 
     ! number of grid blocks at level 1 along a dimension, which does not have a pole or periodic boundary, 
     ! must be larger than 1 for a rectangular AMR mesh

@@ -14,11 +14,6 @@ module mod_ghostcells_update
 #define mpi_isend_wrapper MPI_ISEND
 #endif
   implicit none
-  ! Special buffer for pole copy
-  type wbuffer
-     double precision, dimension(:,:,:,:), allocatable :: w
-  end type wbuffer
-
   ! A switch of update physical boundary or not
   logical, public :: bcphys=.true.
   !$acc declare copyin(bcphys)
@@ -410,8 +405,6 @@ contains
     end if
 
     if (stagger_grid) then
-       allocate(pole_buf%ws(ixGslo1:ixGshi1,ixGslo2:ixGshi2,ixGslo3:ixGshi3,&
-            nws))
        ! Staggered (face-allocated) variables
        do idir=1,ndim
           ixS_srl_stg_min1(idir,-1)=ixMmin1-kr(idir,1)
@@ -1139,6 +1132,14 @@ contains
     real(dp) :: xFimin1, xFimin2, xFimin3, xComin1, xComin2, xComin3
     real(dp) :: xFi1, xFi2, xFi3, xCo3, xCo2, xCo1
     real(dp) :: eta1, eta2, eta3, slopeL, slopeR, slopeC, signR, signC
+    ! Polar axis.  ipole is the dimension the pole lies across (0 for an
+    ! ordinary neighbour, so every expression below collapses to the plain
+    ! copy), iB_pole is the physical-boundary index whose typeboundary column
+    ! holds the per-variable sign, and sbase/sstep walk the source backwards
+    ! along the pole dimension so the row nearest the axis lands nearest the
+    ! axis.  See "The polar axis" in CLAUDE.md for the derivation.
+    integer  :: ipole, iB_pole
+    integer  :: sbase1, sbase2, sbase3, sstep1, sstep2, sstep3
 
     time_bcin=MPI_WTIME()
     call nvtxStartRange("getbc",2)
@@ -1257,7 +1258,7 @@ contains
 
     ! fill the SRL send buffers on GPU
     do inb = 1, nbprocs_info%nbprocs_srl
-       !$acc parallel loop default(present) gang private(igrid, ienc, ibuf_start, i1, i2, i3, ixSmin1, ixSmin2, ixSmin3, Nx1)
+       !$acc parallel loop default(present) gang private(igrid, ienc, ibuf_start, i1, i2, i3, ixSmin1, ixSmin2, ixSmin3, Nx1, ipole, iB_pole, n_i1, n_i2, n_i3, sbase1, sbase2, sbase3, sstep1, sstep2, sstep3)
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
              igrid = nbprocs_info%srl_nb(inb)%info%igrid(i)
              ienc = nbprocs_info%srl_nb(inb)%info%iencode(i)
@@ -1271,6 +1272,23 @@ contains
              ixSmin3=ixS_srl_min3(iib3,i3); ixSmax3=ixS_srl_max3(iib3,i3)
              Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
+             ! The mirror and the sign are applied here, on the send side, so
+             ! that the buffer already holds what the receiver has to store and
+             ! the unpack stays a plain strided copy - which is what lets the
+             ! receiver get away with knowing nothing about the pole beyond the
+             ! destination offset shipped in the info record below.
+             ipole=neighbor_pole(i1,i2,i3,igrid)
+             n_i1=-i1; n_i2=-i2; n_i3=-i3
+             sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+             sbase3=ixSmin3; sstep3=1; iB_pole=1
+             if (ipole==1) then
+                n_i1=i1; sbase1=ixSmax1; sstep1=-1; iB_pole=(i1+3)/2
+             else if (ipole==2) then
+                n_i2=i2; sbase2=ixSmax2; sstep2=-1; iB_pole=2+(i2+3)/2
+             else if (ipole==3) then
+                n_i3=i3; sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
+             end if
+
              !$acc loop collapse(4) vector independent
              do iw = nwhead, nwtail
                 do ix3 = ixSmin3, ixSmax3
@@ -1278,38 +1296,59 @@ contains
                       do ix1 = ixSmin1, ixSmax1
                          nbprocs_info%srl_nb(inb)%send%buffer( &
                               ibuf_start &
-                              + (ix1-ixSmin1) &
-                              + Nx1 * (ix2-ixSmin2) &
-                              + Nx1*Nx2 * (ix3-ixSmin3) &
+                              + sstep1*(ix1-sbase1) &
+                              + Nx1 * (sstep2*(ix2-sbase2)) &
+                              + Nx1*Nx2 * (sstep3*(ix3-sbase3)) &
                               + Nx1*Nx2*Nx3 * (iw-nwhead) &
-                              ) = bg(bgstep)%w( ix1, ix2, ix3, iw, igrid)
+                              ) = merge(-one,one,ipole/=0 .and. &
+                              typeboundary(iw,iB_pole)==bc_asymm) &
+                              * bg(bgstep)%w( ix1, ix2, ix3, iw, igrid)
                       end do
                    end do
                 end do
              end do
+             ! ship the destination offset rather than our own, so that the
+             ! receiver does not have to undo the mirror it cannot see
              nbprocs_info%srl_nb(inb)%info_send%buffer( 1 + 3 * (i - 1) : 3 * i ) = &
-                  [neighbor(1,i1,i2,i3,igrid), ienc, ibuf_start]
+                  [neighbor(1,i1,i2,i3,igrid), &
+                   1 + (n_i1+1) + 3*(n_i2+1) + 9*(n_i3+1), ibuf_start]
        end do
     end do
 
     ! fill the C send buffers on GPU (send_restrict)
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc parallel loop gang default(present) private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3)
+       !$acc parallel loop gang default(present) private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3)
        do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%course_nb(inb)%info%igrid(i)
           i1 = nbprocs_info%course_nb(inb)%info%i1(i)
           i2 = nbprocs_info%course_nb(inb)%info%i2(i)
           i3 = nbprocs_info%course_nb(inb)%info%i3(i)
+          ipole=neighbor_pole(i1,i2,i3,igrid)
 
+          ! how they will be used at the receiving end.  The plain swap is
+          ! n_inc = -2*i+ic; across a pole it becomes n_inc = 2*i+(3-ic),
+          ! which on this 0..3 index leaves 0 and 3 alone and swaps 1 with 2.
           inc1 = nbprocs_info%course_nb(inb)%info%inc1(i)
-          if (inc1 == 0) then; inc1 = 3; else if (inc1 == 3) then; inc1 = 0; end if ! how they will be used at the receiving end
+          if (ipole == 1) then
+             if (inc1 == 1) then; inc1 = 2; else if (inc1 == 2) then; inc1 = 1; end if
+          else
+             if (inc1 == 0) then; inc1 = 3; else if (inc1 == 3) then; inc1 = 0; end if
+          end if
 
           inc2 = nbprocs_info%course_nb(inb)%info%inc2(i)
-          if (inc2 == 0) then; inc2 = 3; else if (inc2 == 3) then; inc2 = 0; end if ! how they will be used at the receiving end
+          if (ipole == 2) then
+             if (inc2 == 1) then; inc2 = 2; else if (inc2 == 2) then; inc2 = 1; end if
+          else
+             if (inc2 == 0) then; inc2 = 3; else if (inc2 == 3) then; inc2 = 0; end if
+          end if
 
           inc3 = nbprocs_info%course_nb(inb)%info%inc3(i)
-          if (inc3 == 0) then; inc3 = 3; else if (inc3 == 3) then; inc3 = 0; end if ! how they will be used at the receiving end
+          if (ipole == 3) then
+             if (inc3 == 1) then; inc3 = 2; else if (inc3 == 2) then; inc3 = 1; end if
+          else
+             if (inc3 == 0) then; inc3 = 3; else if (inc3 == 3) then; inc3 = 0; end if
+          end if
 
           ibuf_start = nbprocs_info%course_nb(inb)%info%ibuf_start(i)
           iib1=idphyb(1,igrid); iib2=idphyb(2,igrid); iib3=idphyb(3,igrid)
@@ -1320,6 +1359,17 @@ contains
           ixSmax2=ixS_r_max2(iib2,i2);ixSmax3=ixS_r_max3(iib3,i3)
           Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
+          ! mirror and sign on the send side, as for srl above
+          sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+          sbase3=ixSmin3; sstep3=1; iB_pole=1
+          if (ipole==1) then
+             sbase1=ixSmax1; sstep1=-1; iB_pole=(i1+3)/2
+          else if (ipole==2) then
+             sbase2=ixSmax2; sstep2=-1; iB_pole=2+(i2+3)/2
+          else if (ipole==3) then
+             sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
+          end if
+
           !$acc loop collapse(4) vector independent
           do iw = nwhead, nwtail
              do ix3 = ixSmin3, ixSmax3
@@ -1327,11 +1377,13 @@ contains
                    do ix1 = ixSmin1, ixSmax1
                       nbprocs_info%course_nb(inb)%send%buffer( &
                            ibuf_start &
-                           + (ix1-ixSmin1) &
-                           + Nx1 * (ix2-ixSmin2) &
-                           + Nx1*Nx2 * (ix3-ixSmin3) &
+                           + sstep1*(ix1-sbase1) &
+                           + Nx1 * (sstep2*(ix2-sbase2)) &
+                           + Nx1*Nx2 * (sstep3*(ix3-sbase3)) &
                            + Nx1*Nx2*Nx3 * (iw-nwhead) &
-                           ) = bgc(1)%w( ix1, ix2, ix3, iw, igrid )
+                           ) = merge(-one,one,ipole/=0 .and. &
+                           typeboundary(iw,iB_pole)==bc_asymm) &
+                           * bgc(1)%w( ix1, ix2, ix3, iw, igrid )
                    end do
                 end do
              end do
@@ -1410,7 +1462,14 @@ contains
              select case (neighbor_type(i1,i2,i3,igrid))
              case(neighbor_sibling)
 
+                   ipole=neighbor_pole(i1,i2,i3,igrid)
+                   ! across a pole the partner faces us from the same side, so
+                   ! that component of the offset keeps its sign
                    n_i1=-i1; n_i2=-i2; n_i3=-i3
+                   if (ipole==1) n_i1=i1
+                   if (ipole==2) n_i2=i2
+                   if (ipole==3) n_i3=i3
+
                    ixSmin1=ixS_srl_min1(iib1,i1);   ixSmin2=ixS_srl_min2(iib2,i2)
                    ixSmin3=ixS_srl_min3(iib3,i3);   ixSmax1=ixS_srl_max1(iib1,i1)
                    ixSmax2=ixS_srl_max2(iib2,i2);   ixSmax3=ixS_srl_max3(iib3,i3)
@@ -1418,14 +1477,26 @@ contains
                    ixRmin3=ixR_srl_min3(iib3,n_i3); ixRmax1=ixR_srl_max1(iib1,n_i1)
                    ixRmax2=ixR_srl_max2(iib2,n_i2); ixRmax3=ixR_srl_max3(iib3,n_i3)
 
+                   sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+                   sbase3=ixSmin3; sstep3=1; iB_pole=1
+                   if (ipole==1) then
+                      sbase1=ixSmax1; sstep1=-1; iB_pole=(i1+3)/2
+                   else if (ipole==2) then
+                      sbase2=ixSmax2; sstep2=-1; iB_pole=2+(i2+3)/2
+                   else if (ipole==3) then
+                      sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
+                   end if
+
                    !$acc loop collapse(ndim+1) independent vector
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
                             do ix1=1,ixSmax1-ixSmin1+1
                                bg(bgstep)%w(ixRmin1+ix1-1,ixRmin2+ix2-1,ixRmin3+ix3-1,&
-                                    iw,ineighbor) = bg(bgstep)%w(ixSmin1+ix1-1,ixSmin2+ix2-1,&
-                                    ixSmin3+ix3-1,iw,igrid)
+                                    iw,ineighbor) = merge(-one,one,ipole/=0 .and. &
+                                    typeboundary(iw,iB_pole)==bc_asymm) &
+                                    * bg(bgstep)%w(sbase1+sstep1*(ix1-1),sbase2+sstep2*(ix2-1),&
+                                    sbase3+sstep3*(ix3-1),iw,igrid)
                             end do
                          end do
                       end do
@@ -1440,7 +1511,14 @@ contains
                  if(.not.(i1==0.or.i1==2*ic1-3).or..not.(i2==0.or.i2==2*ic2-3)&
                       .or..not.(i3==0.or.i3==2*ic3-3)) cycle
 
+                   ipole=neighbor_pole(i1,i2,i3,igrid)
+                   ! same rule as srl, expressed in the child-offset index:
+                   ! the pole component keeps 2*i and mirrors the child index
                    n_inc1=-2*i1+ic1;n_inc2=-2*i2+ic2;n_inc3=-2*i3+ic3;
+                   if (ipole==1) n_inc1=2*i1+(3-ic1)
+                   if (ipole==2) n_inc2=2*i2+(3-ic2)
+                   if (ipole==3) n_inc3=2*i3+(3-ic3)
+
                    ixSmin1=ixS_r_min1(iib1,i1);ixSmin2=ixS_r_min2(iib2,i2)
                    ixSmin3=ixS_r_min3(iib3,i3);ixSmax1=ixS_r_max1(iib1,i1)
                    ixSmax2=ixS_r_max2(iib2,i2);ixSmax3=ixS_r_max3(iib3,i3);
@@ -1448,14 +1526,26 @@ contains
                    ixRmin3=ixR_r_min3(iib3,n_inc3);ixRmax1=ixR_r_max1(iib1,n_inc1)
                    ixRmax2=ixR_r_max2(iib2,n_inc2);ixRmax3=ixR_r_max3(iib3,n_inc3);
 
+                   sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+                   sbase3=ixSmin3; sstep3=1; iB_pole=1
+                   if (ipole==1) then
+                      sbase1=ixSmax1; sstep1=-1; iB_pole=(i1+3)/2
+                   else if (ipole==2) then
+                      sbase2=ixSmax2; sstep2=-1; iB_pole=2+(i2+3)/2
+                   else if (ipole==3) then
+                      sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
+                   end if
+
                    !$acc loop collapse(ndim+1) independent vector
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
                             do ix1=1,ixSmax1-ixSmin1+1
                                bg(bgstep)%w(ixRmin1+ix1-1,ixRmin2+ix2-1,&
-                                    ixRmin3+ix3-1,iw,ineighbor) = bgc(1)%w(ixSmin1+ix1-1,&
-                                    ixSmin2+ix2-1,ixSmin3+ix3-1,iw, igrid)
+                                    ixRmin3+ix3-1,iw,ineighbor) = merge(-one,one,&
+                                    ipole/=0 .and. typeboundary(iw,iB_pole)==bc_asymm) &
+                                    * bgc(1)%w(sbase1+sstep1*(ix1-1),&
+                                    sbase2+sstep2*(ix2-1),sbase3+sstep3*(ix3-1),iw, igrid)
                             end do
                          end do
                       end do
@@ -1487,8 +1577,9 @@ contains
           ienc        = nbprocs_info%srl_nb(inb)%info_rcv%buffer( 3 * (i - 1) + 2 )
           ibuf_start  = nbprocs_info%srl_nb(inb)%info_rcv%buffer( 3 * (i - 1) + 3 )
 
+          ! ienc already encodes our own ghost-region offset: the sender
+          ! computed it, mirrored across a pole where there is one
           call idecode( i1, i2, i3, ienc )
-          i1 = -i1; i2 = -i2; i3=-i3
 
           iib1 = idphyb(1,igrid); iib2 = idphyb(2,igrid); iib3 = idphyb(3,igrid)
 
@@ -1593,13 +1684,20 @@ contains
 
     ! fill the F (neighbor is finer) send buffer on GPU (send_prolong)
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3) default(present)
+       !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3,i1,i2,i3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3) default(present)
        do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%fine_nb(inb)%info%igrid(i)
           inc1 = nbprocs_info%fine_nb(inb)%info%inc1(i)
           inc2 = nbprocs_info%fine_nb(inb)%info%inc2(i)
           inc3 = nbprocs_info%fine_nb(inb)%info%inc3(i)
+
+          ! only inc = 2*i+ic is stored, and neighbor_pole is indexed by i;
+          ! ic is 1 or 2, so inc pins i down (0 -> -1, 1 or 2 -> 0, 3 -> +1)
+          if (inc1 == 0) then; i1 = -1; else if (inc1 == 3) then; i1 = 1; else; i1 = 0; end if
+          if (inc2 == 0) then; i2 = -1; else if (inc2 == 3) then; i2 = 1; else; i2 = 0; end if
+          if (inc3 == 0) then; i3 = -1; else if (inc3 == 3) then; i3 = 1; else; i3 = 0; end if
+          ipole=neighbor_pole(i1,i2,i3,igrid)
 
           ibuf_start = nbprocs_info%fine_nb(inb)%info%ibuf_start(i)
           iib1=idphyb(1,igrid); iib2=idphyb(2,igrid); iib3=idphyb(3,igrid)
@@ -1610,6 +1708,17 @@ contains
           ixSmax2=ixS_p_max2(iib2,inc2);ixSmax3=ixS_p_max3(iib3,inc3)
           Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
+          ! mirror and sign on the send side, as for srl and restrict above
+          sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+          sbase3=ixSmin3; sstep3=1; iB_pole=1
+          if (ipole==1) then
+             sbase1=ixSmax1; sstep1=-1; iB_pole=(i1+3)/2
+          else if (ipole==2) then
+             sbase2=ixSmax2; sstep2=-1; iB_pole=2+(i2+3)/2
+          else if (ipole==3) then
+             sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
+          end if
+
           !$acc loop collapse(4) vector independent
           do iw = nwhead, nwtail
              do ix3 = ixSmin3, ixSmax3
@@ -1617,21 +1726,30 @@ contains
                    do ix1 = ixSmin1, ixSmax1
                       nbprocs_info%fine_nb(inb)%send%buffer( &
                            ibuf_start &
-                           + (ix1-ixSmin1) &
-                           + Nx1 * (ix2-ixSmin2) &
-                           + Nx1*Nx2 * (ix3-ixSmin3) &
+                           + sstep1*(ix1-sbase1) &
+                           + Nx1 * (sstep2*(ix2-sbase2)) &
+                           + Nx1*Nx2 * (sstep3*(ix3-sbase3)) &
                            + Nx1*Nx2*Nx3 * (iw-nwhead) &
-                           ) = bg(bgstep)%w( ix1, ix2, ix3, iw, igrid )
+                           ) = merge(-one,one,ipole/=0 .and. &
+                           typeboundary(iw,iB_pole)==bc_asymm) &
+                           * bg(bgstep)%w( ix1, ix2, ix3, iw, igrid )
                    end do
                 end do
              end do
           end do
 
-          ! how they will be used at the receiving end;
+          ! how they will be used at the receiving end.  The plain rule is
+          ! n_inc = ic-i, the 0<->3 swap; across a pole n_inc = inc, no swap.
           n_inc1 = inc1; n_inc2 = inc2; n_inc3 = inc3
-          if (n_inc1 == 0) then; n_inc1 = 3; else if (n_inc1 == 3) then; n_inc1 = 0; end if
-          if (n_inc2 == 0) then; n_inc2 = 3; else if (n_inc2 == 3) then; n_inc2 = 0; end if
-          if (n_inc3 == 0) then; n_inc3 = 3; else if (n_inc3 == 3) then; n_inc3 = 0; end if
+          if (ipole /= 1) then
+             if (n_inc1 == 0) then; n_inc1 = 3; else if (n_inc1 == 3) then; n_inc1 = 0; end if
+          end if
+          if (ipole /= 2) then
+             if (n_inc2 == 0) then; n_inc2 = 3; else if (n_inc2 == 3) then; n_inc2 = 0; end if
+          end if
+          if (ipole /= 3) then
+             if (n_inc3 == 0) then; n_inc3 = 3; else if (n_inc3 == 3) then; n_inc3 = 0; end if
+          end if
 
           nbprocs_info%fine_nb(inb)%info_send%buffer( 1 + 5 * (i - 1) : 5 * i ) = &
                [neighbor_child(1,inc1,inc2,inc3,igrid), n_inc1, n_inc2, n_inc3, ibuf_start]
@@ -1667,7 +1785,7 @@ contains
 
 
     ! fill coarse ghost-cell values of finer neighbors in the same processor
-    !$acc parallel loop gang collapse(4) private(iib1,iib2,iib3,igrid) default(present)
+    !$acc parallel loop gang collapse(4) private(iib1,iib2,iib3,igrid,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3) default(present)
     do iigrid=1,igridstail
        do i3=-1,1
           do i2=-1,1
@@ -1676,6 +1794,15 @@ contains
                 igrid = igrids(iigrid)
                 if (neighbor_type(i1,i2,i3,igrid)==neighbor_fine) then
                    iib1=idphyb(1,igrid);iib2=idphyb(2,igrid);iib3=idphyb(3,igrid);
+                   ipole=neighbor_pole(i1,i2,i3,igrid)
+                   iB_pole=1
+                   if (ipole==1) then
+                      iB_pole=(i1+3)/2
+                   else if (ipole==2) then
+                      iB_pole=2+(i2+3)/2
+                   else if (ipole==3) then
+                      iB_pole=4+(i3+3)/2
+                   end if
                    !  inline of call bc_fill_prolong(igrid,i1,i2,i3,iib1,iib2,iib3) :
 
                    do ic3 = 1+int((1-i3)/2), 2-int((1+i3)/2)
@@ -1691,8 +1818,13 @@ contains
                                ixSmax2=ixS_p_max2(iib2,inc2);ixSmax3=ixS_p_max3(iib3,inc3)
 
                                ineighbor = neighbor_child(1,inc1,inc2,inc3,igrid)
+                               ! plain rule n_inc = ic-i; across a pole the
+                               ! child sits at the same offset, n_inc = inc
                                n_i1=-i1; n_i2=-i2; n_i3=-i3
                                n_inc1=ic1+n_i1; n_inc2=ic2+n_i2; n_inc3=ic3+n_i3
+                               if (ipole==1) n_inc1=inc1
+                               if (ipole==2) n_inc2=inc2
+                               if (ipole==3) n_inc3=inc3
 
                                ixRmin1=ixR_p_min1(iib1,n_inc1)
                                ixRmin2=ixR_p_min2(iib2,n_inc2)
@@ -1701,14 +1833,26 @@ contains
                                ixRmax2=ixR_p_max2(iib2,n_inc2)
                                ixRmax3=ixR_p_max3(iib3,n_inc3)
 
+                               sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+                               sbase3=ixSmin3; sstep3=1
+                               if (ipole==1) then
+                                  sbase1=ixSmax1; sstep1=-1
+                               else if (ipole==2) then
+                                  sbase2=ixSmax2; sstep2=-1
+                               else if (ipole==3) then
+                                  sbase3=ixSmax3; sstep3=-1
+                               end if
+
                                !$acc loop collapse(4) vector independent
                                do iw = nwhead, nwtail
                                   do ix3 =0, ixRmax3-ixRmin3
                                      do ix2 = 0, ixRmax2-ixRmin2
                                         do ix1 = 0, ixRmax1-ixRmin1
                                            bgc(1)%w(ixRmin1+ix1,ixRmin2+ix2,&
-                                                ixRmin3+ix3,iw,ineighbor) = bg(bgstep)%w(ixSmin1+ix1,&
-                                                ixSmin2+ix2,ixSmin3+ix3,iw, igrid)
+                                                ixRmin3+ix3,iw,ineighbor) = merge(-one,one,&
+                                                ipole/=0 .and. typeboundary(iw,iB_pole)==bc_asymm) &
+                                                * bg(bgstep)%w(sbase1+sstep1*ix1,&
+                                                sbase2+sstep2*ix2,sbase3+sstep3*ix3,iw, igrid)
                                         end do
                                      end do
                                   end do

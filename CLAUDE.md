@@ -312,12 +312,10 @@ Current limits of the curvilinear (spherical and cylindrical) support:
   the curvilinear metric factors a true divergence needs in
   `geometry = 'spherical'` or `geometry = 'cylindrical'`, and this fork has
   not fixed that.
-- No polar-axis/cylindrical-axis handling. `set_pole`/`poleB` and the
-  pi-periodic root-neighbor lookup in `src/amr/mod_amr_neighbors.fpp` survive
-  from upstream, but AGILE's rewritten `getbc` in
-  `src/mod_ghostcells_update.fpp` never performs the pole copies (`pole_buf`
-  is allocated and otherwise unused). Keep the domain away from `theta = 0`
-  and `theta = pi` (spherical), or from `r = 0` (cylindrical).
+- The polar axis is supported for `phys = 'hd'` and `phys = 'mhd'` only; see
+  "The polar axis" below. `srhd` and `ffhd` must keep the domain away from
+  `theta = 0` and `theta = pi` (spherical) and from `r = 0` (cylindrical), and
+  `check_pole_setup` stops them loudly if they do not.
 - AMR across curvilinear levels is untested here; prolongation in
   `src/amr/mod_refine.fpp` has the `slab_uniform` branch that uses `dvolume`,
   but `fix_conserve` is commented out in `src/mod_advance.fpp` for all
@@ -354,6 +352,115 @@ uniform, sub-luminal Cartesian flow, also confirmed at roughly second-order
 convergence), `tests/srhd/cylindrical_blast`,
 `tests/ffhd/cylindrical_uniform_flow` (a uniform state along a uniform
 frozen field), and `tests/ffhd/cylindrical_blast`.
+
+### The polar axis
+
+A spherical domain may span the full `theta` from 0 to `pi`, and a cylindrical
+one may start at `r = 0`. The axis is not a boundary: a ghost cell just past
+`theta = 0` at azimuth `phi` *is* the interior cell at `theta` and `phi + pi`,
+so it is filled from the block half a revolution away rather than by a
+boundary condition. Setting it up takes three things in `agile.par`, and
+`check_pole_setup` in `src/mod_geometry.fpp` stops the run with a specific
+message if any of them is missing:
+
+```fortran
+ &boundlist
+   typeboundary_min2 = 5*'pole'       ! the axis face(s)
+   typeboundary_min3 = 5*'periodic'   ! phi, over a full turn
+   typeboundary_max3 = 5*'periodic'
+ /
+ &meshlist
+   xprobmin2 = 0.0d0, xprobmax2 = 0.5d0   ! theta from 0 to pi
+   xprobmin3 = 0.0d0, xprobmax3 = 1.0d0   ! phi over 2*pi (2*pi units)
+   domain_nx3 = 16, block_nx3 = 8         ! ng3(1) = 2, even
+ /
+```
+
+- **`'pole'` on the axis face.** `read_par_files` expands it into ordinary
+  per-variable `symm`/`asymm` entries in `typeboundary`, which is where the
+  ghost-cell exchange later reads the sign from. It is all-or-nothing per
+  face. Only `typeboundary_min2`/`max2` may be `'pole'` in spherical and only
+  `typeboundary_min1` in cylindrical.
+- **`phi` periodic over exactly one full turn.** `set_pole` refuses to
+  recognise an axis at all unless `periodB(phi_)`, and the partner block is
+  found by shifting the `phi` block index by `ng(1)/2` — half a revolution
+  only if `phi` really spans `2*pi`. Upstream MPI-AMRVAC has no check for
+  this and silently shifts by the wrong angle on a partial-turn domain;
+  `check_pole_setup` does check.
+- **An even number of level-1 blocks across `phi`**, for the same `ng(1)/2`
+  reason. This one `set_pole` already enforced.
+
+The sign table follows one rule in both coordinate systems: **the component
+along the mirrored direction flips, the `phi` component flips, everything else
+is symmetric.** For spherical that is `m_theta`, `m_phi` (and `B_theta`,
+`B_phi`), with `m_r`/`B_r` symmetric — the same table upstream uses. For
+cylindrical it is `m_r`, `m_phi` (and `B_r`, `B_phi`). Note the radial entry:
+**upstream marks only `m_phi`/`B_phi` antisymmetric at the cylindrical axis,
+which is wrong** — the axis maps `(r, phi)` to `(r, phi + pi)`, under which
+`e_r(phi+pi) = -e_r(phi)` exactly as `e_phi(phi+pi) = -e_phi(phi)`, so the
+radial component is odd too. With upstream's table the first ghost cell of
+`tests/hd/cylindrical_pole_uniform_flow` holds `-0.9713` where the exact value
+is `+0.9713`; with this one it is exact to round-off. The indices come from
+`iw_mom`/`iw_mag` rather than upstream's positional `rho-mom-[e]-B`
+arithmetic, because a `HYPERTC` build registers `q_` between `e_` and `mag`
+and shifts every field index.
+
+Everything outside `getbc` was already pole-aware, inherited from upstream:
+`set_pole` sets `poleB`, `find_root_neighbor` does the pi-periodic root lookup,
+`find_neighbor` exports a `pole(ndim)` flag and suppresses the sibling-index
+flip across it, `build_connectivity` records
+`neighbor_pole(i1,i2,i3,igrid)` — 0, or the dimension the pole lies across —
+and `alloc_node` clears `is_physical_boundary` on a pole face so `bc_phys` is
+correctly skipped there. What had to be added is the copy itself, at the six
+places in `getbc` (`src/mod_ghostcells_update.fpp`) that move data between
+blocks: the same-rank and MPI variants of the same-level, restricting and
+prolonging paths. Each now reads `neighbor_pole` and, when it is non-zero:
+
+- **walks the source backwards along that dimension** (`sbase`/`sstep` in the
+  code), because the send range runs outward from the axis while the ghost
+  range runs inward toward it;
+- **multiplies by the sign** from `typeboundary(iw, iB_pole)`, where
+  `iB_pole = 2*(ipole-1) + iside`;
+- **does not mirror the destination offset in that dimension**, because the
+  partner faces you from the same side. In the 0..3 child-offset index this
+  reads as: the restricting path swaps 1 with 2 and leaves 0 and 3 alone
+  (instead of swapping 0 with 3), and the prolonging path does not swap at all.
+
+For the MPI paths the mirror and the sign are applied on the **send** side, as
+upstream does, so the unpack stays a plain strided copy. The same-level send
+therefore also has to ship the *destination* offset in its info record rather
+than its own, since the receiver cannot see the mirror; the coarse and fine
+paths already shipped explicit `inc` indices and only needed the pole variant
+of the swap. The prolongation interpolation itself needs no pole branch: by
+then `bgc(1)%w` already holds mirrored, signed values.
+
+Two consequences worth knowing:
+
+- **The timestep collapses near the axis.** `ds(3) = r*sin(theta)*dphi` goes
+  to zero there, so `setdt` gives a severe CFL restriction. No axis filtering
+  or ring averaging is implemented; keep pole cases at modest resolution.
+- **Volume averages cannot validate the pole copy.** A cell at the axis has
+  vanishing volume and the face lying on the axis has zero area, so a wrong
+  ghost value is multiplied by zero on its way into the interior and the jump
+  it leaves behind is clipped by the TVD limiter. Reversing *every* sign at
+  the pole moves the `mean(w)` the log reports only in the fifth digit. The
+  pole test cases therefore assert on the ghost cells directly rather than on
+  the log: `check_pole_ghosts` in each case's `mod_usr.fpp` compares them
+  against the analytic state at `it = 0`, where the interior is still exactly
+  analytic and the copy of it therefore has to be exact to round-off. **A new
+  pole test needs that check, not just a `correct_output/test.log`.**
+
+Validated by `tests/hd/spherical_pole_uniform_flow` and
+`tests/mhd/spherical_pole_uniform_flow` (a uniform Cartesian flow, and field,
+on a domain running onto both poles), `tests/hd/cylindrical_pole_uniform_flow`
+and `tests/mhd/cylindrical_pole_uniform_flow` (the same onto the cylindrical
+axis — these are what pin down the radial sign discussed above), and
+`tests/hd/spherical_pole_amr`, which refines half the domain in `phi` so that
+blocks meet across the axis at different levels and the restricting and
+prolonging pole paths are exercised too. The AMR case checks its pole ghosts
+at a loose tolerance, since across a level jump they carry the scheme's own
+second-order error (measured at 3.4e-2) rather than being exact; that is still
+far below the O(1) error a wrong sign or offset produces.
 
 ## Writing a new simulation case (`mod_usr.fpp`)
 

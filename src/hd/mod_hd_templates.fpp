@@ -367,9 +367,10 @@ end subroutine addsource_local
 !> which reduces to 2p/r (radial) and p*cot(theta)/r (polar) on a smooth grid
 !> but stays consistent with the face areas the flux update actually used.
 !>
-!> Note the cot(theta) terms: they are finite on the equator but diverge on the
-!> polar axis, so the domain has to stay away from theta = 0 and theta = pi
-!> (AGILE has no pole handling in the ghost-cell exchange anyway).
+!> Note the cot(theta) terms: they diverge on the polar axis itself. A domain
+!> that runs onto the axis is fine - cell centres sit at theta = dtheta/2, so
+!> cot(theta) stays finite, just large - but the terms are the reason a pole
+!> case wants modest resolution. See "The polar axis" in CLAUDE.md.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
   !$acc routine seq

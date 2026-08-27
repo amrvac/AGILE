@@ -745,6 +745,14 @@ module mod_global_parameters
   logical :: poleB(2,ndim)
   !$acc declare create(poleB)
 
+  !> True where the parameter file asked for typeboundary='pole' on a face.
+  !> Kept separately from poleB because the two are decided independently and
+  !> at different times - read_par_files expands the 'pole' string into
+  !> symm/asymm entries and loses it, while set_pole derives poleB from the
+  !> domain bounds much later - and check_pole_setup has to be able to tell
+  !> the user when they disagree.
+  logical :: poleB_requested(2,ndim) = .false.
+
   !> True for dimensions with aperiodic boundaries
   logical :: aperiodB(ndim)
   !$acc declare create(aperiodB)

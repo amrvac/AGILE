@@ -130,8 +130,6 @@ module mod_physicaldata
      !> Variables old state
      double precision, dimension(:,:,:,:), allocatable :: wold
   end type grid_field
-  !> buffer for pole boundary
-  type(state) :: pole_buf
 
   !> array of physical states for all blocks on my processor
   type(state), dimension(:), allocatable, target :: ps

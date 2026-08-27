@@ -200,7 +200,7 @@ contains
 
     logical          :: fileopen, file_exists
     integer          :: i, j, k, ifile, io_state
-    integer          :: iB, isave, iw, level, idim, islice
+    integer          :: iB, isave, iw, level, idim, islice, iside
     integer          :: nx_vec(3), block_nx_vec(3)
     integer          :: my_unit, iostate
     integer          :: ilev
@@ -244,7 +244,7 @@ contains
         ditsave_custom
     double precision :: tsavestart_log, tsavestart_dat, tsavestart_slice,&
         tsavestart_collapsed, tsavestart_custom
-    integer :: windex, ipower
+    integer :: ipower
     double precision :: sizeuniformpart1,sizeuniformpart2,sizeuniformpart3
     double precision :: im_delta,im_nu,rka54,rka51,rkb54,rka55
 
@@ -1463,56 +1463,61 @@ contains
        end if
     end do
 
+    ! Expand the 'pole' boundary type (parsed as the sentinel 12 above) into
+    ! ordinary per-variable symm/asymm entries.  The axis is not a boundary: a
+    ! ghost cell beyond it is the interior cell half a revolution away in phi,
+    ! and getbc fetches it from there.  All this table has to say is which
+    ! components are odd under that pi-rotation, and the rule is the same in
+    ! both coordinate systems: the component along the mirrored direction
+    ! flips, the phi component flips, everything else is symmetric.
+    !
+    !   spherical,   axis at theta=0 or pi (mirror in theta): m_theta, m_phi
+    !   cylindrical, axis at r=0           (mirror in r):     m_r,     m_phi
+    !
+    ! and likewise for the magnetic field in an mhd build.  Note the
+    ! cylindrical radial entry: upstream MPI-AMRVAC marks only m_phi (and
+    ! B_phi) antisymmetric at the cylindrical axis, but the axis maps
+    ! (r, phi) -> (r, phi+pi), under which e_r(phi+pi) = -e_r(phi) exactly as
+    ! e_phi(phi+pi) = -e_phi(phi), so the radial component is odd too.
+    ! tests/hd/cylindrical_pole_uniform_flow is what pins this down.
+    !
+    ! The indices come from iw_mom/iw_mag rather than from the positional
+    ! rho-mom-[e]-B arithmetic upstream uses, because a HYPERTC build
+    ! registers q_ between e_ and mag and shifts every field index.
     do idim=1,ndim
-      if(any(typeboundary(:,2*idim-1)==12)) then
-        if(any(typeboundary(:,2*idim-1)/=12)) typeboundary(:,2*idim-1)=12
-        if(phys_energy) then
-          windex=2
-        else
-          windex=1
-        end if
-        typeboundary(:,2*idim-1)=bc_symm
-        if(physics_type/='rho') then
-          select case(coordinate)
-          case(cylindrical)
-            typeboundary(phi_+1,2*idim-1)=bc_asymm
-            if(physics_type=='mhd') typeboundary(ndir+windex+phi_,&
-               2*idim-1)=bc_asymm
-          case(spherical)
-            typeboundary(3:ndir+1,2*idim-1)=bc_asymm
-            if(physics_type=='mhd') typeboundary(ndir+windex+2:ndir+windex+&
-               ndir,2*idim-1)=bc_asymm
-          case default
-            call mpistop&
-               ('Pole is in cylindrical, polar, spherical coordinates!')
-          end select
-        end if
-      end if
-      if(any(typeboundary(:,2*idim)==12)) then
-        if(any(typeboundary(:,2*idim)/=12)) typeboundary(:,2*idim)=12
-        if(phys_energy) then
-          windex=2
-        else
-          windex=1
-        end if
-        typeboundary(:,2*idim)=bc_symm
-        if(physics_type/='rho') then
+      do iside=1,2
+        iB=2*idim-2+iside
+        if(.not.any(typeboundary(:,iB)==12)) cycle
+        poleB_requested(iside,idim)=.true.
+        ! a pole is a property of the face, not of one variable
+        if(any(typeboundary(:,iB)/=12)) call mpistop("typeboundary='pole' has &
+           &to be given for every variable on a face")
+        select case(physics_type)
+        case('hd','mhd')
+          ! the vector components handled below are all there is to say
+        case default
+          call mpistop('pole treatment is only implemented for phys=hd and &
+             &phys=mhd')
+        end select
         select case(coordinate)
         case(cylindrical)
-          typeboundary(phi_+1,2*idim)=bc_asymm
-          if(physics_type=='mhd') typeboundary(ndir+windex+phi_,&
-             2*idim)=bc_asymm
+          if(idim/=1) call mpistop('the cylindrical axis is at r=0, so only &
+             &typeboundary_min1 can be pole')
         case(spherical)
-          typeboundary(3:ndir+1,2*idim)=bc_asymm
-          if(physics_type=='mhd') typeboundary(ndir+windex+2:ndir+windex+ndir,&
-             2*idim)=bc_asymm
+          if(idim/=2) call mpistop('the spherical poles are at theta=0 and &
+             &theta=pi, so only typeboundary_min2/max2 can be pole')
         case default
           call mpistop('Pole is in cylindrical, polar, spherical coordinates!')
-
         end select
+        typeboundary(:,iB)=bc_symm
+        typeboundary(iw_mom(idim),iB)=bc_asymm
+        typeboundary(iw_mom(phi_),iB)=bc_asymm
+        if(physics_type=='mhd') then
+          typeboundary(iw_mag(idim),iB)=bc_asymm
+          typeboundary(iw_mag(phi_),iB)=bc_asymm
         end if
-      end if
-   end do
+      end do
+    end do
 
    if (any(typeboundary(:,:)==bc_special) .and. .not. specialboundary) then
       call mpistop('special boundary requested, set specialboundary=.true.')

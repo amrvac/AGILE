@@ -9,9 +9,12 @@
 
 HD_DIRS := hd/KH3D hd/RT3D hd/KH3D-SMR hd/KH3D_tracer hd/sphere_advection hd/TRML hd/cloud_crushing \
            hd/spherical_uniform_flow hd/spherical_blast hd/spherical_blast_amr \
-           hd/cylindrical_uniform_flow hd/cylindrical_blast
+           hd/cylindrical_uniform_flow hd/cylindrical_blast \
+           hd/spherical_pole_uniform_flow hd/cylindrical_pole_uniform_flow \
+           hd/spherical_pole_amr
 MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D mhd/spherical_uniform_flow mhd/spherical_blast \
-            mhd/cylindrical_uniform_flow mhd/cylindrical_blast
+            mhd/cylindrical_uniform_flow mhd/cylindrical_blast \
+            mhd/spherical_pole_uniform_flow mhd/cylindrical_pole_uniform_flow
 FFHD_DIRS := ffhd/TI3D ffhd/spherical_uniform_flow ffhd/spherical_blast \
              ffhd/cylindrical_uniform_flow ffhd/cylindrical_blast
 SRHD_DIRS := srhd/shockTube srhd/spherical_uniform_flow srhd/spherical_blast \

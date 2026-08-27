@@ -230,6 +230,103 @@ contains
 
   end subroutine set_pole
 
+  !> Validate a configured polar axis, once, on the host.
+  !>
+  !> Upstream MPI-AMRVAC defers most of this to the copy itself: pole_copy
+  !> calls mpistop("Pole boundary condition should be symm or asymm") when it
+  !> meets a typeboundary entry it cannot use.  Here the equivalent branches
+  !> live inside OpenACC kernels in getbc, where mpistop is unreachable and a
+  !> bad entry would simply be treated as symmetric.  So everything that could
+  !> go wrong is checked here, before any of it is relied on.
+  !>
+  !> The checks also cover a mismatch that upstream cannot detect at all: where
+  !> an axis is (poleB, derived from the domain bounds in set_pole) and where
+  !> the user said one is (poleB_requested, recorded when read_par_files
+  !> expanded typeboundary='pole') are decided independently, so a domain that
+  !> reaches theta=0 without a 'pole' face - or a 'pole' face on a domain that
+  !> does not reach the axis - is otherwise silently wrong.
+  subroutine check_pole_setup
+    use mod_global_parameters
+    use mod_comm_lib, only: mpistop
+
+    integer          :: idim, iside, iB, iw
+    double precision :: phi_len
+
+    do idim=1,ndim
+      do iside=1,2
+        if (poleB(iside,idim) .and. .not.poleB_requested(iside,idim)) then
+          if (mype==0) write(unitterm,*) "dimension",idim," side",iside,&
+             " reaches the axis but was not given typeboundary='pole'"
+          call mpistop("a domain boundary lies on the axis but was not &
+             &declared 'pole'")
+        end if
+        if (poleB_requested(iside,idim) .and. .not.poleB(iside,idim)) then
+          if (mype==0) write(unitterm,*) "dimension",idim," side",iside,&
+             " was given typeboundary='pole' but set_pole found no axis there"
+          call mpistop("typeboundary='pole' on a face that is not on the &
+             &axis; the phi direction has to be periodic, the number of level-1&
+             & blocks across it even, and the face itself at theta=0, theta=pi &
+             &or r=0")
+        end if
+      end do
+    end do
+
+    if (.not.any(poleB)) return
+
+#:if PHYS != 'hd' and PHYS != 'mhd'
+    ! The sign table the pole copy reads is built from iw_mom/iw_mag in
+    ! read_par_files, which only describes hd and mhd.  ffhd would break
+    ! further down as well: it exchanges its frozen field through
+    ! nwgc=nwflux+nwextra, past the end of typeboundary(nwflux+nwaux,:).
+    call mpistop("polar-axis treatment is only implemented for phys='hd' and &
+       &phys='mhd'")
+#:endif
+
+    if (stagger_grid) call mpistop("polar-axis treatment does not support &
+       &stagger_grid")
+
+    ! The pi-periodic neighbour is found by shifting the phi block index by
+    ! ng(1)/2, which is half a revolution only if phi spans a full one.  A
+    ! half-turn domain with periodic boundaries passes every check upstream
+    ! makes and then quietly shifts by the wrong angle.
+    select case (phi_)
+    case (1)
+      phi_len = xprobmax1 - xprobmin1
+    case (2)
+      phi_len = xprobmax2 - xprobmin2
+    case (3)
+      phi_len = xprobmax3 - xprobmin3
+    case default
+      call mpistop("a pole needs a phi direction")
+    end select
+    if (dabs(phi_len - two*dpi) > 1.0d-12*dpi) then
+      if (mype==0) write(unitterm,*) "phi spans",phi_len," rather than 2*pi"
+      call mpistop("a polar axis requires the phi direction to span a full &
+         &turn (xprobmax-xprobmin = 1 in the 2*pi units of &meshlist)")
+    end if
+
+    ! getbc turns the per-variable entry on a pole face into a plus or a minus
+    ! sign and has no third option, so anything else here would be read as
+    ! symmetric.  read_par_files writes only symm/asymm for a 'pole' face; this
+    ! guards against a later edit that widens it.
+    do idim=1,ndim
+      do iside=1,2
+        if (.not.poleB(iside,idim)) cycle
+        iB=2*idim-2+iside
+        do iw=1,nwflux+nwaux
+          if (typeboundary(iw,iB)/=bc_symm .and. typeboundary(iw,&
+             iB)/=bc_asymm) then
+            if (mype==0) write(unitterm,*) "variable",iw," on boundary",iB,&
+               " has boundary type",typeboundary(iw,iB)
+            call mpistop("every variable on a pole face must end up symm or &
+               &asymm")
+          end if
+        end do
+      end do
+    end do
+
+  end subroutine check_pole_setup
+
   !> Return cell-centre positions from the device to the host.
   !>
   !> fill_geometry_device builds a block's geometry on the GPU and leaves it
