@@ -7,9 +7,6 @@ module mod_amr_solution_node
   public :: getnode, putnode
   public :: alloc_node, alloc_state
   public :: dealloc_node
-#:if defined('FILL_NWEXTRA_ANALYTIC')
-  public :: fill_nwextra_device
-#:endif
 
 contains
 
@@ -179,7 +176,17 @@ contains
     ! of rnode alone, so this runs on the device and only the positions come
     ! back; see sync_geometry_host for the rest.
     call fill_geometry_device(igrid)
-  
+
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+    ! Fill this block's analytic extra variables (past nwgc) the same way, from
+    ! the positions fill_geometry_device just wrote. This is the only place
+    ! they are set: getbc, prolongation and coarsening all stop at nwgc, so
+    ! every block that reaches alloc_node - a fresh root, a refined child, a
+    ! coarsened parent, a load-balanced arrival - gets them here and nothing
+    ! overwrites them afterwards.
+    call fill_nwextra_device(igrid)
+#:endif
+
     ! initialize background non-evolving solution; both of these read
     ! ps(igrid)%x on the host, so this block is the one place in alloc_node
     ! that still needs the positions back
@@ -512,10 +519,13 @@ contains
   !> The `nwextra` variables (registered by var_set_extravar) are not advected,
   !> carry no boundary condition, and here are taken to be analytic functions
   !> of position alone. Rather than exchange them through getbc or interpolate
-  !> them in prolongation and coarsening, they are re-derived from the user's
-  !> usr_set_nwextra in every cell of every block - the full ixG range, ghost
-  !> cells included - after any change to the grid. The callers are
-  !> initlevelone, modify_IC and amr_coarsen_refine, each looping over igrids.
+  !> them in prolongation and coarsening - all of which stop at nwgc - they are
+  !> re-derived from the user's usr_set_nwextra in every cell of every block,
+  !> the full ixG range with ghost cells included. `alloc_node` is the sole
+  !> caller: it runs for every block that comes into existence (a fresh root, a
+  !> refined child, a coarsened parent, a load-balanced arrival), right after
+  !> fill_geometry_device has written this block's positions, and nothing
+  !> overwrites the extra slots afterwards.
   !>
   !> Filling the ghost cells this way is also what lets a build with such a
   !> variable reach the polar axis: bgeo%x in the ghost layer beyond theta=0

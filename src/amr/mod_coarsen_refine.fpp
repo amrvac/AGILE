@@ -41,9 +41,6 @@ contains
     use mod_functions_connectivity, only: get_level_range,getigrids,&
          build_connectivity
     use mod_amr_solution_node, only: getnode, putnode
-#:if defined('FILL_NWEXTRA_ANALYTIC')
-    use mod_amr_solution_node, only: fill_nwextra_device
-#:endif
     use mod_functions_forest, only: coarsen_tree_leaf,refine_tree_leaf
     use mod_selectgrids, only: selectgrids
     use mod_refine, only: refine_grids
@@ -153,7 +150,7 @@ contains
        ic2   = rcv_info_cf(3,ibuff)
        ic3   = rcv_info_cf(4,ibuff)
        !$acc loop collapse(4) vector
-       do iw = 1, nw
+       do iw = 1, nwgc  ! analytic extras past nwgc are set in alloc_node
           do ix3 = 1, block_nx3/2
              do ix2 = 1, block_nx2/2
                 do ix1 = 1, block_nx1/2
@@ -234,16 +231,6 @@ contains
     ! Update the list of active grids
     call selectgrids
     !  grid structure now complete again.
-
-#:if defined('FILL_NWEXTRA_ANALYTIC')
-    ! Re-derive the analytic extra variables over every block, ghosts included.
-    ! prolong_grid and coarsen_grid carried them along by interpolation; this
-    ! overwrites that with the exact user field, and fills the freshly exposed
-    ! physical-boundary and polar-axis ghosts that no boundary condition touches.
-    do iigrid=1,igridstail; igrid=igrids(iigrid);
-       call fill_nwextra_device(igrid)
-    end do
-#:endif
 
     ! since we only filled mesh values, and advance assumes filled
     ! ghost cells, do boundary filling for the new levels
@@ -517,7 +504,7 @@ contains
                       call mpistop('coarsen_grid_siblings: max_buff too small in send')
                    end if
                    !$acc parallel loop gang
-                   do iw = 1, nw
+                   do iw = 1, nwgc  ! see above
                       !$acc loop collapse(3) vector
                       do ix3 = 1, block_nx3/2
                          do ix2 = 1, block_nx2/2

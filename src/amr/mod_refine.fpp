@@ -157,7 +157,7 @@ contains
                 jxCo2=ixCo2+kr(2,idim)
                 jxCo3=ixCo3+kr(3,idim)
 
-                do iw=1,nw
+                do iw=1,nwgc  ! analytic extras past nwgc are set in alloc_node
                    slopeL=bg(1)%w(ixCo1,ixCo2,ixCo3,iw, igridCo) - bg(1)%w(hxCo1,hxCo2,hxCo3,iw, igridCo)
                    slopeR=bg(1)%w(jxCo1,jxCo2,jxCo3,iw, igridCo) - bg(1)%w(ixCo1,ixCo2,ixCo3,iw, igridCo)
                    slopeC=half*(slopeR+slopeL)
@@ -214,8 +214,8 @@ contains
                          eta3=(dble(ix3-ixFi3)-0.5d0)*(one-bgeo%dvolume(ix1,ix2,&
                               ix3,igridFi) /sum(bgeo%dvolume(ix1,ix2,ixFi3:ixFi3+1,igridFi)))
                       end if
-                      bg(1)%w(ix1,ix2,ix3,1:nw, igridFi) = bg(1)%w(ixCo1,ixCo2,ixCo3,1:nw, igridCo) + (slope(1:nw,&
-                           1)*eta1)+(slope(1:nw,2)*eta2)+(slope(1:nw,3)*eta3)
+                      bg(1)%w(ix1,ix2,ix3,1:nwgc, igridFi) = bg(1)%w(ixCo1,ixCo2,ixCo3,1:nwgc, igridCo) + (slope(1:nwgc,&
+                           1)*eta1)+(slope(1:nwgc,2)*eta2)+(slope(1:nwgc,3)*eta3)
                    end do
                 end do
              end do
@@ -265,7 +265,7 @@ contains
              ixFi3=2*(ixCo3-ixComin3)+ixMlo3
              ixFi2=2*(ixCo2-ixComin2)+ixMlo2
              ixFi1=2*(ixCo1-ixComin1)+ixMlo1
-             forall(iw=1:nw) wFi(ixFi1:ixFi1+1,ixFi2:ixFi2+1,ixFi3:ixFi3+1,&
+             forall(iw=1:nwgc) wFi(ixFi1:ixFi1+1,ixFi2:ixFi2+1,ixFi3:ixFi3+1,&
                   iw)=wCo(ixCo1,ixCo2,ixCo3,iw)
           end do
        end do

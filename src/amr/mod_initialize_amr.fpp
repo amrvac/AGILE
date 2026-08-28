@@ -21,9 +21,6 @@ contains
     use mod_functions_connectivity, only: build_connectivity, getigrids
     use mod_functions_forest, only: init_forest_root
     use mod_amr_solution_node, only: alloc_node
-#:if defined('FILL_NWEXTRA_ANALYTIC')
-    use mod_amr_solution_node, only: fill_nwextra_device
-#:endif
 
     integer :: iigrid, igrid
     integer :: itimelevel
@@ -45,15 +42,6 @@ contains
        call initial_condition(igrid)
 
     end do
-
-#:if defined('FILL_NWEXTRA_ANALYTIC')
-    ! (re)derive the analytic extra variables over every cell of every block,
-    ! ghosts included; initial_condition only fills the mesh and usr_init_one_grid
-    ! does not touch them
-    do iigrid=1,igridstail; igrid=igrids(iigrid);
-       call fill_nwextra_device(igrid)
-    end do
-#:endif
 
     ! update ghost cells
     call getbc(global_time,0.d0,ps,iwstart,nwgc)
@@ -89,8 +77,11 @@ contains
          call usr_init_one_grid(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,&
               ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,ps(igrid)%x)
       end if
-      
-      !$acc update device(bg(1)%w(:,:,:,:,igrid))
+
+      ! only the machinery-carried variables (1:nwgc); any analytic extras past
+      ! nwgc are device-resident from alloc_node and must not be clobbered by
+      ! this host-to-device push
+      !$acc update device(bg(1)%w(:,:,:,1:nwgc,igrid))
     end subroutine initial_condition
 
     !> modify initial condition
@@ -99,9 +90,6 @@ contains
       use mod_global_parameters
       use mod_geometry, only: sync_positions_host
       use mod_comm_lib, only: mpistop
-#:if defined('FILL_NWEXTRA_ANALYTIC')
-      use mod_amr_solution_node, only: fill_nwextra_device
-#:endif
 
       integer :: iigrid, igrid
 
@@ -120,14 +108,10 @@ contains
              ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,&
              ps(igrid)%x)
        end if
-       !$acc update device(bg(1)%w(:,:,:,:,igrid))
+       ! 1:nwgc only - analytic extras past nwgc stay as read_snapshot and
+       ! alloc_node left them (see initial_condition)
+       !$acc update device(bg(1)%w(:,:,:,1:nwgc,igrid))
     end do
-
-#:if defined('FILL_NWEXTRA_ANALYTIC')
-    do iigrid=1,igridstail; igrid=igrids(iigrid);
-       call fill_nwextra_device(igrid)
-    end do
-#:endif
 
   end subroutine modify_IC
   

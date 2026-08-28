@@ -43,7 +43,7 @@ contains
     if(slab_uniform) then
        CoFiratio=one/dble(2**ndim)
        !$acc parallel loop gang
-       do iw=1,nw
+       do iw=1,nwgc  ! analytic extras past nwgc are set in alloc_node
           !$acc loop collapse(3) vector
           do ixCo3 = ixComin3,ixComax3
              do ixCo2 = ixComin2,ixComax2
@@ -59,7 +59,7 @@ contains
       end do
     else
        !$acc parallel loop gang
-       do iw=1,nw
+       do iw=1,nwgc  ! analytic extras past nwgc are set in alloc_node
           !$acc loop collapse(3) vector
           do ixCo3 = ixComin3,ixComax3
              do ixCo2 = ixComin2,ixComax2

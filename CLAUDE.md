@@ -567,22 +567,26 @@ pure subroutine usr_set_nwextra(x, wextra)   ! x(1:ndim) in, wextra(:) out
 ```
 
 for every cell of every block — interior, inter-block ghosts,
-physical-boundary ghosts and polar-axis ghosts alike — after every change to
-the grid, and writes the result verbatim into the extra slots (so a case must
-return `b-hat` already normalised; `to_spherical_unit`/`to_cylindrical_unit`
-do). The hook is called by name, like `usr_refine_grid` and `gravity_field`,
-so it is a compile-time dependency of any `FILL_NWEXTRA_ANALYTIC` build. The
-call sites are `initlevelone`, `modify_IC` and the end of `amr_coarsen_refine`
-(each looping over `igrids`); `initonegrid_usr` and `usr_special_bc` must
-**not** set `b1,b2,b3`.
+physical-boundary ghosts and polar-axis ghosts alike — and writes the result
+verbatim into the extra slots (so a case must return `b-hat` already
+normalised; `to_spherical_unit`/`to_cylindrical_unit` do). The hook is called
+by name, like `usr_refine_grid` and `gravity_field`, so it is a compile-time
+dependency of any `FILL_NWEXTRA_ANALYTIC` build. It runs from a single site:
+`alloc_node`, right after `fill_geometry_device`, so every block that comes
+into existence — a fresh root, a refined child, a coarsened parent, a
+load-balanced arrival — gets its extras there and nothing overwrites them.
+`initonegrid_usr` and `usr_special_bc` must **not** set `b1,b2,b3`.
 
 Consequences:
 
 - `nwgc = nwflux` for ffhd (not `nwflux + nwextra`): the frozen field is not
-  in the ghost exchange, so `getbc`, prolongation and coarsening no longer
-  need to carry it and `typeboundary` needs no rows for it. RK substeps keep
-  it because they copy `1:nw` wholesale and the flux update never writes past
-  `nwflux`.
+  in the ghost exchange, so `getbc` no longer carries it and `typeboundary`
+  needs no rows for it. Prolongation, coarsening, the coarsen MPI buffers and
+  the initial host-to-device push of the mesh are likewise bounded by `nwgc`
+  rather than `nw`, so they leave the extra slots for `fill_nwextra_device` to
+  own (a no-op rewrite for hd/mhd/srhd, where `nwgc == nw`). RK substeps keep
+  the extras because they copy `1:nw` wholesale and the flux update never
+  writes past `nwflux`.
 - **The polar axis needs no special handling for the frozen field.** `bgeo%x`
   in the ghost layer beyond `theta = 0` (or `r = 0`) carries the mirrored
   coordinate — a negative `theta`, or a negative `r` — so evaluating the
