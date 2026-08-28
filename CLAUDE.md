@@ -312,13 +312,14 @@ Current limits of the curvilinear (spherical and cylindrical) support:
   the curvilinear metric factors a true divergence needs in
   `geometry = 'spherical'` or `geometry = 'cylindrical'`, and this fork has
   not fixed that.
-- The polar axis is supported for `phys = 'hd'`, `phys = 'mhd'` and
-  `phys = 'srhd'`; see "The polar axis" below. `ffhd` must keep the domain
-  away from `theta = 0` and `theta = pi` (spherical) and from `r = 0`
-  (cylindrical) — it exchanges its frozen field through
-  `nwgc = nwflux + nwextra`, past the end of `typeboundary`, so the pole copy
-  cannot cover it as it stands — and `check_pole_setup` stops it loudly if it
-  does not.
+- The polar axis is supported for `phys = 'hd'`, `phys = 'mhd'`,
+  `phys = 'srhd'` and `phys = 'ffhd'`; see "The polar axis" below. `ffhd`
+  reaches the axis by a different route than the others: its conserved
+  quantities are all scalars, so they take no sign flip and the ordinary pole
+  copy in `getbc` carries them unchanged, while its frozen field is not
+  exchanged through `getbc` at all — `fill_frozen_field_device` re-derives it
+  analytically in every ghost cell, the axis ghosts included (see "The frozen
+  field" below).
 - AMR across curvilinear levels is untested here; prolongation in
   `src/amr/mod_refine.fpp` has the `slab_uniform` branch that uses `dvolume`,
   but `fix_conserve` is commented out in `src/mod_advance.fpp` for all
@@ -461,15 +462,20 @@ Two consequences worth knowing:
   analytic and the copy of it therefore has to be exact to round-off. **A new
   pole test needs that check, not just a reference log.**
 
-Enabled for `phys = 'hd'`, `phys = 'mhd'` and `phys = 'srhd'`; `phys = 'ffhd'`
-is refused (see "Current limits" above). srhd needs no change to the copy
-itself: its primitive `mom(:)` slot holds the spatial four-velocity
-`u^i = lfac*v^i` rather than `v^i`, but `lfac` is a scalar and therefore
-invariant under the pole's pi-rotation, so `u^i` transforms exactly like an
-ordinary vector and takes the same `iw_mom`-driven sign table hd's momentum
-does.
+Enabled for `phys = 'hd'`, `phys = 'mhd'`, `phys = 'srhd'` and
+`phys = 'ffhd'`. srhd needs no change to the copy itself: its primitive
+`mom(:)` slot holds the spatial four-velocity `u^i = lfac*v^i` rather than
+`v^i`, but `lfac` is a scalar and therefore invariant under the pole's
+pi-rotation, so `u^i` transforms exactly like an ordinary vector and takes
+the same `iw_mom`-driven sign table hd's momentum does. ffhd needs no sign
+table at all: `rho`, the field-aligned momentum `m_par` and the energy are
+scalars — `m_par = rho*(v·b-hat)` is a contraction of two vectors, invariant
+under the proper (det +1) rotation the pole map is — so `read_par_files`
+skips the `iw_mom` lines for `physics_type == 'ffhd'` and every
+getbc-exchanged variable stays `symm`. The frozen field, the one genuine
+vector, is handled entirely outside `getbc`; see "The frozen field" below.
 
-Validated by six test directories, laid out exactly like the off-axis ones
+Validated by eight test directories, laid out exactly like the off-axis ones
 above and for the same reason — the suite's cost is dominated by compilation,
 so cases that agree on the fypp defines share one build and differ only in
 their par file. They are kept separate from the off-axis directories even
@@ -497,6 +503,14 @@ worth.
   sub-luminal Cartesian flow, single level, one `uflow.par` each. `mean(rho)`
   in the log is `rho0*lfac0`, not `rho0`, since srhd's conserved density is
   `D = rho*lfac`.
+- `tests/ffhd/spherical_pole` and `tests/ffhd/cylindrical_pole` — a uniform
+  field-aligned flow along a uniform Cartesian frozen field, single level, one
+  `uflow.par` each. `check_pole_ghosts` here checks two things at a same-level
+  axis neighbour: the fluid ghost cells against the analytic constant (the
+  ordinary `getbc` pole copy, which for ffhd only has to deliver a constant),
+  and the frozen-field ghost cells rebuilt in Cartesian against the uniform
+  `b0` they must reduce to (`fill_frozen_field_device` at the axis, which is
+  where the sign flips a vector picks up across the pole actually come from).
 
 `agile.par` in each directory is the build reference: `make/config_reader.py`
 takes the compile-time parameters from *that file alone*, so it has to declare
@@ -532,6 +546,51 @@ meaningful where the field is smooth on the scale of a coarse cell:
 The lesson for a new pole test: point-versus-analytic only works where the
 analytic state is smooth on the scale of a coarse cell. Where it is not, check
 same-level neighbours and lean on a log that has teeth.
+
+### The frozen field (`phys = 'ffhd'`)
+
+ffhd advects its scalar conserved quantities along a static, user-supplied
+unit vector `b-hat`, stored in the `w` slots `b1,b2,b3` (registered by
+`var_set_extravar` in `src/ffhd/mod_ffhd_templates.fpp`). It is a pure
+function of position and never a boundary condition: a `phys = 'ffhd'` case
+must define
+
+```fortran
+pure subroutine usr_set_frozen_field(x, bhat)   ! x(1:ndim) in, bhat(1:3) out
+  !$acc routine seq
+```
+
+which `fill_frozen_field_device` (`src/amr/mod_amr_solution_node.fpp`) calls
+on the device for every cell of every block — interior, inter-block ghosts,
+physical-boundary ghosts and polar-axis ghosts alike — after every change to
+the grid, normalising the result. It is called by name, like `usr_refine_grid`
+and `gravity_field`, so it is a compile-time dependency of any ffhd build. The
+call sites are `initlevelone`, `modify_IC` and the end of `amr_coarsen_refine`
+(each looping over `igrids`); `initonegrid_usr` and `usr_special_bc` must
+**not** set `b1,b2,b3` any more.
+
+Consequences:
+
+- `nwgc = nwflux` for ffhd (not `nwflux + nwextra`): the frozen field is not
+  in the ghost exchange, so `getbc`, prolongation and coarsening no longer
+  need to carry it and `typeboundary` needs no rows for it. RK substeps keep
+  it because they copy `1:nw` wholesale and the flux update never writes past
+  `nwflux`.
+- **The polar axis needs no special handling for the frozen field.** `bgeo%x`
+  in the ghost layer beyond `theta = 0` (or `r = 0`) carries the mirrored
+  coordinate — a negative `theta`, or a negative `r` — so evaluating the
+  user's analytic field there reproduces on its own the sign flips a vector
+  picks up across the axis (`b_r` symmetric, `b_theta`/`b_z` and `b_phi`
+  antisymmetric). This is the same identity the `analytic_state` reference in
+  the hd/srhd pole tests relies on.
+- The old design exchanged `b` through `getbc` (`nwgc = nwflux + nwextra`) but
+  filled the *physical-boundary* ghost cells only if the case happened to fill
+  the whole `ixI` in `initonegrid_usr` or rewrite `b` in `usr_special_bc`. A
+  case with `cont` boundaries and an interior-only IC read uninitialised
+  memory there; `tests/ffhd/spherical` and `tests/ffhd/cylindrical` had
+  exactly that latent bug in their `blast.par` runs, which is why their
+  `correct_output/blast.log` changed when the frozen field moved to
+  `usr_set_frozen_field`.
 
 ## Writing a new simulation case (`mod_usr.fpp`)
 

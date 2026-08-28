@@ -268,13 +268,16 @@
     !$acc update device(iw_b1, iw_b2, iw_b3)
 
     ! set number of variables which need update ghostcells
-    ! The frozen field (b1,b2,b3) is set by mod_usr per block, not advected,
-    ! so it is registered via var_set_extravar rather than being part of
-    ! nwflux; it still needs to reach inter-block ghost cells via getbc
-    ! (physical-boundary ghost cells come from usr_special_bc instead), so
-    ! nwgc has to cover it too - otherwise a non-uniform frozen field is only
-    ! ever correct within each block's own interior.
-    nwgc=nwflux+nwextra
+    ! The frozen field (b1,b2,b3) is registered via var_set_extravar (it is
+    ! not advected), but it is NOT exchanged through getbc: it is a pure
+    ! function of position, so fill_frozen_field_device re-derives it from
+    ! usr_set_frozen_field in every cell of every block - interior, inter-block
+    ! ghosts, physical-boundary ghosts and polar-axis ghosts alike - after each
+    ! tree change. Keeping it out of getbc is what lets the polar axis work:
+    ! evaluating the user's analytic field at a ghost cell's own (mirrored)
+    ! coordinates reproduces the pole sign flips for free, with no entry in
+    ! typeboundary. So nwgc stops at nwflux, exactly as for hd and mhd.
+    nwgc=nwflux
     !$acc update device(nwgc)
 
     ! Define custom flux types:

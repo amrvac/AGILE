@@ -13,7 +13,7 @@ module mod_usr
     integer, parameter :: jmax=5000
     !$acc declare create(usr_grav,SRadius,pbc,rbc)
     double precision :: B0,kx,y0,lQ0,bQ0
-    !$acc declare create(lQ0,bQ0)
+    !$acc declare create(lQ0,bQ0,B0,kx,y0)
   
   contains
 
@@ -66,6 +66,9 @@ module mod_usr
       !$acc update device(lQ0)
       bQ0=bQ0/heatunit
       !$acc update device(bQ0)
+
+      ! twoarcades (called from usr_set_frozen_field on the device) reads these
+      !$acc update device(B0,kx,y0)
 
       !$acc update device(xprobmin1,xprobmax1,xprobmin2,xprobmax2,xprobmin3,xprobmax3)
 
@@ -171,9 +174,6 @@ module mod_usr
         double precision :: res
         integer :: ix1, ix2, ix3 ,na
 
-        double precision :: xlocal(3)
-        double precision :: bfield(1:ndir)
-  
         if (it == 0) then
           do ix3=ixOmin3,ixOmax3
           do ix2=ixOmin2,ixOmax2
@@ -193,24 +193,21 @@ module mod_usr
           call phys_to_conserved(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
               ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,w,x)
         end if
-        ! be careful no ghostzone bfield loaded when restart from datfile, require firstprocess=T
-        do ix3=ixImin3,ixImax3
-        do ix2=ixImin2,ixImax2
-        do ix1=ixImin1,ixImax1
-          xlocal(1) = x(ix1,ix2,ix3,1)
-          xlocal(2) = x(ix1,ix2,ix3,2)
-          xlocal(3) = x(ix1,ix2,ix3,3)
-
-          call twoarcades(xlocal, bfield)
-          ! call quadrupolar_field(xlocal, bfield)
-
-          w(ix1,ix2,ix3,iw_b1) = bfield(1)/(bfield(1)**2+bfield(2)**2+bfield(3)**2)**(1./2.)
-          w(ix1,ix2,ix3,iw_b2) = bfield(2)/(bfield(1)**2+bfield(2)**2+bfield(3)**2)**(1./2.)
-          w(ix1,ix2,ix3,iw_b3) = bfield(3)/(bfield(1)**2+bfield(2)**2+bfield(3)**2)**(1./2.)
-        end do
-        end do
-        end do
+        ! b1,b2,b3 are filled by fill_frozen_field_device from
+        ! usr_set_frozen_field, over the full block and after every regrid
     end subroutine initonegrid_usr
+
+    !> Frozen field: the two-arcades analytic field, in Cartesian components.
+    !> Called by name from fill_frozen_field_device (which normalises it); see
+    !> mod_usr_methods.
+    pure subroutine usr_set_frozen_field(x, bhat)
+      !$acc routine seq
+      double precision, intent(in)  :: x(1:ndim)
+      double precision, intent(out) :: bhat(1:3)
+
+      call twoarcades(x, bhat)
+
+    end subroutine usr_set_frozen_field
 
     subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
@@ -364,7 +361,8 @@ module mod_usr
 
   end subroutine quadrupolar_field
   
-  subroutine twoarcades(x, ba)
+  pure subroutine twoarcades(x, ba)
+    !$acc routine seq
     double precision, intent(in) :: x(1:ndim)
     double precision, intent(out) :: ba(1:ndir)
     

@@ -1499,9 +1499,18 @@ contains
           ! lfac is a scalar that a coordinate rotation leaves invariant, so
           ! u^i transforms exactly like an ordinary vector under the pole's
           ! pi-rotation and takes the same asymm pattern as hd's momentum.
+        case('ffhd')
+          ! ffhd's only conserved quantities are scalars - rho, the
+          ! field-aligned momentum mom(1)=m_par, the energy - and a scalar is
+          ! even under the pole's proper pi-rotation (m_par = rho*(v.bhat) is a
+          ! contraction of two vectors), so every getbc-exchanged variable
+          ! stays symm and the momentum lines below are skipped. The frozen
+          ! field b1,b2,b3 is a vector, but it is not exchanged through getbc:
+          ! fill_frozen_field_device re-derives it in every ghost cell, pole
+          ! ghosts included, so it needs no entry here either.
         case default
           call mpistop('pole treatment is only implemented for phys=hd, &
-             &phys=mhd and phys=srhd')
+             &phys=mhd, phys=srhd and phys=ffhd')
         end select
         select case(coordinate)
         case(cylindrical)
@@ -1514,8 +1523,12 @@ contains
           call mpistop('Pole is in cylindrical, polar, spherical coordinates!')
         end select
         typeboundary(:,iB)=bc_symm
-        typeboundary(iw_mom(idim),iB)=bc_asymm
-        typeboundary(iw_mom(phi_),iB)=bc_asymm
+        if(physics_type/='ffhd') then
+          ! ffhd's mom has a single element (the scalar m_par); hd/mhd/srhd
+          ! carry a genuine ndir-vector whose mirrored and phi components flip
+          typeboundary(iw_mom(idim),iB)=bc_asymm
+          typeboundary(iw_mom(phi_),iB)=bc_asymm
+        end if
         if(physics_type=='mhd') then
           typeboundary(iw_mag(idim),iB)=bc_asymm
           typeboundary(iw_mag(phi_),iB)=bc_asymm

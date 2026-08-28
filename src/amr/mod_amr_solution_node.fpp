@@ -5,9 +5,12 @@ module mod_amr_solution_node
   private
 
   public :: getnode, putnode
-  public :: alloc_node, alloc_state 
-  public :: dealloc_node 
- 
+  public :: alloc_node, alloc_state
+  public :: dealloc_node
+#:if PHYS == 'ffhd'
+  public :: fill_frozen_field_device
+#:endif
+
 contains
 
 
@@ -502,6 +505,55 @@ contains
     ! that needs ps(igrid)%x, sync_geometry_host before output.
 
   end subroutine fill_geometry_device
+
+#:if PHYS == 'ffhd'
+  !> Fill this block's frozen-field columns (b1,b2,b3) on the device.
+  !>
+  !> ffhd's frozen field is a static, user-supplied unit vector along which the
+  !> scalar conserved quantities are advected. It is a pure function of
+  !> position, so rather than give it a boundary condition or carry it through
+  !> getbc, prolongation and coarsening, it is simply re-derived from
+  !> usr_set_frozen_field in every cell of every block - the full ixG range,
+  !> ghost cells included - after any change to the grid. The callers are
+  !> initlevelone, modify_IC and amr_coarsen_refine, each looping over igrids.
+  !>
+  !> This is also what makes ffhd work on the polar axis: bgeo%x in the ghost
+  !> layer beyond theta=0 (or r=0) carries the mirrored coordinate, so
+  !> evaluating the user's analytic field there reproduces exactly the sign
+  !> flips the pole copy would apply to a vector - b_r symmetric, b_theta/b_z
+  !> and b_phi antisymmetric - with no entry in typeboundary and no pole branch
+  !> in getbc.
+  !>
+  !> Runs on the device: bgeo%x and bg(1)%w are both resident for all
+  !> max_blocks from initialize_vars, so the kernel indexes them directly.
+  subroutine fill_frozen_field_device(igrid)
+    use mod_global_parameters
+    use mod_physics_vars, only: iw_b1, iw_b2, iw_b3
+    use mod_usr, only: usr_set_frozen_field
+
+    integer, intent(in) :: igrid
+
+    integer          :: ix1, ix2, ix3
+    double precision :: xloc(1:ndim), bhat(1:3), inv_norm
+
+    !$acc parallel loop collapse(3) default(present) private(xloc, bhat, inv_norm)
+    do ix3 = ixGlo3, ixGhi3
+       do ix2 = ixGlo2, ixGhi2
+          do ix1 = ixGlo1, ixGhi1
+             xloc(1:ndim) = bgeo%x(ix1,ix2,ix3,1:ndim,igrid)
+             call usr_set_frozen_field(xloc, bhat)
+             ! the flux kernels expect a unit vector; normalise here so the
+             ! user only has to supply a direction
+             inv_norm = 1.0d0 / sqrt(max(sum(bhat(1:3)**2), tiny(1.0d0)))
+             bg(1)%w(ix1,ix2,ix3,iw_b1,igrid) = bhat(1) * inv_norm
+             bg(1)%w(ix1,ix2,ix3,iw_b2,igrid) = bhat(2) * inv_norm
+             bg(1)%w(ix1,ix2,ix3,iw_b3,igrid) = bhat(3) * inv_norm
+          end do
+       end do
+    end do
+
+  end subroutine fill_frozen_field_device
+#:endif
 
   !> allocate memory to physical state of igrid node
   subroutine alloc_state(igrid, s, ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&

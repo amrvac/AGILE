@@ -157,17 +157,6 @@ module mod_usr
         double precision :: res
         integer :: ix1, ix2, ix3 ,na
 
-        double precision :: xlocal(3)
-        double precision :: bx, by, bz
-        double precision :: xh, yh, zh, yv, zv
-
-        xh = 0.d0
-        yh = 0.d0
-        zh = -dh1
-        yv = 0.d0
-        zv = -dv1
-
-  
         do ix3=ixOmin3,ixOmax3
         do ix2=ixOmin2,ixOmax2
         do ix1=ixOmin1,ixOmax1
@@ -181,30 +170,8 @@ module mod_usr
         end do
         end do
 
-        do ix3=ixImin3,ixImax3
-        do ix2=ixImin2,ixImax2
-        do ix1=ixImin1,ixImax1
-
-          xlocal(1) = x(ix1,ix2,ix3,1)
-          xlocal(2) = x(ix1,ix2,ix3,2)
-          xlocal(3) = x(ix1,ix2,ix3,3)
-          bx = -3.d0*ch*((xlocal(3)-zh)**2+(xlocal(2)-yh)**2) / ((xlocal(1)-xh)**2+(xlocal(2)-yh)**2+(xlocal(3)-zh)**2)**(5./2.) + &
-            3.d0*cv*(xlocal(1)-xv)*(xlocal(3)-zv) / ((xlocal(1)-xv)**2+(xlocal(2)-yv)**2+(xlocal(3)-zv)**2)**(5./2.) + &
-            2*ch / ((xlocal(1)-xh)**2+(xlocal(2)-yh)**2+(xlocal(3)-zh)**2)**(3./2.)
-
-          by = 3.d0*ch*(xlocal(1)-xh)*(xlocal(2)-yh) / ((xlocal(1)-xh)**2+(xlocal(2)-yh)**2+(xlocal(3)-zh)**2)**(5./2.) + &
-            3.d0*cv*(xlocal(2)-yv)*(xlocal(3)-zv) / ((xlocal(1)-xv)**2+(xlocal(2)-yv)**2+(xlocal(3)-zv)**2)**(5./2.)
-
-          bz = 3.d0*ch*(xlocal(1)-xh)*(xlocal(3)-zh) / ((xlocal(1)-xh)**2+(xlocal(2)-yh)**2+(xlocal(3)-zh)**2)**(5./2.) + & 
-            (-3.d0)*cv*((xlocal(2)-yv)**2+(xlocal(1)-xv)**2) / ((xlocal(1)-xv)**2+(xlocal(2)-yv)**2+(xlocal(3)-zv)**2)**(5./2.) + & 
-            2.d0*cv/((xlocal(1)-xv)**2+(xlocal(2)-yv)**2+(xlocal(3)-zv)**2)**(3./2.)
-
-          w(ix1,ix2,ix3,iw_b1) = bx/(bx**2+by**2+bz**2)**(1./2.)
-          w(ix1,ix2,ix3,iw_b2) = by/(bx**2+by**2+bz**2)**(1./2.)
-          w(ix1,ix2,ix3,iw_b3) = bz/(bx**2+by**2+bz**2)**(1./2.)
-        end do
-        end do
-        end do
+        ! b1,b2,b3 are filled by fill_frozen_field_device from
+        ! usr_set_frozen_field, over the full block and after every regrid
 
         w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,mom(:))=zero
         #:if defined('HYPERTC')
@@ -213,6 +180,34 @@ module mod_usr
         call phys_to_conserved(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
             ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,w,x)
     end subroutine initonegrid_usr
+
+    !> Frozen field: the horizontal + vertical dipole solar field, in Cartesian
+    !> components. Called by name from fill_frozen_field_device (which
+    !> normalises it); see mod_usr_methods.
+    pure subroutine usr_set_frozen_field(x, bhat)
+      !$acc routine seq
+      double precision, intent(in)  :: x(1:ndim)
+      double precision, intent(out) :: bhat(1:3)
+      double precision :: xh, yh, zh, yv, zv, dh_r5, dh_r3, dv_r5, dv_r3
+
+      xh = 0.d0; yh = 0.d0; zh = -dh1
+      yv = 0.d0; zv = -dv1
+
+      dh_r5 = ((x(1)-xh)**2+(x(2)-yh)**2+(x(3)-zh)**2)**(5.d0/2.d0)
+      dh_r3 = ((x(1)-xh)**2+(x(2)-yh)**2+(x(3)-zh)**2)**(3.d0/2.d0)
+      dv_r5 = ((x(1)-xv)**2+(x(2)-yv)**2+(x(3)-zv)**2)**(5.d0/2.d0)
+      dv_r3 = ((x(1)-xv)**2+(x(2)-yv)**2+(x(3)-zv)**2)**(3.d0/2.d0)
+
+      bhat(1) = -3.d0*ch*((x(3)-zh)**2+(x(2)-yh)**2)/dh_r5 &
+              +  3.d0*cv*(x(1)-xv)*(x(3)-zv)/dv_r5 &
+              +  2.d0*ch/dh_r3
+      bhat(2) =  3.d0*ch*(x(1)-xh)*(x(2)-yh)/dh_r5 &
+              +  3.d0*cv*(x(2)-yv)*(x(3)-zv)/dv_r5
+      bhat(3) =  3.d0*ch*(x(1)-xh)*(x(3)-zh)/dh_r5 &
+              -  3.d0*cv*((x(2)-yv)**2+(x(1)-xv)**2)/dv_r5 &
+              +  2.d0*cv/dv_r3
+
+    end subroutine usr_set_frozen_field
 
     subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)

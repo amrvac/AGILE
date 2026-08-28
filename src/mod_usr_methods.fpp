@@ -63,6 +63,21 @@ module mod_usr_methods
   procedure(a_refine_threshold), pointer :: usr_refine_threshold => null()
   procedure(flag_grid), pointer       :: usr_flag_grid        => null()
 
+  ! Set the ffhd frozen field direction. NOT a procedure pointer: like
+  ! usr_refine_grid and gravity_field it is called by name from device code
+  ! (fill_frozen_field_device), so a phys='ffhd' case must define
+  !
+  !   pure subroutine usr_set_frozen_field(x, bhat)
+  !     !$acc routine seq
+  !     double precision, intent(in)  :: x(1:ndim)     ! a single point
+  !     double precision, intent(out) :: bhat(1:3)     ! field there, any length
+  !
+  ! It is evaluated once per cell of every block after every grid change, so it
+  ! must depend on position alone. The components are the coordinate-system
+  ! components at x (Cartesian, or (r,theta,phi)/(r,z,phi)). fill_frozen_field_device
+  ! normalises the result, so returning any non-zero multiple of the direction
+  ! is fine.
+
   ! Set time-independent magnetic field for B0 splitting
   procedure(set_B0), pointer          :: usr_set_B0           => null()
   ! Set time-independent variables for equilibrium splitting, except for B0

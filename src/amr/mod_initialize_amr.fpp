@@ -18,10 +18,13 @@ contains
   subroutine initlevelone
     use mod_global_parameters
     use mod_ghostcells_update
-    use mod_functions_connectivity, only: build_connectivity, getigrids 
+    use mod_functions_connectivity, only: build_connectivity, getigrids
     use mod_functions_forest, only: init_forest_root
     use mod_amr_solution_node, only: alloc_node
- 
+#:if PHYS == 'ffhd'
+    use mod_amr_solution_node, only: fill_frozen_field_device
+#:endif
+
     integer :: iigrid, igrid
     integer :: itimelevel
   
@@ -43,9 +46,18 @@ contains
 
     end do
 
+#:if PHYS == 'ffhd'
+    ! (re)derive the frozen field over every cell of every block, ghosts
+    ! included; initial_condition only filled the mesh and, after the move to
+    ! usr_set_frozen_field, no longer touches b1,b2,b3 at all
+    do iigrid=1,igridstail; igrid=igrids(iigrid);
+       call fill_frozen_field_device(igrid)
+    end do
+#:endif
+
     ! update ghost cells
     call getbc(global_time,0.d0,ps,iwstart,nwgc)
-    
+
   end subroutine initlevelone
 
   !> fill in initial condition
@@ -87,6 +99,9 @@ contains
       use mod_global_parameters
       use mod_geometry, only: sync_positions_host
       use mod_comm_lib, only: mpistop
+#:if PHYS == 'ffhd'
+      use mod_amr_solution_node, only: fill_frozen_field_device
+#:endif
 
       integer :: iigrid, igrid
 
@@ -107,7 +122,13 @@ contains
        end if
        !$acc update device(bg(1)%w(:,:,:,:,igrid))
     end do
-  
+
+#:if PHYS == 'ffhd'
+    do iigrid=1,igridstail; igrid=igrids(iigrid);
+       call fill_frozen_field_device(igrid)
+    end do
+#:endif
+
   end subroutine modify_IC
   
   

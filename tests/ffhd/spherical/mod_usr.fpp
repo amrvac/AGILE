@@ -60,7 +60,7 @@ module mod_usr
   !> the domain. Deriving the centre from xprob* cannot get that wrong, and
   !> check_blast_fits below verifies the whole sphere is inside.
   double precision :: fr = 0.45d0, ftheta = 0.4d0, fphi = 0.4d0
-  !$acc declare copyin(is_blast, rho0, p0, pblast, rblast, b0, fr, ftheta, fphi)
+  !$acc declare copyin(is_blast, rho0, p0, vpar0, pblast, rblast, b0, fr, ftheta, fphi)
 
 contains
 
@@ -127,6 +127,19 @@ contains
 
   end subroutine to_spherical_unit
 
+  !> The frozen field: a uniform Cartesian direction b0, written in the
+  !> spherical (r, theta, phi) components at x. Called by name from
+  !> fill_frozen_field_device (device code) for every cell of every block after
+  !> each grid change; see mod_usr_methods.
+  pure subroutine usr_set_frozen_field(x, bhat)
+    !$acc routine seq
+    double precision, intent(in)  :: x(1:ndim)
+    double precision, intent(out) :: bhat(1:3)
+
+    call to_spherical_unit(x, b0, bhat)
+
+  end subroutine usr_set_frozen_field
+
   subroutine initonegrid_usr(ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3,&
      ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,w,x)
     integer, intent(in)             :: ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&
@@ -139,8 +152,6 @@ contains
     double precision                :: r, theta, phi, xcart1, xcart2, xcart3
     double precision                :: xc1, xc2, xc3, d2
     double precision                :: rc, thetac, phic
-    double precision                :: bhat(1:3)
-    double precision                :: x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
     ! xprobmin2/xprobmax2 and xprobmin3/xprobmax3 are in radians by now:
@@ -171,22 +182,17 @@ contains
              xcart3 = r * cos(theta)
              d2 = (xcart1-xc1)**2 + (xcart2-xc2)**2 + (xcart3-xc3)**2
 
-             x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
-             call to_spherical_unit(x_loc, b0, bhat)
-
              w(ix1,ix2,ix3,rho_) = rho0
              w(ix1,ix2,ix3,p_) = p0
 
              if (is_blast .and. .not.quiet_start .and. d2 <= rblast**2) &
-
                 w(ix1,ix2,ix3,p_) = pblast
 
              ! ambient medium at rest: zero field-aligned momentum everywhere
              ! vpar0 is zero for the blast, so this leaves it at rest
              w(ix1,ix2,ix3,mom(1)) = vpar0
-             w(ix1,ix2,ix3,iw_b1)  = bhat(1)
-             w(ix1,ix2,ix3,iw_b2)  = bhat(2)
-             w(ix1,ix2,ix3,iw_b3)  = bhat(3)
+             ! b1,b2,b3 are filled by fill_frozen_field_device from
+             ! usr_set_frozen_field after the grid is built, not here
 
           end do
        end do
@@ -240,25 +246,19 @@ contains
     double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3,1:nw)
     ! .. local ..
-    double precision                :: bhat(1:3)
-    double precision                :: x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
-    !$acc loop collapse(3) vector private(bhat, x_loc)
+    ! b1,b2,b3 in these ghost cells come from fill_frozen_field_device, so
+    ! only the fluid variables are set here
+    !$acc loop collapse(3) vector
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1
-
-             x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
-             call to_spherical_unit(x_loc, b0, bhat)
 
              w(ix1,ix2,ix3,iw_rho)    = rho0
              w(ix1,ix2,ix3,iw_mom(1)) = rho0 * vpar0
              w(ix1,ix2,ix3,iw_e)      = p0 * inv_gamma_1 + &
                 0.5d0 * rho0 * vpar0**2
-             w(ix1,ix2,ix3,iw_b1)     = bhat(1)
-             w(ix1,ix2,ix3,iw_b2)     = bhat(2)
-             w(ix1,ix2,ix3,iw_b3)     = bhat(3)
 
           end do
        end do

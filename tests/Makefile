@@ -13,7 +13,8 @@ HD_DIRS := hd/KH3D hd/RT3D hd/KH3D-SMR hd/KH3D_tracer hd/sphere_advection hd/TRM
 MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D \
             mhd/spherical mhd/cylindrical \
             mhd/spherical_pole mhd/cylindrical_pole
-FFHD_DIRS := ffhd/TI3D ffhd/spherical ffhd/cylindrical
+FFHD_DIRS := ffhd/TI3D ffhd/spherical ffhd/cylindrical \
+             ffhd/spherical_pole ffhd/cylindrical_pole
 SRHD_DIRS := srhd/shockTube srhd/spherical srhd/cylindrical \
              srhd/spherical_pole srhd/cylindrical_pole
 
