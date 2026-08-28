@@ -538,28 +538,30 @@ contains
   !> frozen field b1,b2,b3 is exactly such a variable.
   !>
   !> Runs on the device: bgeo%x and bg(1)%w are both resident for all
-  !> max_blocks from initialize_vars, so the kernel indexes them directly. The
-  !> extra variables are the last n_extra of the nw_phys total, i.e. the slots
-  !> just past the flux variables (physics using this flag have no aux vars).
+  !> max_blocks from initialize_vars, so the kernel indexes them directly.
+  !> mod_variables tracks nwextra and, via var_set_extravar, the w indices
+  !> iw_extra(1:nwextra) the extra variables actually occupy - this routine
+  !> makes no assumption about where in w they live.
   subroutine fill_nwextra_device(igrid)
     use mod_global_parameters
-    use mod_physics_vars, only: nw_phys, nw_flux
     use mod_usr, only: usr_set_nwextra
 
     integer, intent(in) :: igrid
 
-    integer, parameter :: n_extra = nw_phys - nw_flux
-    integer            :: ix1, ix2, ix3, iwx
-    double precision   :: xloc(1:ndim), wx(n_extra)
+    integer          :: ix1, ix2, ix3, iwx
+    ! wx is sized by the compile-time max_nw, not the runtime nwextra: a
+    ! variable-length private array in an !$acc parallel loop is a fragile
+    ! corner across OpenACC compilers. Only wx(1:nwextra) is passed and used.
+    double precision :: xloc(1:ndim), wx(max_nw)
 
     !$acc parallel loop collapse(3) default(present) private(xloc, wx)
     do ix3 = ixGlo3, ixGhi3
        do ix2 = ixGlo2, ixGhi2
           do ix1 = ixGlo1, ixGhi1
              xloc(1:ndim) = bgeo%x(ix1,ix2,ix3,1:ndim,igrid)
-             call usr_set_nwextra(xloc, wx)
-             do iwx = 1, n_extra
-                bg(1)%w(ix1,ix2,ix3, nw_flux + iwx, igrid) = wx(iwx)
+             call usr_set_nwextra(xloc, wx(1:nwextra))
+             do iwx = 1, nwextra
+                bg(1)%w(ix1,ix2,ix3, iw_extra(iwx), igrid) = wx(iwx)
              end do
           end do
        end do
