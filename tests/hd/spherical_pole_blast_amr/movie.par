@@ -3,21 +3,30 @@
 !
 ! Two things differ from agile.par and test.par on purpose:
 !
-!  * the radial boundaries are reflecting walls rather than 'cont', so the
-!    domain is sealed. Nothing can legitimately leave it, which is what makes
-!    the volume averages in the log a conservation diagnostic: the total
-!    volume is fixed, so mean(rho) and mean(e) are the total mass and total
-!    energy up to that constant factor, and any drift in them is error. With
-!    open boundaries the same numbers would simply track the flux out of the
-!    domain and say nothing.
+!  * the radial domain is much wider, r in [0.4, 2.8] rather than [0.5, 1.5],
+!    so the shell has room to expand for the whole run without reaching
+!    either boundary. The hot spot still starts at r = 1.0, so the outer
+!    boundary is now 1.55 away from its outer edge rather than 0.25: at the
+!    roughly Mach 2 shell speed that is about t = 0.6 rather than t = 0.1.
+!    The radial resolution is coarser at level one to pay for the extra
+!    extent (dr = 0.1 rather than 0.0625), but three levels of refinement
+!    bring the shell itself back to dr = 0.025.
 !
-!  * it runs to t = 0.4, roughly half a sound-crossing time of the radial
-!    domain (1.0 / sqrt(gamma*p0/rho0) = 0.77), which is long enough for the
-!    shell to sweep across the pole, wrap around the far side and start
-!    reflecting off the outer wall.
+!  * it runs to t = 0.6, long enough for the shell to cross the pole, wrap
+!    right around the far side and expand well out into the domain.
+!
+! The volume averages in the log double as a conservation diagnostic even
+! though the radial boundaries are open. That works because the net mass flux
+! of a *uniform* flow through a closed surface vanishes identically - the
+! background drift carries as much in through one hemisphere as it takes out
+! through the other - so mean(rho) and mean(e) stay flat until the blast
+! itself reaches a boundary. Drift in them before that is error, and the point
+! at which they start to fall is the point at which the shell has arrived.
 !
 ! Run it with, from this directory:
-!   mkdir -p movie && mpirun -np 4 ./agile -i movie.par
+!   mkdir -p movie && mpirun -np 1 ./agile -i movie.par
+! after building for the GPU:
+!   make -j4 arch=nvidia OPENACC=1 NOGPUDIRECT=1
 !
 ! The .vtu snapshots are the 3D volumes and the slice files are the movie
 ! frames. Both carry Cartesian cell corners and Cartesian vector components
@@ -37,8 +46,8 @@
    itsave(1,2)      = 0        ! ... the initial condition
    itsave(1,3)      = 0        ! ... and the initial slices
    ditsave_log      = 1        ! every step: this is the conservation trace
-   dtsave_dat       = 0.01d0   ! 40 snapshots
-   dtsave_slice     = 0.004d0  ! 100 movie frames
+   dtsave_dat       = 0.015d0  ! 40 snapshots
+   dtsave_slice     = 0.006d0  ! 100 movie frames
 
    ! Four slices. The two meridional half-planes at phi_c and phi_c + pi
    ! together make the full plane through the polar axis containing the blast
@@ -61,7 +70,7 @@
  /
 
  &stoplist
-   time_max         = 0.4d0
+   time_max         = 0.6d0
  /
 
  &methodlist
@@ -72,11 +81,11 @@
  /
 
  &boundlist
-   ! Reflecting walls in r: rho, m_theta, m_phi and e are symmetric, the
-   ! normal momentum m_r is antisymmetric.  theta runs through both poles and
-   ! phi is periodic over a full turn, exactly as in agile.par.
-   typeboundary_min1 = 'symm','asymm','symm','symm','symm'
-   typeboundary_max1 = 'symm','asymm','symm','symm','symm'
+   ! Open (outflow) in r, as in agile.par, now that the boundaries are far
+   ! enough away that the shell does not reach them.  theta runs through both
+   ! poles and phi is periodic over a full turn.
+   typeboundary_min1 = 5*'cont'
+   typeboundary_max1 = 5*'cont'
    typeboundary_min2 = 5*'pole'
    typeboundary_max2 = 5*'pole'
    typeboundary_min3 = 5*'periodic'
@@ -85,17 +94,17 @@
 
  &meshlist
    geometry           = 'spherical'
-   max_blocks         =  4096
+   max_blocks         =  2048
    refine_max_level   =  3
    w_refine_weight    =  0.1d0, 0.0d0, 0.0d0, 0.0d0, 0.9d0
    block_nx1          =  8
    block_nx2          =  8
    block_nx3          =  8
-   domain_nx1         =  16
+   domain_nx1         =  24
    domain_nx2         =  16
    domain_nx3         =  16
-   xprobmin1          =  0.5d0
-   xprobmax1          =  1.5d0
+   xprobmin1          =  0.4d0
+   xprobmax1          =  2.8d0
    xprobmin2          =  0.0d0
    xprobmax2          =  0.5d0
    xprobmin3          =  0.0d0

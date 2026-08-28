@@ -173,7 +173,7 @@ contains
     double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3,1:nw)
     ! .. local ..
-    double precision :: wpt(1:nw), x_loc(1:ndim), err, tol
+    double precision :: wpt(1:nw), x_loc(1:ndim), err
     integer          :: ix1, ix2, ix3, iside, i2, jxmin2, jxmax2
 
     if (it /= 0) return
@@ -184,22 +184,29 @@ contains
     do iside = 1, 2
        i2 = 2*iside - 3
        if (neighbor_pole(0,i2,0,igrid) == 0) cycle
+       ! Same-level pole neighbours only, and those to round-off, because only
+       ! they are copied verbatim.
+       !
+       ! Across a level jump the values are restricted or prolonged on the way,
+       ! and comparing those against the analytic state at a point is only
+       ! meaningful where the field is smooth - which this initial condition is
+       ! not. The hot spot has a discontinuous surface, and a coarse cell
+       ! straddling it holds the 2:1 average of hot and cold gas, which differs
+       ! from the analytic value at its centre by a large fraction of the jump
+       ! however correct the pole copy is. Widening the radial domain for
+       ! movie.par moved a pole face onto that surface and this check fired at
+       ! exactly 13.5/4, a quarter of the initial jump in e, on a neighbor_fine
+       ! face - the signature of the restriction, not of a bug.
+       !
+       ! The restricting and prolonging pole paths are covered here by the
+       ! regression log instead, which for this case is genuinely sensitive to
+       ! them. tests/hd/spherical_pole_amr, whose analytic state is smooth
+       ! everywhere, does keep a loose check across level jumps.
+       if (neighbor_type(0,i2,0,igrid) /= neighbor_sibling) cycle
        if (iside == 1) then
           jxmin2 = ixImin2;   jxmax2 = ixOmin2-1
        else
           jxmin2 = ixOmax2+1; jxmax2 = ixImax2
-       end if
-       ! A pole neighbour at the same level is copied verbatim, so its ghost
-       ! cells have to reproduce the analytic state to round-off. Across a
-       ! level jump - and the mesh is already refined at it = 0 - the values
-       ! are restricted or prolonged on the way and carry the scheme's own
-       ! second-order error. The loose tolerance there still catches what
-       ! actually goes wrong in that path, a mistaken destination offset or a
-       ! missing sign flip, both of which are O(1) on this initial condition.
-       if (neighbor_type(0,i2,0,igrid) == neighbor_sibling) then
-          tol = 1.0d-10
-       else
-          tol = 1.0d-1
        end if
        err = 0.0d0
        do ix3 = ixOmin3, ixOmax3
@@ -212,10 +219,8 @@ contains
              end do
           end do
        end do
-       if (err > tol) then
-          write(*,*) 'pole ghost cells deviate from the exact solution by',&
-             err, ' tolerance', tol, ' neighbour type',&
-             neighbor_type(0,i2,0,igrid)
+       if (err > 1.0d-10) then
+          write(*,*) 'pole ghost cells deviate from the exact solution by', err
           call mpistop('pole ghost-cell check failed')
        end if
     end do

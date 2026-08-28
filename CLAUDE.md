@@ -478,12 +478,30 @@ is what gives the momentum components non-trivial values for
 the ambient 1.5675 to about 5.6 within twenty steps and stays shocked for the
 rest of the run.
 
-Both AMR cases check their pole ghosts at a tolerance that depends on the
-neighbour: round-off (1e-10) when the pole neighbour is at the same level, and
-loose (1e-1) across a level jump, where the values are restricted or prolonged
-on the way and carry the scheme's own second-order error — measured at 3.4e-2
-and 8.1e-4 respectively, both far below the O(1) a wrong sign or offset
-produces (0.18 and 2.3 when measured).
+`check_pole_ghosts` compares the ghost cells against the analytic state at
+`it = 0`, where the interior is still exactly analytic and the pole copy of it
+therefore has to be exact. How far that can be pushed across a *level jump*
+depends on the case, because there the ghost has been restricted or prolonged
+on the way and comparing it against the analytic value at a point is only
+meaningful where the field is smooth:
+
+- `spherical_pole_amr` is smooth everywhere, so it keeps both branches:
+  round-off (1e-10) for a same-level pole neighbour and loose (1e-1) across a
+  level jump, where the measured error is 3.4e-2 — far below the 0.18 a wrong
+  sign produces.
+- `spherical_pole_blast_amr` checks same-level neighbours only. Its hot spot
+  has a discontinuous surface, and a coarse cell straddling it holds the 2:1
+  average of hot and cold gas, which differs from the analytic value at its
+  centre by a large fraction of the jump however correct the copy is. Widening
+  the radial domain for `movie.par` put a pole face on that surface and the
+  check fired at exactly `13.5/4`, a quarter of the initial jump in `e`, on a
+  `neighbor_fine` face. That case covers the restricting and prolonging paths
+  through its log instead, which it can afford to because its log is the one
+  that is actually sensitive to them.
+
+The lesson for a new pole test: point-versus-analytic only works where the
+analytic state is smooth on the scale of a coarse cell. Where it is not, check
+same-level neighbours and lean on a log that has teeth.
 
 ## Writing a new simulation case (`mod_usr.fpp`)
 
