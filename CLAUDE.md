@@ -321,37 +321,45 @@ Current limits of the curvilinear (spherical and cylindrical) support:
   but `fix_conserve` is commented out in `src/mod_advance.fpp` for all
   geometries.
 
-Validated by `tests/hd/spherical_uniform_flow` (a uniform Cartesian flow
-written in spherical components, which converges at second order),
-`tests/hd/spherical_blast`, `tests/mhd/spherical_uniform_flow` (the same
-uniform-flow idea extended with a uniform Cartesian magnetic field, to
-exercise the induction equation's and GLM psi's curvature terms too),
-`tests/mhd/spherical_blast`, `tests/srhd/spherical_uniform_flow` (a uniform,
-sub-luminal Cartesian flow, which also converges at second order — the
-Lorentz factor only depends on `|v|`, which a spherical rotation leaves
-invariant, so it stays a single global constant), `tests/srhd/spherical_blast`,
-`tests/ffhd/spherical_uniform_flow` (a uniform state along a uniform frozen
-field, which also converges at second order — this test is what caught a
-pre-existing, geometry-independent bug: `phys_init` set `nwgc=nwflux`, but
-the frozen field `iw_b1`/`iw_b2`/`iw_b3` is registered via
-`var_set_extravar`, outside `nwflux`, so it was silently excluded from
-inter-block ghost-cell exchange whenever the field is not spatially uniform;
-fixed to `nwgc=nwflux+nwextra`, matching how `srhd` already includes its own
-auxiliaries via `nwgc=nwflux+nwaux`), and `tests/ffhd/spherical_blast`.
+Validated by eight test directories, one per (physics, geometry) pair, which
+is as few as the compile-time parameters allow: `phys` and `geometry` are both
+fypp defines, so hd cannot share a build with mhd nor spherical with
+cylindrical. Within a pair the cases differ only at run time, so they share one
+build and pick their initial condition through the `setup` entry of the
+`&usr_list` namelist (read in `usr_init` via `params_read_user(par_files)`, the
+mechanism `tests/hd/cloud_crushing` uses):
 
-The cylindrical counterparts follow the same pattern, one `cylindrical_*`
-test directory per `spherical_*` one: `tests/hd/cylindrical_uniform_flow`
-(the analogous uniform Cartesian flow written in cylindrical `(r, z, phi)`
-components — only the radial and azimuthal velocity are non-trivial
-functions of `phi`, since the axial component stays literally constant;
-confirmed at second-order convergence by doubling the resolution),
-`tests/hd/cylindrical_blast`, `tests/mhd/cylindrical_uniform_flow` (adding a
-uniform Cartesian magnetic field, also confirmed at second order),
-`tests/mhd/cylindrical_blast`, `tests/srhd/cylindrical_uniform_flow` (a
-uniform, sub-luminal Cartesian flow, also confirmed at roughly second-order
-convergence), `tests/srhd/cylindrical_blast`,
-`tests/ffhd/cylindrical_uniform_flow` (a uniform state along a uniform
-frozen field), and `tests/ffhd/cylindrical_blast`.
+- `uflow.par`, `setup = 'uniform'` — a uniform Cartesian state, which is an
+  exact steady solution. Written in curvilinear components it is a non-trivial
+  function of position, so keeping it uniform exercises every curvilinear flux
+  and every geometric source term at once, and is the well-balancing test.
+  What "uniform" means per physics: a Cartesian velocity for hd; that plus a
+  uniform Cartesian magnetic field for mhd, which exercises the induction
+  equation and the GLM `psi` too; a constant field-aligned speed along a
+  uniform frozen field for ffhd; and a sub-luminal Cartesian velocity for
+  srhd, whose Lorentz factor stays a single global constant because it depends
+  only on `|v|`, which a rotation leaves invariant.
+- `blast.par`, `setup = 'blast'` — an over-pressured sphere in gas at rest,
+  deliberately off-centre in all three coordinates so every momentum component
+  is exercised. It is the same setup with the velocity zeroed and a hot spot
+  added, which is what lets one initial-condition routine serve both.
+- `blast_amr.par` — `tests/hd/spherical` only: the same blast, Lohner-refined.
+  The shell keeps moving outward in `r`, so the grid is re-made throughout the
+  run rather than settling after the first regrid, which is what puts the
+  curvilinear prolongation, coarsening and ghost-cell prolongation paths under
+  test.
+
+`agile.par` in each directory is the build reference: `make/config_reader.py`
+takes the compile-time parameters from *that file alone*, so it has to declare
+the union of what every par file in the directory needs. `specialboundary` is
+a runtime logical as well as a fypp define, so `blast.par` leaves it out while
+`specialbound_usr` stays compiled in. **Adding a par file to such a directory
+is free; adding a directory costs a full rebuild in CI.**
+
+These domains all stay away from the polar axis and from `r = 0`; the axis
+itself is covered by the separate `*_pole` directories below. Pole and non-pole
+cases are kept as separate builds deliberately, even though their compile-time
+parameters would have allowed merging them too.
 
 ### The polar axis
 
@@ -448,56 +456,63 @@ Two consequences worth knowing:
   the log: `check_pole_ghosts` in each case's `mod_usr.fpp` compares them
   against the analytic state at `it = 0`, where the interior is still exactly
   analytic and the copy of it therefore has to be exact to round-off. **A new
-  pole test needs that check, not just a `correct_output/test.log`.**
+  pole test needs that check, not just a reference log.**
 
-Validated by `tests/hd/spherical_pole_uniform_flow` and
-`tests/mhd/spherical_pole_uniform_flow` (a uniform Cartesian flow, and field,
-on a domain running onto both poles), `tests/hd/cylindrical_pole_uniform_flow`
-and `tests/mhd/cylindrical_pole_uniform_flow` (the same onto the cylindrical
-axis — these are what pin down the radial sign discussed above),
-`tests/hd/spherical_pole_amr`, which refines half the domain in `phi` so that
-blocks meet across the axis at different levels and the restricting and
-prolonging pole paths are exercised too, and
-`tests/hd/spherical_pole_blast_amr`.
+Validated by four further test directories, laid out exactly like the
+off-axis ones above and for the same reason — the suite's cost is dominated by
+compilation, so cases that agree on the fypp defines share one build and differ
+only in their par file. They are kept separate from the off-axis directories
+even though their compile-time parameters would have allowed merging: a pole
+case and an ordinary curvilinear case are different test families, and mixing
+them would make each directory harder to reason about than the extra build is
+worth.
 
-That last one is the demanding case, and the one to reach for when changing
-any of this. The uniform-flow cases keep a state that is *smooth* across the
-axis, which is exactly the situation in which a wrong ghost value cannot hurt:
-zero face area on one side, TVD clipping on the other. The blast case sends a
-strong shock over the pole instead, so the state either side of the axis
-genuinely differs, nothing is clipped, and the Lohner criterion drags the
-refinement across the axis with the shell — the pole paths therefore run on
-blocks that are regridded as the shock moves rather than on a static mesh. It
-is the only pole case whose `correct_output/test.log` is itself sensitive to
-the copy: reversing the `theta` sign makes `compare_logs` fail on
-`mean(m_r)`, `mean(m_theta)` and `mean(m_phi)`, where the same break leaves the
-uniform-flow logs comfortably inside tolerance. Its hot spot starts off the
-axis and is carried onto it by a uniform Cartesian background velocity, which
-is what gives the momentum components non-trivial values for
-`check_pole_ghosts` to test at `it = 0`; the axis-adjacent energy rises from
-the ambient 1.5675 to about 5.6 within twenty steps and stays shocked for the
-rest of the run.
+- `tests/hd/spherical_pole` — three runs from one build, selected by the
+  `setup` entry of the `&usr_list` namelist (read in `usr_init` via
+  `params_read_user(par_files)`, the same mechanism
+  `tests/hd/cloud_crushing` uses): `uflow.par` is a uniform Cartesian flow on
+  a single level, `uflow_amr.par` the same with half the domain in `phi`
+  refined so blocks meet across the axis at different levels, and
+  `blast_amr.par` a Lohner-refined blast that starts off the axis and expands
+  across it. `movie.par` is a longer, visualisable variant of the blast.
+- `tests/hd/cylindrical_pole` — the same three runs onto the cylindrical axis
+  at `r = 0`, with the hot spot placed off the axis in `r` and carried across
+  it by a background velocity pointing along `-y`.
+- `tests/mhd/spherical_pole` and `tests/mhd/cylindrical_pole` — the uniform
+  flow with a uniform Cartesian magnetic field, which puts `B_theta`/`B_r`,
+  `B_phi` and the GLM `psi` through the same treatment. The cylindrical cases
+  are what pin down the radial sign discussed above.
+
+`agile.par` in each directory is the build reference: `make/config_reader.py`
+takes the compile-time parameters from *that file alone*, so it has to declare
+the union of what every par file in the directory needs. `specialboundary` and
+`refine_usr` are both runtime logicals as well as fypp defines, so an
+individual par file can switch them off again while the routines they guard
+stay compiled in. **Adding a par file to such a directory is free; adding a
+directory costs a full rebuild in CI.**
 
 `check_pole_ghosts` compares the ghost cells against the analytic state at
 `it = 0`, where the interior is still exactly analytic and the pole copy of it
 therefore has to be exact. How far that can be pushed across a *level jump*
-depends on the case, because there the ghost has been restricted or prolonged
+depends on the setup, because there the ghost has been restricted or prolonged
 on the way and comparing it against the analytic value at a point is only
-meaningful where the field is smooth:
+meaningful where the field is smooth on the scale of a coarse cell:
 
-- `spherical_pole_amr` is smooth everywhere, so it keeps both branches:
+- the `uniform` setups are smooth everywhere, so both branches are checked:
   round-off (1e-10) for a same-level pole neighbour and loose (1e-1) across a
   level jump, where the measured error is 3.4e-2 — far below the 0.18 a wrong
   sign produces.
-- `spherical_pole_blast_amr` checks same-level neighbours only. Its hot spot
-  has a discontinuous surface, and a coarse cell straddling it holds the 2:1
-  average of hot and cold gas, which differs from the analytic value at its
-  centre by a large fraction of the jump however correct the copy is. Widening
-  the radial domain for `movie.par` put a pole face on that surface and the
-  check fired at exactly `13.5/4`, a quarter of the initial jump in `e`, on a
-  `neighbor_fine` face. That case covers the restricting and prolonging paths
-  through its log instead, which it can afford to because its log is the one
-  that is actually sensitive to them.
+- the `blast` setup has a discontinuous spot surface, and a coarse cell
+  straddling it holds the 2:1 average of hot and cold gas, which differs from
+  the analytic value at its centre by a large fraction of the jump however
+  correct the copy is. Widening the radial domain for `movie.par` put a pole
+  face on that surface and the check fired at exactly `13.5/4`, a quarter of
+  the initial jump in `e`, on a `neighbor_fine` face. So that setup checks
+  same-level neighbours only and covers the restricting and prolonging paths
+  through its log instead — which it can afford to do because its log is the
+  one that is actually sensitive to them: reversing the `theta` sign makes
+  `compare_logs` fail on `mean(m_r)`, `mean(m_theta)` and `mean(m_phi)`, where
+  the same break leaves the uniform-flow logs comfortably inside tolerance.
 
 The lesson for a new pole test: point-versus-analytic only works where the
 analytic state is smooth on the scale of a coarse cell. Where it is not, check
