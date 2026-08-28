@@ -14,7 +14,8 @@ MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D \
             mhd/spherical mhd/cylindrical \
             mhd/spherical_pole mhd/cylindrical_pole
 FFHD_DIRS := ffhd/TI3D ffhd/spherical ffhd/cylindrical
-SRHD_DIRS := srhd/shockTube srhd/spherical srhd/cylindrical
+SRHD_DIRS := srhd/shockTube srhd/spherical srhd/cylindrical \
+             srhd/spherical_pole srhd/cylindrical_pole
 
 TEST_DIRS := $(HD_DIRS) $(MHD_DIRS) $(FFHD_DIRS) $(SRHD_DIRS)
 

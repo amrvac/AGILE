@@ -312,10 +312,13 @@ Current limits of the curvilinear (spherical and cylindrical) support:
   the curvilinear metric factors a true divergence needs in
   `geometry = 'spherical'` or `geometry = 'cylindrical'`, and this fork has
   not fixed that.
-- The polar axis is supported for `phys = 'hd'` and `phys = 'mhd'` only; see
-  "The polar axis" below. `srhd` and `ffhd` must keep the domain away from
-  `theta = 0` and `theta = pi` (spherical) and from `r = 0` (cylindrical), and
-  `check_pole_setup` stops them loudly if they do not.
+- The polar axis is supported for `phys = 'hd'`, `phys = 'mhd'` and
+  `phys = 'srhd'`; see "The polar axis" below. `ffhd` must keep the domain
+  away from `theta = 0` and `theta = pi` (spherical) and from `r = 0`
+  (cylindrical) — it exchanges its frozen field through
+  `nwgc = nwflux + nwextra`, past the end of `typeboundary`, so the pole copy
+  cannot cover it as it stands — and `check_pole_setup` stops it loudly if it
+  does not.
 - AMR across curvilinear levels is untested here; prolongation in
   `src/amr/mod_refine.fpp` has the `slab_uniform` branch that uses `dvolume`,
   but `fix_conserve` is commented out in `src/mod_advance.fpp` for all
@@ -458,13 +461,21 @@ Two consequences worth knowing:
   analytic and the copy of it therefore has to be exact to round-off. **A new
   pole test needs that check, not just a reference log.**
 
-Validated by four further test directories, laid out exactly like the
-off-axis ones above and for the same reason — the suite's cost is dominated by
-compilation, so cases that agree on the fypp defines share one build and differ
-only in their par file. They are kept separate from the off-axis directories
-even though their compile-time parameters would have allowed merging: a pole
-case and an ordinary curvilinear case are different test families, and mixing
-them would make each directory harder to reason about than the extra build is
+Enabled for `phys = 'hd'`, `phys = 'mhd'` and `phys = 'srhd'`; `phys = 'ffhd'`
+is refused (see "Current limits" above). srhd needs no change to the copy
+itself: its primitive `mom(:)` slot holds the spatial four-velocity
+`u^i = lfac*v^i` rather than `v^i`, but `lfac` is a scalar and therefore
+invariant under the pole's pi-rotation, so `u^i` transforms exactly like an
+ordinary vector and takes the same `iw_mom`-driven sign table hd's momentum
+does.
+
+Validated by six test directories, laid out exactly like the off-axis ones
+above and for the same reason — the suite's cost is dominated by compilation,
+so cases that agree on the fypp defines share one build and differ only in
+their par file. They are kept separate from the off-axis directories even
+though their compile-time parameters would have allowed merging: a pole case
+and an ordinary curvilinear case are different test families, and mixing them
+would make each directory harder to reason about than the extra build is
 worth.
 
 - `tests/hd/spherical_pole` — three runs from one build, selected by the
@@ -482,6 +493,10 @@ worth.
   flow with a uniform Cartesian magnetic field, which puts `B_theta`/`B_r`,
   `B_phi` and the GLM `psi` through the same treatment. The cylindrical cases
   are what pin down the radial sign discussed above.
+- `tests/srhd/spherical_pole` and `tests/srhd/cylindrical_pole` — a uniform,
+  sub-luminal Cartesian flow, single level, one `uflow.par` each. `mean(rho)`
+  in the log is `rho0*lfac0`, not `rho0`, since srhd's conserved density is
+  `D = rho*lfac`.
 
 `agile.par` in each directory is the build reference: `make/config_reader.py`
 takes the compile-time parameters from *that file alone*, so it has to declare

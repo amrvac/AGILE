@@ -1493,11 +1493,15 @@ contains
         if(any(typeboundary(:,iB)/=12)) call mpistop("typeboundary='pole' has &
            &to be given for every variable on a face")
         select case(physics_type)
-        case('hd','mhd')
-          ! the vector components handled below are all there is to say
+        case('hd','mhd','srhd')
+          ! the vector components handled below are all there is to say. srhd's
+          ! mom(:) is the spatial four-velocity u^i = lfac*v^i (see con2prim);
+          ! lfac is a scalar that a coordinate rotation leaves invariant, so
+          ! u^i transforms exactly like an ordinary vector under the pole's
+          ! pi-rotation and takes the same asymm pattern as hd's momentum.
         case default
-          call mpistop('pole treatment is only implemented for phys=hd and &
-             &phys=mhd')
+          call mpistop('pole treatment is only implemented for phys=hd, &
+             &phys=mhd and phys=srhd')
         end select
         select case(coordinate)
         case(cylindrical)

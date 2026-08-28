@@ -273,13 +273,16 @@ contains
 
     if (.not.any(poleB)) return
 
-#:if PHYS != 'hd' and PHYS != 'mhd'
+#:if PHYS != 'hd' and PHYS != 'mhd' and PHYS != 'srhd'
     ! The sign table the pole copy reads is built from iw_mom/iw_mag in
-    ! read_par_files, which only describes hd and mhd.  ffhd would break
-    ! further down as well: it exchanges its frozen field through
-    ! nwgc=nwflux+nwextra, past the end of typeboundary(nwflux+nwaux,:).
-    call mpistop("polar-axis treatment is only implemented for phys='hd' and &
-       &phys='mhd'")
+    ! read_par_files, which describes hd, mhd and srhd (srhd's mom(:) is the
+    ! spatial four-velocity u^i=lfac*v^i, a genuine vector under the pole's
+    ! pi-rotation since lfac is rotation-invariant - see the case select in
+    ! read_par_files).  ffhd would break further down as well: it exchanges
+    ! its frozen field through nwgc=nwflux+nwextra, past the end of
+    ! typeboundary(nwflux+nwaux,:).
+    call mpistop("polar-axis treatment is only implemented for phys='hd', &
+       &phys='mhd' and phys='srhd'")
 #:endif
 
     if (stagger_grid) call mpistop("polar-axis treatment does not support &
