@@ -11,8 +11,8 @@
 !>
 !> This is a pole case: the domain runs onto the singular axis at r=0. FFHD
 !> has no boundary condition for the frozen field and does not exchange it
-!> through getbc; fill_frozen_field_device re-derives it from
-!> usr_set_frozen_field in every cell of every block, the axis ghost cells
+!> through getbc; fill_nwextra_device re-derives it from
+!> usr_set_nwextra in every cell of every block, the axis ghost cells
 !> included. bgeo%x in the ghost layer beyond r=0 carries a negative r, and
 !> the analytic fill there reproduces on its own the sign flips a vector picks
 !> up across the axis - b_r and b_phi antisymmetric, b_z symmetric - with no
@@ -72,15 +72,15 @@ contains
   end subroutine to_cylindrical_unit
 
   !> The frozen field, in cylindrical components at x. Called by name from
-  !> fill_frozen_field_device (device code); see mod_usr_methods.
-  pure subroutine usr_set_frozen_field(x, bhat)
+  !> fill_nwextra_device (device code); see mod_usr_methods.
+  pure subroutine usr_set_nwextra(x, bhat)
     !$acc routine seq
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(out) :: bhat(1:3)
 
     call to_cylindrical_unit(x, b0, bhat)
 
-  end subroutine usr_set_frozen_field
+  end subroutine usr_set_nwextra
 
   subroutine initonegrid_usr(ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3,&
      ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,w,x)
@@ -142,7 +142,7 @@ contains
   !> Assert that the ghost cells across the r=0 axis carry the exact solution.
   !>
   !> Only meaningful at it = 0. The fluid variables (constants) come from
-  !> getbc's pole copy; the frozen field comes from fill_frozen_field_device at
+  !> getbc's pole copy; the frozen field comes from fill_nwextra_device at
   !> the ghost cell's own negative-r coordinate, and rebuilt in Cartesian it
   !> has to equal the uniform b0. Silence means the check passed.
   subroutine check_pole_ghosts(igrid,level,ixImin1,ixImin2,ixImin3,ixImax1,&

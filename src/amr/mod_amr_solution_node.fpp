@@ -7,8 +7,8 @@ module mod_amr_solution_node
   public :: getnode, putnode
   public :: alloc_node, alloc_state
   public :: dealloc_node
-#:if PHYS == 'ffhd'
-  public :: fill_frozen_field_device
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+  public :: fill_nwextra_device
 #:endif
 
 contains
@@ -506,53 +506,56 @@ contains
 
   end subroutine fill_geometry_device
 
-#:if PHYS == 'ffhd'
-  !> Fill this block's frozen-field columns (b1,b2,b3) on the device.
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+  !> Fill this block's extra w-variables on the device from usr_set_nwextra.
   !>
-  !> ffhd's frozen field is a static, user-supplied unit vector along which the
-  !> scalar conserved quantities are advected. It is a pure function of
-  !> position, so rather than give it a boundary condition or carry it through
-  !> getbc, prolongation and coarsening, it is simply re-derived from
-  !> usr_set_frozen_field in every cell of every block - the full ixG range,
-  !> ghost cells included - after any change to the grid. The callers are
+  !> The `nwextra` variables (registered by var_set_extravar) are not advected,
+  !> carry no boundary condition, and here are taken to be analytic functions
+  !> of position alone. Rather than exchange them through getbc or interpolate
+  !> them in prolongation and coarsening, they are re-derived from the user's
+  !> usr_set_nwextra in every cell of every block - the full ixG range, ghost
+  !> cells included - after any change to the grid. The callers are
   !> initlevelone, modify_IC and amr_coarsen_refine, each looping over igrids.
   !>
-  !> This is also what makes ffhd work on the polar axis: bgeo%x in the ghost
-  !> layer beyond theta=0 (or r=0) carries the mirrored coordinate, so
-  !> evaluating the user's analytic field there reproduces exactly the sign
-  !> flips the pole copy would apply to a vector - b_r symmetric, b_theta/b_z
-  !> and b_phi antisymmetric - with no entry in typeboundary and no pole branch
-  !> in getbc.
+  !> Filling the ghost cells this way is also what lets a build with such a
+  !> variable reach the polar axis: bgeo%x in the ghost layer beyond theta=0
+  !> (or r=0) carries the mirrored coordinate, so evaluating the user's
+  !> analytic field there reproduces on its own the sign flips a vector picks
+  !> up across the axis, with no entry in typeboundary and no pole branch in
+  !> getbc.
+  !>
+  !> This flag is set by config_schema.toml's `implies` for phys='ffhd', whose
+  !> frozen field b1,b2,b3 is exactly such a variable.
   !>
   !> Runs on the device: bgeo%x and bg(1)%w are both resident for all
-  !> max_blocks from initialize_vars, so the kernel indexes them directly.
-  subroutine fill_frozen_field_device(igrid)
+  !> max_blocks from initialize_vars, so the kernel indexes them directly. The
+  !> extra variables are the last n_extra of the nw_phys total, i.e. the slots
+  !> just past the flux variables (physics using this flag have no aux vars).
+  subroutine fill_nwextra_device(igrid)
     use mod_global_parameters
-    use mod_physics_vars, only: iw_b1, iw_b2, iw_b3
-    use mod_usr, only: usr_set_frozen_field
+    use mod_physics_vars, only: nw_phys, nw_flux
+    use mod_usr, only: usr_set_nwextra
 
     integer, intent(in) :: igrid
 
-    integer          :: ix1, ix2, ix3
-    double precision :: xloc(1:ndim), bhat(1:3), inv_norm
+    integer, parameter :: n_extra = nw_phys - nw_flux
+    integer            :: ix1, ix2, ix3, iwx
+    double precision   :: xloc(1:ndim), wx(n_extra)
 
-    !$acc parallel loop collapse(3) default(present) private(xloc, bhat, inv_norm)
+    !$acc parallel loop collapse(3) default(present) private(xloc, wx)
     do ix3 = ixGlo3, ixGhi3
        do ix2 = ixGlo2, ixGhi2
           do ix1 = ixGlo1, ixGhi1
              xloc(1:ndim) = bgeo%x(ix1,ix2,ix3,1:ndim,igrid)
-             call usr_set_frozen_field(xloc, bhat)
-             ! the flux kernels expect a unit vector; normalise here so the
-             ! user only has to supply a direction
-             inv_norm = 1.0d0 / sqrt(max(sum(bhat(1:3)**2), tiny(1.0d0)))
-             bg(1)%w(ix1,ix2,ix3,iw_b1,igrid) = bhat(1) * inv_norm
-             bg(1)%w(ix1,ix2,ix3,iw_b2,igrid) = bhat(2) * inv_norm
-             bg(1)%w(ix1,ix2,ix3,iw_b3,igrid) = bhat(3) * inv_norm
+             call usr_set_nwextra(xloc, wx)
+             do iwx = 1, n_extra
+                bg(1)%w(ix1,ix2,ix3, nw_flux + iwx, igrid) = wx(iwx)
+             end do
           end do
        end do
     end do
 
-  end subroutine fill_frozen_field_device
+  end subroutine fill_nwextra_device
 #:endif
 
   !> allocate memory to physical state of igrid node

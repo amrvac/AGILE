@@ -104,10 +104,18 @@ class Option:
     flags: list[str]
     options: list[str]
     default: str
+    # maps an option value to a list of schema paths of flags it turns on
+    implies: dict[str, list[str]] = field(default_factory=dict)
 
     def handle(self, schema, val, visited):
         if val not in self.options:
             raise ConfigError(f"Option parameter {self.name} should be one of {self.options}, got: {val}")
+        for flag in self.implies.get(val, []):
+            if flag not in schema:
+                raise ConfigError(
+                    f"flag `{flag}`, implied by `{self.name}={val}`, not "
+                    f"present in schema")
+            schema[flag].handle(schema, True, visited)
         if "hash" in self.flags:
             print(f"enabled += \"{self.name}={val}\"")
         if "fypp" in self.flags:

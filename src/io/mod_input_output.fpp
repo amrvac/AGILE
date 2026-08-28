@@ -1506,7 +1506,7 @@ contains
           ! contraction of two vectors), so every getbc-exchanged variable
           ! stays symm and the momentum lines below are skipped. The frozen
           ! field b1,b2,b3 is a vector, but it is not exchanged through getbc:
-          ! fill_frozen_field_device re-derives it in every ghost cell, pole
+          ! fill_nwextra_device re-derives it in every ghost cell, pole
           ! ghosts included, so it needs no entry here either.
         case default
           call mpistop('pole treatment is only implemented for phys=hd, &

@@ -317,7 +317,7 @@ Current limits of the curvilinear (spherical and cylindrical) support:
   reaches the axis by a different route than the others: its conserved
   quantities are all scalars, so they take no sign flip and the ordinary pole
   copy in `getbc` carries them unchanged, while its frozen field is not
-  exchanged through `getbc` at all — `fill_frozen_field_device` re-derives it
+  exchanged through `getbc` at all — `fill_nwextra_device` re-derives it
   analytically in every ghost cell, the axis ghosts included (see "The frozen
   field" below).
 - AMR across curvilinear levels is untested here; prolongation in
@@ -509,7 +509,7 @@ worth.
   axis neighbour: the fluid ghost cells against the analytic constant (the
   ordinary `getbc` pole copy, which for ffhd only has to deliver a constant),
   and the frozen-field ghost cells rebuilt in Cartesian against the uniform
-  `b0` they must reduce to (`fill_frozen_field_device` at the axis, which is
+  `b0` they must reduce to (`fill_nwextra_device` at the axis, which is
   where the sign flips a vector picks up across the pole actually come from).
 
 `agile.par` in each directory is the build reference: `make/config_reader.py`
@@ -551,23 +551,30 @@ same-level neighbours and lean on a log that has teeth.
 
 ffhd advects its scalar conserved quantities along a static, user-supplied
 unit vector `b-hat`, stored in the `w` slots `b1,b2,b3` (registered by
-`var_set_extravar` in `src/ffhd/mod_ffhd_templates.fpp`). It is a pure
-function of position and never a boundary condition: a `phys = 'ffhd'` case
-must define
+`var_set_extravar` in `src/ffhd/mod_ffhd_templates.fpp`, so they are the
+`nwextra` variables). It is a pure function of position and never a boundary
+condition.
+
+This is handled by a generic mechanism, not by ffhd-specific code in the AMR
+core. `config_schema.toml`'s `implies` gives `phys = 'ffhd'` the
+`FILL_NWEXTRA_ANALYTIC` compile flag, which switches on `fill_nwextra_device`
+(`src/amr/mod_amr_solution_node.fpp`) and its call sites. That routine, on the
+device, evaluates a by-name user hook
 
 ```fortran
-pure subroutine usr_set_frozen_field(x, bhat)   ! x(1:ndim) in, bhat(1:3) out
-  !$acc routine seq
+pure subroutine usr_set_nwextra(x, wextra)   ! x(1:ndim) in, wextra(:) out
+  !$acc routine seq                          ! for ffhd: b-hat, already unit
 ```
 
-which `fill_frozen_field_device` (`src/amr/mod_amr_solution_node.fpp`) calls
-on the device for every cell of every block — interior, inter-block ghosts,
+for every cell of every block — interior, inter-block ghosts,
 physical-boundary ghosts and polar-axis ghosts alike — after every change to
-the grid, normalising the result. It is called by name, like `usr_refine_grid`
-and `gravity_field`, so it is a compile-time dependency of any ffhd build. The
+the grid, and writes the result verbatim into the extra slots (so a case must
+return `b-hat` already normalised; `to_spherical_unit`/`to_cylindrical_unit`
+do). The hook is called by name, like `usr_refine_grid` and `gravity_field`,
+so it is a compile-time dependency of any `FILL_NWEXTRA_ANALYTIC` build. The
 call sites are `initlevelone`, `modify_IC` and the end of `amr_coarsen_refine`
 (each looping over `igrids`); `initonegrid_usr` and `usr_special_bc` must
-**not** set `b1,b2,b3` any more.
+**not** set `b1,b2,b3`.
 
 Consequences:
 
@@ -590,7 +597,7 @@ Consequences:
   memory there; `tests/ffhd/spherical` and `tests/ffhd/cylindrical` had
   exactly that latent bug in their `blast.par` runs, which is why their
   `correct_output/blast.log` changed when the frozen field moved to
-  `usr_set_frozen_field`.
+  `usr_set_nwextra`.
 
 ## Writing a new simulation case (`mod_usr.fpp`)
 

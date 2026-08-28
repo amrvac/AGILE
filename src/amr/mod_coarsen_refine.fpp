@@ -41,8 +41,8 @@ contains
     use mod_functions_connectivity, only: get_level_range,getigrids,&
          build_connectivity
     use mod_amr_solution_node, only: getnode, putnode
-#:if PHYS == 'ffhd'
-    use mod_amr_solution_node, only: fill_frozen_field_device
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+    use mod_amr_solution_node, only: fill_nwextra_device
 #:endif
     use mod_functions_forest, only: coarsen_tree_leaf,refine_tree_leaf
     use mod_selectgrids, only: selectgrids
@@ -235,14 +235,13 @@ contains
     call selectgrids
     !  grid structure now complete again.
 
-#:if PHYS == 'ffhd'
-    ! Re-derive the frozen field analytically over every block, ghosts
-    ! included. prolong_grid and coarsen_grid carried b1,b2,b3 along by
-    ! interpolation; this overwrites that with the exact user field, and fills
-    ! the freshly exposed physical-boundary and polar-axis ghosts that no
-    ! boundary condition touches.
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+    ! Re-derive the analytic extra variables over every block, ghosts included.
+    ! prolong_grid and coarsen_grid carried them along by interpolation; this
+    ! overwrites that with the exact user field, and fills the freshly exposed
+    ! physical-boundary and polar-axis ghosts that no boundary condition touches.
     do iigrid=1,igridstail; igrid=igrids(iigrid);
-       call fill_frozen_field_device(igrid)
+       call fill_nwextra_device(igrid)
     end do
 #:endif
 

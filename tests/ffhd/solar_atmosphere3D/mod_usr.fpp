@@ -170,8 +170,8 @@ module mod_usr
         end do
         end do
 
-        ! b1,b2,b3 are filled by fill_frozen_field_device from
-        ! usr_set_frozen_field, over the full block and after every regrid
+        ! b1,b2,b3 are filled by fill_nwextra_device from
+        ! usr_set_nwextra, over the full block and after every regrid
 
         w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,mom(:))=zero
         #:if defined('HYPERTC')
@@ -181,10 +181,10 @@ module mod_usr
             ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,w,x)
     end subroutine initonegrid_usr
 
-    !> Frozen field: the horizontal + vertical dipole solar field, in Cartesian
-    !> components. Called by name from fill_frozen_field_device (which
-    !> normalises it); see mod_usr_methods.
-    pure subroutine usr_set_frozen_field(x, bhat)
+    !> Frozen field b-hat (the ffhd nwextra variables): the horizontal +
+    !> vertical dipole solar field, in Cartesian components, normalised. Called
+    !> by name from fill_nwextra_device; see mod_usr_methods.
+    pure subroutine usr_set_nwextra(x, bhat)
       !$acc routine seq
       double precision, intent(in)  :: x(1:ndim)
       double precision, intent(out) :: bhat(1:3)
@@ -207,7 +207,9 @@ module mod_usr
               -  3.d0*cv*((x(2)-yv)**2+(x(1)-xv)**2)/dv_r5 &
               +  2.d0*cv/dv_r3
 
-    end subroutine usr_set_frozen_field
+      bhat(1:3) = bhat(1:3) / sqrt(sum(bhat(1:3)**2))
+
+    end subroutine usr_set_nwextra
 
     subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)

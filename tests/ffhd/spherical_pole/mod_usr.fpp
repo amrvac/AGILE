@@ -11,8 +11,8 @@
 !>
 !> This is a pole case: the domain deliberately runs onto the singular axis at
 !> both ends. FFHD has no boundary condition for the frozen field and does not
-!> exchange it through getbc; fill_frozen_field_device re-derives it from
-!> usr_set_frozen_field in every cell of every block after each grid change,
+!> exchange it through getbc; fill_nwextra_device re-derives it from
+!> usr_set_nwextra in every cell of every block after each grid change,
 !> the polar-axis ghost cells included. Because bgeo%x in the ghost layer
 !> beyond theta=0 carries the mirrored coordinate (a negative theta), that
 !> analytic fill reproduces on its own the sign flips a vector picks up across
@@ -28,7 +28,7 @@
 !> area, and the TVD limiter clips what is left - so the real test is
 !> check_pole_ghosts below: it compares the fluid ghost cells against the
 !> analytic constant (the getbc pole copy) and the frozen-field ghost cells
-!> against the uniform Cartesian b0 they must reduce to (fill_frozen_field_device
+!> against the uniform Cartesian b0 they must reduce to (fill_nwextra_device
 !> at the axis).
 module mod_usr
   use mod_amrvac
@@ -37,12 +37,12 @@ module mod_usr
   implicit none
 
   !> ambient state. Plain variables, not parameters: specialbound_usr and
-  !> usr_set_frozen_field run on the device, and a parameter has no storage to
+  !> usr_set_nwextra run on the device, and a parameter has no storage to
   !> copy there.
   double precision :: rho0  = 1.0d0
   double precision :: p0    = 1.0d0
   !> field-aligned speed, and the uniform Cartesian frozen-field direction
-  !> (any length: fill_frozen_field_device normalises it)
+  !> (any length: fill_nwextra_device normalises it)
   double precision :: vpar0 = 0.4d0
   double precision :: b0(3) = [1.0d0, 0.5d0, -0.3d0]
   !$acc declare copyin(rho0, p0, vpar0, b0)
@@ -84,15 +84,15 @@ contains
   end subroutine to_spherical_unit
 
   !> The frozen field, in spherical components at x. Called by name from
-  !> fill_frozen_field_device (device code); see mod_usr_methods.
-  pure subroutine usr_set_frozen_field(x, bhat)
+  !> fill_nwextra_device (device code); see mod_usr_methods.
+  pure subroutine usr_set_nwextra(x, bhat)
     !$acc routine seq
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(out) :: bhat(1:3)
 
     call to_spherical_unit(x, b0, bhat)
 
-  end subroutine usr_set_frozen_field
+  end subroutine usr_set_nwextra
 
   subroutine initonegrid_usr(ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3,&
      ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,w,x)
@@ -105,7 +105,7 @@ contains
     integer                         :: ix1, ix2, ix3
 
     ! rho, the field-aligned momentum and the energy are constants; b1,b2,b3
-    ! are filled by fill_frozen_field_device from usr_set_frozen_field
+    ! are filled by fill_nwextra_device from usr_set_nwextra
     do ix3 = ixmin3, ixmax3
        do ix2 = ixmin2, ixmax2
           do ix1 = ixmin1, ixmax1
@@ -139,7 +139,7 @@ contains
        ixImin3:ixImax3,1:nw)
     integer                         :: ix1, ix2, ix3
 
-    ! b1,b2,b3 in these ghost cells come from fill_frozen_field_device
+    ! b1,b2,b3 in these ghost cells come from fill_nwextra_device
     !$acc loop collapse(3) vector
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
@@ -163,8 +163,8 @@ contains
   !>    the block half a revolution away - they are constants, so a correct
   !>    copy reproduces them to round-off;
   !>
-  !>  * the frozen field, which fill_frozen_field_device fills from
-  !>    usr_set_frozen_field at the ghost cell's own (mirrored) coordinate -
+  !>  * the frozen field, which fill_nwextra_device fills from
+  !>    usr_set_nwextra at the ghost cell's own (mirrored) coordinate -
   !>    converted back to Cartesian it has to equal the uniform b0, which is
   !>    only true if the sign flips across the axis have come out right.
   !>

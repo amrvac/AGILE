@@ -129,16 +129,16 @@ contains
 
   !> The frozen field: a uniform Cartesian direction b0, written in the
   !> cylindrical (r, z, phi) components at x. Called by name from
-  !> fill_frozen_field_device (device code) for every cell of every block after
+  !> fill_nwextra_device (device code) for every cell of every block after
   !> each grid change; see mod_usr_methods.
-  pure subroutine usr_set_frozen_field(x, bhat)
+  pure subroutine usr_set_nwextra(x, bhat)
     !$acc routine seq
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(out) :: bhat(1:3)
 
     call to_cylindrical_unit(x, b0, bhat)
 
-  end subroutine usr_set_frozen_field
+  end subroutine usr_set_nwextra
 
   subroutine initonegrid_usr(ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3,&
      ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,w,x)
@@ -191,8 +191,8 @@ contains
              ! ambient medium at rest: zero field-aligned momentum everywhere
              ! vpar0 is zero for the blast, so this leaves it at rest
              w(ix1,ix2,ix3,mom(1)) = vpar0
-             ! b1,b2,b3 are filled by fill_frozen_field_device from
-             ! usr_set_frozen_field after the grid is built, not here
+             ! b1,b2,b3 are filled by fill_nwextra_device from
+             ! usr_set_nwextra after the grid is built, not here
 
           end do
        end do
@@ -243,7 +243,7 @@ contains
     ! .. local ..
     integer                         :: ix1, ix2, ix3
 
-    ! b1,b2,b3 in these ghost cells come from fill_frozen_field_device, so
+    ! b1,b2,b3 in these ghost cells come from fill_nwextra_device, so
     ! only the fluid variables are set here
     !$acc loop collapse(3) vector
     do ix3 = ixOmin3, ixOmax3

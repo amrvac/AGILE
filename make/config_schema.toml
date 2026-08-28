@@ -30,6 +30,16 @@ flags = ["fypp", "hash"]
 default = false
 implies = ["components.source_dt"]
 
+# Compile in fill_nwextra_device: after every grid change, re-derive the
+# non-advected extra w-variables (nwextra) analytically from usr_set_nwextra
+# over the whole of every block, ghost cells included. Implied by phys='ffhd',
+# whose frozen field is exactly such a variable.
+[components.fill_nwextra_analytic]
+type = "flag"
+name = "FILL_NWEXTRA_ANALYTIC"
+flags = ["fypp", "hash"]
+default = false
+
 [methodlist]
 [methodlist.phys]
 type = "option"
@@ -37,6 +47,7 @@ name = "PHYS"
 options = ["hd", "mhd", "ffhd", "srhd"]
 flags = ["fypp", "hash"]
 default = "hd"
+implies.ffhd = ["components.fill_nwextra_analytic"]
 
 [methodlist.flux_adaptive_diffusion]
 type = "flag"

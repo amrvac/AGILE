@@ -21,8 +21,8 @@ contains
     use mod_functions_connectivity, only: build_connectivity, getigrids
     use mod_functions_forest, only: init_forest_root
     use mod_amr_solution_node, only: alloc_node
-#:if PHYS == 'ffhd'
-    use mod_amr_solution_node, only: fill_frozen_field_device
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+    use mod_amr_solution_node, only: fill_nwextra_device
 #:endif
 
     integer :: iigrid, igrid
@@ -46,12 +46,12 @@ contains
 
     end do
 
-#:if PHYS == 'ffhd'
-    ! (re)derive the frozen field over every cell of every block, ghosts
-    ! included; initial_condition only filled the mesh and, after the move to
-    ! usr_set_frozen_field, no longer touches b1,b2,b3 at all
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+    ! (re)derive the analytic extra variables over every cell of every block,
+    ! ghosts included; initial_condition only fills the mesh and usr_init_one_grid
+    ! does not touch them
     do iigrid=1,igridstail; igrid=igrids(iigrid);
-       call fill_frozen_field_device(igrid)
+       call fill_nwextra_device(igrid)
     end do
 #:endif
 
@@ -99,8 +99,8 @@ contains
       use mod_global_parameters
       use mod_geometry, only: sync_positions_host
       use mod_comm_lib, only: mpistop
-#:if PHYS == 'ffhd'
-      use mod_amr_solution_node, only: fill_frozen_field_device
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+      use mod_amr_solution_node, only: fill_nwextra_device
 #:endif
 
       integer :: iigrid, igrid
@@ -123,9 +123,9 @@ contains
        !$acc update device(bg(1)%w(:,:,:,:,igrid))
     end do
 
-#:if PHYS == 'ffhd'
+#:if defined('FILL_NWEXTRA_ANALYTIC')
     do iigrid=1,igridstail; igrid=igrids(iigrid);
-       call fill_frozen_field_device(igrid)
+       call fill_nwextra_device(igrid)
     end do
 #:endif
 

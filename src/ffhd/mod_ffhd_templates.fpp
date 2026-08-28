@@ -270,13 +270,15 @@
     ! set number of variables which need update ghostcells
     ! The frozen field (b1,b2,b3) is registered via var_set_extravar (it is
     ! not advected), but it is NOT exchanged through getbc: it is a pure
-    ! function of position, so fill_frozen_field_device re-derives it from
-    ! usr_set_frozen_field in every cell of every block - interior, inter-block
-    ! ghosts, physical-boundary ghosts and polar-axis ghosts alike - after each
-    ! tree change. Keeping it out of getbc is what lets the polar axis work:
-    ! evaluating the user's analytic field at a ghost cell's own (mirrored)
-    ! coordinates reproduces the pole sign flips for free, with no entry in
-    ! typeboundary. So nwgc stops at nwflux, exactly as for hd and mhd.
+    ! function of position, so with the FILL_NWEXTRA_ANALYTIC flag (which
+    ! config_schema.toml's `implies` sets for phys='ffhd') fill_nwextra_device
+    ! re-derives it from usr_set_nwextra in every cell of every block -
+    ! interior, inter-block ghosts, physical-boundary ghosts and polar-axis
+    ! ghosts alike - after each tree change. Keeping it out of getbc is what
+    ! lets the polar axis work: evaluating the user's analytic field at a ghost
+    ! cell's own (mirrored) coordinates reproduces the pole sign flips for
+    ! free, with no entry in typeboundary. So nwgc stops at nwflux, exactly as
+    ! for hd and mhd.
     nwgc=nwflux
     !$acc update device(nwgc)
 

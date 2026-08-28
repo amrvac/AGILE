@@ -281,7 +281,7 @@ contains
     ! read_par_files).  ffhd is covered too: its only conserved quantities are
     ! scalars (rho, the field-aligned momentum m_par, the energy), all
     ! symmetric across the axis, and its frozen field is not exchanged through
-    ! getbc at all - fill_frozen_field_device re-derives it analytically in
+    ! getbc at all - fill_nwextra_device re-derives it analytically in
     ! every ghost cell - so it needs no entry in the sign table.
     call mpistop("polar-axis treatment is only implemented for phys='hd', &
        &phys='mhd', phys='srhd' and phys='ffhd'")

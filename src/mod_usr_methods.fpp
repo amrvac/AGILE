@@ -63,20 +63,22 @@ module mod_usr_methods
   procedure(a_refine_threshold), pointer :: usr_refine_threshold => null()
   procedure(flag_grid), pointer       :: usr_flag_grid        => null()
 
-  ! Set the ffhd frozen field direction. NOT a procedure pointer: like
-  ! usr_refine_grid and gravity_field it is called by name from device code
-  ! (fill_frozen_field_device), so a phys='ffhd' case must define
+  ! Set the analytic extra w-variables (nwextra) at a point. NOT a procedure
+  ! pointer: like usr_refine_grid and gravity_field it is called by name from
+  ! device code (fill_nwextra_device), so a build with the
+  ! FILL_NWEXTRA_ANALYTIC flag - which config_schema.toml's `implies` sets for
+  ! phys='ffhd' - must define
   !
-  !   pure subroutine usr_set_frozen_field(x, bhat)
+  !   pure subroutine usr_set_nwextra(x, wextra)
   !     !$acc routine seq
   !     double precision, intent(in)  :: x(1:ndim)     ! a single point
-  !     double precision, intent(out) :: bhat(1:3)     ! field there, any length
+  !     double precision, intent(out) :: wextra(:)     ! the nwextra values there
   !
   ! It is evaluated once per cell of every block after every grid change, so it
-  ! must depend on position alone. The components are the coordinate-system
-  ! components at x (Cartesian, or (r,theta,phi)/(r,z,phi)). fill_frozen_field_device
-  ! normalises the result, so returning any non-zero multiple of the direction
-  ! is fine.
+  ! must depend on position alone. For ffhd wextra is the frozen field b-hat in
+  ! the coordinate-system components at x (Cartesian, or (r,theta,phi) /
+  ! (r,z,phi)), and the case must return it already normalised - the filler
+  ! writes it verbatim.
 
   ! Set time-independent magnetic field for B0 splitting
   procedure(set_B0), pointer          :: usr_set_B0           => null()
