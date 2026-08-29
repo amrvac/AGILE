@@ -263,7 +263,11 @@ places in the tree needed that and were changed to rebuild the face from
 `rnode` instead:
 
 - the face coordinates handed to the Riemann solver in
-  `src/mod_finite_volume.fpp` (radial always, polar in spherical);
+  `src/mod_finite_volume.fpp`. All three directions are built the same way
+  there, from the block corner and the cell index — that one expression is
+  correct in every geometry, and reduces to the old `x -/+ dr/2` wherever `x`
+  is the midpoint, so it replaced the per-geometry special cases rather than
+  adding to them;
 - the VTU corner grid in `calc_x`, `src/io/mod_calculate_xw.fpp`;
 - `fill_geometry_device` itself, which is now written face-first: the
   `RADIAL_CELL` macro produces the two faces, the midpoint `rc` and the extent
