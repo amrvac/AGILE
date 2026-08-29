@@ -307,9 +307,10 @@ contains
 #! cell, from its logical centre `s` and logical spacing `d`.  Writes the
 #! fixed local names fL, fR, rc, ds1 and rbar.
 #!
-#! Under LOG_RADIUS the logical radial coordinate held in rnode is xi = ln(r),
-#! so the faces are simply the exponentials of the logical faces and every
-#! area and volume below follows unchanged.  Keeping rc (the midpoint of the
+#! Under LOG_RADIUS the logical radial coordinate held in rnode is
+#! xi = ln(1 + r/r0), so the faces are the map r_of_s of the logical faces and
+#! every area and volume below follows unchanged.  With the default r0 = 0 that
+#! map is just the exponential.  Keeping rc (the midpoint of the
 #! faces) and ds1 (their separation) makes those expressions algebraically
 #! *exact* for any face pair whatsoever:  rc*ds1 is precisely
 #! (rR**2 - rL**2)/2, and (rc**2 + ds1**2/12)*ds1 is precisely
@@ -323,8 +324,21 @@ contains
              fL = ${s}$ - half*${d}$
              fR = ${s}$ + half*${d}$
 #:if defined('LOG_RADIUS')
-             fL = dexp(fL)
-             fR = dexp(fR)
+             ! r_of_s, written out because this has to be a macro rather than
+             ! an !$acc routine (see above).  The odd form is what makes the
+             ! mesh beyond a cylindrical axis the exact mirror of the mesh
+             ! inside it, which is what the pole copy in getbc assumes; it is
+             ! taken only for log_r0 > 0, where s = 0 is r = 0.  With
+             ! log_r0 = 0 there is no axis and s < 0 is an ordinary small
+             ! radius, so the plain exponential is the only correct branch.
+             ! The condition is a scalar uniform across the whole kernel.
+             if (log_r0 > zero) then
+                fL = dsign(one,fL)*log_r0*(dexp(dabs(fL)) - one)
+                fR = dsign(one,fR)*log_r0*(dexp(dabs(fR)) - one)
+             else
+                fL = dexp(fL)
+                fR = dexp(fR)
+             end if
              ds1 = fR - fL
              rc  = half*(fL + fR)
 #:else

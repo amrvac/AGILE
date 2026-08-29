@@ -499,6 +499,7 @@ contains
   !> computes cell corner (xC) and cell center (xCC) coordinates
   subroutine calc_x(igrid,xC,xCC)
     use mod_global_parameters
+    use mod_geometry, only: r_of_s
 
     integer, intent(in)               :: igrid
     double precision, intent(out)     :: xC(ixMlo1-1:ixMhi1,ixMlo2-1:ixMhi2,&
@@ -546,9 +547,10 @@ contains
             rnode(rpxmin3_,igrid)+dble(ix-nghostcells)*rnode(rpdx3_,igrid)
        end do
 #:if defined('LOG_RADIUS')
-       ! the logical radial coordinate is ln(r)
+       ! the radial coordinate above is the logical one; r_of_s is the map
+       ! back to a physical radius, and is elemental
        xC(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ixCmin3:ixCmax3,1)= &
-          dexp(xC(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ixCmin3:ixCmax3,1))
+          r_of_s(xC(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ixCmin3:ixCmax3,1))
 #:endif
     endif
 

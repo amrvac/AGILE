@@ -291,7 +291,7 @@ contains
        domain_nx2,domain_nx3,iprob,xprobmin1,xprobmin2,xprobmin3,xprobmax1,&
        xprobmax2,xprobmax3, w_refine_weight, prolongprimitive,coarsenprimitive,&
         typeprolonglimit, logflag,tfixgrid,itfixgrid,ditregrid, refine_usr,&
-        geometry
+        geometry, log_r0
     namelist /paramlist/  courantpar, dtpar, dtdiffpar, typecourant, slowsteps
 
     namelist /emissionlist/ filename_euv,wavelength,filename_sxr,emin_sxr,&
@@ -414,6 +414,9 @@ contains
     tfixgrid                    = bigdouble
     itfixgrid                   = biginteger
     ditregrid                   = 1
+
+    ! Offset of the logarithmic radial map; 0 selects the plain s = ln(r)
+    log_r0 = 0.0d0
 
     ! Grid stretching defaults
     stretch_uncentered = .true.
@@ -1644,12 +1647,37 @@ contains
     !
     ! Dimension 1 is never the phi_ direction in either system, so this cannot
     ! collide with the 2*pi conversion above.
-    if (xprobmin1 <= zero) call mpistop("geometry='logSpherical'/'logCylindrical' &
-       &need xprobmin1 > 0: the radial coordinate is stretched as ln(r), which &
-       &has no value at r = 0")
+    if (log_r0 < zero) call mpistop("log_r0 is the offset r0 of the radial map &
+       &s = ln(1 + r/r0) and cannot be negative")
+    if (log_r0 == zero) then
+      if (xprobmin1 <= zero) call mpistop("geometry='logSpherical'/&
+         &'logCylindrical' with the default log_r0 = 0 need xprobmin1 > 0: the &
+         &radial coordinate is then stretched as ln(r), which has no value at &
+         &r = 0. Set log_r0 > 0 to reach the axis")
+    else
+      if (xprobmin1 < zero) call mpistop("xprobmin1 is a physical radius and &
+         &cannot be negative")
+    end if
     if (xprobmax1 <= xprobmin1) call mpistop("xprobmax1 must exceed xprobmin1")
-    xprobmin1 = dlog(xprobmin1)
-    xprobmax1 = dlog(xprobmax1)
+
+    ! The same map in the form device code evaluates it, valid wherever
+    ! s >= 0 - which is everywhere in the physical domain. See r_of_s.
+    if (log_r0 > zero) then
+      log_ra =  log_r0
+      log_rb = -log_r0
+    else
+      log_ra = one
+      log_rb = zero
+    end if
+
+    xprobmin1 = s_of_r(xprobmin1)
+    xprobmax1 = s_of_r(xprobmax1)
+    !$acc update device(log_r0, log_ra, log_rb)
+
+#:else
+    if (log_r0 /= zero) call mpistop("log_r0 offsets the logarithmic radial &
+       &map and is only meaningful for geometry='logSpherical' or &
+       &geometry='logCylindrical'")
 #:endif
 
     ! full block size including ghostcells
@@ -2047,10 +2075,24 @@ contains
     do islice=1,nslices
        select case(slicedir(islice))
           case(1)
+          ! slicecoord is a physical coordinate; xprobmin1/xprobmax1 hold the
+          ! logical one, which differs from it under LOG_RADIUS.
+#:if defined('LOG_RADIUS')
+          if(slicecoord(islice)<zero .or. &
+             (log_r0<=zero .and. slicecoord(islice)<=zero)) call mpistop("a &
+             &radial slicecoord is a physical radius, and must be > 0 unless &
+             &log_r0 > 0 puts r = 0 on the grid")
+          if(s_of_r(slicecoord(islice))<xprobmin1 .or. &
+             s_of_r(slicecoord(islice))>xprobmax1) &
+             write(uniterr,*)'Warning in read_par_files: ', 'Slice ', islice,&
+              ' coordinate',slicecoord(islice),'out of bounds for dimension ',&
+             slicedir(islice)
+#:else
           if(slicecoord(islice)<xprobmin1.or.slicecoord(islice)>xprobmax1) &
              write(uniterr,*)'Warning in read_par_files: ', 'Slice ', islice,&
               ' coordinate',slicecoord(islice),'out of bounds for dimension ',&
              slicedir(islice)
+#:endif
 
           case(2)
           if(slicecoord(islice)<xprobmin2.or.slicecoord(islice)>xprobmax2) &

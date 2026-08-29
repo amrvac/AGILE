@@ -188,6 +188,58 @@ contains
 #:endif
   end subroutine set_coordinate_system
 
+  !> The radial coordinate map, from the logical coordinate s to the physical
+  !> radius r, and its inverse.
+  !>
+  !> These are the host-side definition of the map a LOG_RADIUS build uses,
+  !> and the one place it is written down:
+  !>
+  !>    log_r0 == 0 :  r = exp(s)                        (s = ln(r))
+  !>    log_r0 >  0 :  r = sign(s)*r0*(exp(|s|) - 1)     (s = ln(1 + r/r0))
+  !>
+  !> The offset form is the one that reaches the axis. Its pivot is deliberate:
+  !> s = 0 corresponds to r = 0 exactly, so the map is *odd*, and the mesh in
+  !> the ghost layer beyond a cylindrical axis is the exact mirror of the mesh
+  !> inside it. That is what the pole copy in getbc assumes when it fills ghost
+  !> cell j from interior cell j of the block half a revolution away - the two
+  !> have to occupy mirrored volumes, or the copied cell average belongs to a
+  !> cell of a different size. The naive map r = exp(s) - r0 is *not* odd:
+  !> its ghost cells shrink outward while the cells they mirror grow, and the
+  !> first ghost cell is then misplaced by several percent of a cell width.
+  !>
+  !> The odd branch is only ever taken in that ghost layer; s >= 0 everywhere
+  !> in the physical domain of an offset build. Device code that only ever
+  !> sees the domain therefore uses the cheaper equivalent
+  !> r = log_ra*exp(s) + log_rb instead of calling these.
+  !>
+  !> A case's mod_usr should use these rather than writing exp/log by hand:
+  !> xprobmin1 and xprobmax1 hold the *logical* radial bounds in a LOG_RADIUS
+  !> build, so r_of_s is how a case recovers a physical radius from them.
+  pure elemental function r_of_s(s) result(r)
+    use mod_global_parameters
+    double precision, intent(in) :: s
+    double precision             :: r
+
+    if (log_r0 > zero) then
+      r = dsign(one,s)*log_r0*(dexp(dabs(s)) - one)
+    else
+      r = dexp(s)
+    end if
+  end function r_of_s
+
+  !> Inverse of r_of_s. See there.
+  pure elemental function s_of_r(r) result(s)
+    use mod_global_parameters
+    double precision, intent(in) :: r
+    double precision             :: s
+
+    if (log_r0 > zero) then
+      s = dsign(one,r)*dlog(one + dabs(r)/log_r0)
+    else
+      s = dlog(r)
+    end if
+  end function s_of_r
+
   subroutine set_pole
     use mod_global_parameters
 
@@ -215,15 +267,19 @@ contains
       end if
     case (cylindrical)
 #:if defined('LOG_RADIUS')
-      ! A logarithmically stretched radius can never reach r = 0, since the
-      ! mesh is uniform in ln(r), so a logCylindrical domain has no axis and
-      ! nothing is detected here. Running the test below would be actively
-      ! wrong rather than merely redundant: xprobmin1 holds ln(r_min) by this
-      ! point, which is exactly zero for the perfectly ordinary domain
-      ! r_min = 1, and the axis would be reported where there is none.
-      ! A user who asks for typeboundary_min1='pole' anyway is caught by
-      ! check_pole_setup, which sees poleB_requested without poleB.
-#:else
+      ! With log_r0 = 0 the radial mesh is uniform in ln(r) and can never
+      ! reach r = 0, so a logCylindrical domain has no axis. Running the tests
+      ! below would then be actively wrong rather than merely redundant:
+      ! xprobmin1 holds ln(r_min), which is exactly zero for the perfectly
+      ! ordinary domain r_min = 1, and an axis would be reported where there
+      ! is none. A user who asks for typeboundary_min1='pole' anyway is caught
+      ! by check_pole_setup, which sees poleB_requested without poleB.
+      !
+      ! With log_r0 > 0 the logical coordinate is ln(1 + r/r0), so xprobmin1
+      ! is zero if and only if r_min is - the tests below are then not merely
+      ! safe but exact, and are used unchanged.
+      if (log_r0 <= zero) return
+#:endif
       
       if (1 == phi_ .and. periodB(1)) then
         if(mod(ng1(1),2)/=0) then
@@ -275,7 +331,6 @@ contains
           end if
         end if
       end if
-#:endif
     end select
 
   end subroutine set_pole

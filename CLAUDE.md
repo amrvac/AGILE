@@ -310,10 +310,16 @@ exercises, so this is recorded rather than repaired.
 ### Logarithmically stretched radius
 
 `geometry = 'logSpherical'` and `geometry = 'logCylindrical'` are the same two
-coordinate systems with a radial mesh that is uniform in `ln(r)` rather than in
-`r`, so the cell width grows in proportion to `r` and the relative resolution
-`dr/r` is constant. That is the one stretching astrophysics usually wants, and
-it is the only one supported.
+coordinate systems with a radial mesh that is uniform in `ln(r + r0)` rather
+than in `r`. `r0` is the `log_r0` entry of `&meshlist` and defaults to zero,
+which is the plain `ln(r)`: the cell width then grows in proportion to `r` and
+the relative resolution `dr/r` is constant. That is the one stretching
+astrophysics usually wants, and it is the only one supported.
+
+A positive `log_r0` moves the singularity of the map from `r = 0` out to
+`r = -r0`, so the mesh is *uniform*, with cell width `r0*ds`, for `r << r0` and
+logarithmic for `r >> r0`. That is what lets a stretched radial grid reach
+`r = 0` at all — see "Reaching the axis with `log_r0`" below.
 
 **It needs almost none of upstream MPI-AMRVAC's stretched-grid machinery, and
 that is the whole design.** Take the *logical* coordinate to be `xi = ln(r)`:
@@ -340,12 +346,41 @@ Two implementation points follow from that framing:
   and `geometry_name` keeps the log name so a log snapshot refuses to restart
   into a uniformly spaced build.
 - **`xprobmin1`/`xprobmax1` are physical radii in the par file** and are
-  converted to `ln(r)` by `read_par_files`, next to where the angular bounds
-  are already converted from units of `2*pi`. `xprobmin1 <= 0` is rejected
-  there. **A case's `mod_usr.fpp` that reads `xprobmin1`/`xprobmax1` for a
-  physical radius therefore has to exponentiate them** — the `log_*` test
-  directories do exactly that, and it is the one thing about these geometries
-  that reliably catches people out.
+  converted to the logical coordinate by `read_par_files`, next to where the
+  angular bounds are already converted from units of `2*pi`. `xprobmin1 <= 0`
+  is rejected there unless `log_r0 > 0`, which is what puts `r = 0` on the
+  grid. **A case's `mod_usr.fpp` that reads `xprobmin1`/`xprobmax1` for a
+  physical radius therefore has to map them back** — with `r_of_s` from
+  `mod_geometry`, not by hand, since the map is only an exponential when
+  `log_r0` is zero. This is the one thing about these geometries that reliably
+  catches people out. The eight `log_spherical`/`log_cylindrical` directories
+  predate `log_r0` and still write `exp(xprobmin1)` inline; that is correct
+  only because they run at `log_r0 = 0`, and copying one of them as the
+  starting point for an offset grid is exactly how the trap gets sprung.
+  `tests/hd/log_cylindrical_pole` uses `r_of_s`.
+
+  `r_of_s` and its inverse `s_of_r` (both `pure elemental`, in
+  `src/mod_geometry.fpp`) are the single host-side definition of the map, and
+  every host site that converts uses them: `read_par_files`, the `slicecoord`
+  and `xslice` bounds checks, `get_igslice` and `calc_x`. Device code does not
+  call them — the geometry kernel writes the map out inline as a fypp macro
+  (an `!$acc routine` there is what `-Minline` previously miscompiled), and
+  `mod_finite_volume` uses the reduced form below.
+
+  `slicecoord` in `&savelist` is the exception that proves the rule: it is
+  **not** converted, because it is a physical coordinate everywhere in the
+  slice machinery. `fill_subnode` picks the cell within a block by comparing
+  it against `ps(igrid)%x`, which is physical. Only `get_igslice`, which turns
+  a position into a *block index*, works in the logical coordinate, so that is
+  where the logarithm is taken — locally, along with the two bounds checks
+  that compare against `xprobmin1`/`xprobmax1`.
+
+  Getting this backwards is a live trap, and it bit this work once: converting
+  `slicecoord` at read time fixes the block lookup and breaks the cell lookup,
+  whereupon `minloc` matches nothing, `ixslice` comes back 0 and the slice is
+  written with all-zero coordinates. Nothing errors. The lesson is that
+  `xslice` must mean a physical coordinate throughout the slice path — the two
+  halves of that path disagree about the mesh, not about the position.
 
 Nearly everything else was already right, because it keys off `slab_uniform`
 (false for any curvilinear build) rather than off uniform spacing: `setdt`
@@ -357,17 +392,85 @@ logical `xi` space.
 
 Two limits worth stating:
 
-- **A log-radial grid can never reach `r = 0`**, so `logCylindrical` has no
-  polar axis. `set_pole`'s cylindrical branch is compiled out under
-  `LOG_RADIUS`, which also avoids a trap: it detects the axis by
-  `abs(xprobmin1) < smalldouble`, and `ln(r_min)` is exactly zero for the
-  perfectly ordinary domain `r_min = 1`. `logSpherical` keeps full
-  `theta = 0, pi` support.
+- **With the default `log_r0 = 0` a log-radial grid can never reach `r = 0`**,
+  so such a `logCylindrical` domain has no polar axis. `set_pole`'s cylindrical
+  branch returns immediately in that case, which also avoids a trap: it detects
+  the axis by `abs(xprobmin1) < smalldouble`, and `ln(r_min)` is exactly zero
+  for the perfectly ordinary domain `r_min = 1`. With `log_r0 > 0` the logical
+  coordinate is `ln(1 + r/r0)`, which is zero if and only if `r` is, so the
+  same test is not merely safe but exact and the branch runs unchanged.
+  `logSpherical` keeps full `theta = 0, pi` support either way; what it does
+  **not** get from `log_r0` is a usable origin, see below.
 - **The reconstruction stays uniform-stencil.** The MUSCL reconstruction in
   `src/mod_finite_volume.fpp` and the limiters take a scalar spacing and assume
   equal cells, so the second-order constant degrades as `q` grows. Upstream has
   the same limitation everywhere outside its `*NM` WENO family. Keep `q`
-  modest — the test cases run at `q ~ 1.04` to `1.09`.
+  modest — the test cases run at `q ~ 1.04` to `1.09`. A positive `log_r0`
+  helps here rather than hurting: the mesh is genuinely uniform for
+  `r << r0`, which is exactly the region — next to the axis — where the
+  stencil assumption would otherwise be worst.
+
+### Reaching the axis with `log_r0`
+
+`log_r0 = r0 > 0` in `&meshlist` selects the map
+
+    s = ln(1 + r/r0)        r = sign(s) * r0 * (exp(|s|) - 1)
+
+instead of `s = ln(r)`. Three properties of that particular form are what make
+it work, and each of them is a deliberate choice rather than an accident:
+
+- **The pivot is the axis.** `s = 0` is `r = 0` *exactly*, so an axis-touching
+  domain has `xprobmin1 = 0` after conversion, `rnode`'s corner for the block
+  on the axis is exactly zero, and the logical positions of a ghost cell and
+  the interior cell it mirrors are exact negatives of one another.
+- **The map is odd**, which is the whole point. The pole copy in `getbc` fills
+  ghost cell *j* beyond the axis from interior cell *j* of the block half a
+  revolution away, so the two have to occupy *mirrored volumes* — otherwise the
+  copied cell average belongs to a cell of a different size. The obvious
+  alternative `r = exp(s) - r0` is **not** odd: its ghost cells shrink outward
+  (`-r0(1 - e^{-jd})`) while the cells they mirror grow (`+r0(e^{jd} - 1)`),
+  which misplaces the first ghost cell by about 5% of a cell width at the
+  spacings the tests use. That is an O(dx) error at the axis, and it would show
+  up as a `2e-4` failure of the `1e-10` `check_pole_ghosts` assertion while
+  moving the volume averages in the log not at all. Combined with the pivot,
+  the odd form makes the mirror **bit-exact**: `abs()` and `sign()` carry the
+  exact negation through, and the barycentre and volume expressions are even or
+  odd in the pair of faces.
+- **The odd branch is confined to the ghost layer.** `s >= 0` everywhere in the
+  physical domain, so the sites that only ever see the domain — the face
+  positions in `src/mod_finite_volume.fpp`, and `calc_x`'s corner grid — use
+  the cheaper equivalent `r = log_ra*exp(s) + log_rb`, with `log_ra`/`log_rb`
+  derived once in `read_par_files` (`1`/`0` when `log_r0 = 0`, so a plain
+  logarithmic build gets **bit-for-bit** `exp(s)` and its reference logs do not
+  move). Only `fill_geometry_device`, which builds ghost-cell geometry, takes
+  the odd branch, on a scalar condition uniform across the kernel.
+
+`log_r0` is a **runtime** parameter, not a fypp define. It is a floating-point
+value, so making it compile-time would key the build cache on a number, and
+`make/config_reader.py`'s `Value` type accepts only `int`/`string` anyway. It
+lives in `mod_global_parameters` alongside `log_ra`/`log_rb` with an
+`!$acc declare create`, and `read_par_files` pushes all three to the device
+right after converting the domain bounds. Restart safety comes for free:
+the snapshot header stores the *logical* `xprobmax1` and compares it with zero
+tolerance, and `ln(1 + r_max/r0)` moves with `r0`.
+
+Two things `log_r0` does **not** buy:
+
+- **`logSpherical` still has no usable origin.** The map makes `r = 0`
+  reachable, but nothing fills the ghost cells across it: `set_pole` knows only
+  about `theta`, and the origin would need a pairing
+  `(r, theta, phi) -> (|r|, pi - theta, phi + pi)` — a mirror in *two* indices
+  plus a block partner, materially more machinery than the pole copy's
+  single-dimension walk. The zero area of the `r = 0` face does not rescue it,
+  because the 5-point MUSCL stencil reaches two ghost cells when reconstructing
+  the *outer* face of the first interior cell. A `symm`/`asymm` inner boundary
+  is the usual approximation and is wrong for flow through the origin.
+- **A free lunch on the timestep.** `dr = (r + r0)*ds`, so `r0` *is* the
+  near-axis cell width scale, and a small `r0` chosen for resolution buys a CFL
+  collapse on top of the `ds(3) = r*dphi -> 0` one that already dominates pole
+  runs. `tests/hd/log_cylindrical_pole` runs `r0 = 0.2` on `r` from 0 to 1,
+  where the cell width varies by a factor of 5.4 and `dt` is about 2.6 times
+  smaller than the uniform `tests/hd/cylindrical_pole`.
 
 ### Getting the geometry back to the host
 
@@ -544,8 +647,10 @@ cancellation-free rewrite, and `cos(theta_L) - cos(theta_R)` rather than
 measured agreement is 2 ULP. **A new log-geometry test needs that check, not
 just a reference log.**
 
-These domains all stay away from the polar axis and from `r = 0`; the axis
-itself is covered by the separate `*_pole` directories below. Pole and non-pole
+All eight run at `log_r0 = 0`, the plain `ln(r)`. Their domains stay away from
+the polar axis and from `r = 0`; the axis itself is covered by the separate
+`*_pole` directories below, of which `tests/hd/log_cylindrical_pole` is the one
+that exercises `log_r0 > 0`. Pole and non-pole
 cases are kept as separate builds deliberately, even though their compile-time
 parameters would have allowed merging them too.
 
@@ -676,9 +781,33 @@ worth.
   refined so blocks meet across the axis at different levels, and
   `blast_amr.par` a Lohner-refined blast that starts off the axis and expands
   across it. `movie.par` is a longer, visualisable variant of the blast.
+- `tests/hd/log_spherical_pole` — the same directory again with
+  `geometry = 'logSpherical'`, on the same physical domains so the two are
+  directly comparable. This is the only place in the tree where a
+  logarithmically stretched radius meets the polar axis. The two features are
+  independent by construction — `LOG_RADIUS` touches only the radial
+  coordinate and the pole only `theta` and `phi` — but nothing else exercises
+  them together, so `check_pole_ghosts` here also calls `check_log_grid`,
+  asserting the stretched mesh and the pole copy running on it in one place.
+  Its `movie.par` spans `r` from 0.4 to 2.8, a factor of seven in cell width;
+  `dr/r` is 0.081 at level one against the uniform run's `dr = 0.1`, so the
+  stretched grid is finer everywhere inside `r = 1.2` and coarser only far out
+  where the shell is weak.
 - `tests/hd/cylindrical_pole` — the same three runs onto the cylindrical axis
   at `r = 0`, with the hot spot placed off the axis in `r` and carried across
   it by a background velocity pointing along `-y`.
+- `tests/hd/log_cylindrical_pole` — that directory again with
+  `geometry = 'logCylindrical'` and `log_r0 = 0.2`, on the same physical
+  domain. It is the only place in the tree where a stretched radius reaches
+  `r = 0`, and the reason it exists is `check_pole_mesh`, which asserts with
+  **zero** tolerance that each ghost cell beyond the axis has exactly the
+  mirrored position, width and volume of the interior cell `getbc` fills it
+  from — the property the naive `r = exp(s) - r0` would break and the log
+  would not notice. Its `check_log_grid` is the offset-map rewrite of the one
+  in `tests/hd/log_cylindrical`: the stored positions are no longer in
+  geometric progression (the map is not self-similar any more), so the check
+  is that the *cell widths* are, and the face-based barycentre and volume
+  assertions carry over unchanged.
 - `tests/mhd/spherical_pole` and `tests/mhd/cylindrical_pole` — the uniform
   flow with a uniform Cartesian magnetic field, which puts `B_theta`/`B_r`,
   `B_phi` and the GLM `psi` through the same treatment. The cylindrical cases

@@ -58,6 +58,21 @@ module mod_global_parameters
      xprobmax3
  !$acc declare create(xprobmin1,xprobmin2,xprobmin3,xprobmax1,xprobmax2,xprobmax3)
 
+  !> Offset of the logarithmic radial map, r0 in s = ln(1 + r/r0).
+  !>
+  !> Only meaningful in a LOG_RADIUS build. Zero - the default - selects the
+  !> plain map s = ln(r), which cannot reach r = 0. A positive value moves the
+  !> singularity of the map to r = -r0, so the mesh is uniform (with width
+  !> r0*ds) for r << r0 and logarithmic for r >> r0, and r = 0 becomes an
+  !> ordinary face of the grid at s = 0.
+  double precision :: log_r0 = 0.0d0
+
+  !> The same map written as r = log_ra*exp(s) + log_rb, which is what device
+  !> code evaluates where s >= 0 is guaranteed. log_ra = 1, log_rb = 0 for
+  !> log_r0 = 0, so a plain logarithmic build gets bit-for-bit exp(s).
+  double precision :: log_ra = 1.0d0, log_rb = 0.0d0
+  !$acc declare create(log_r0, log_ra, log_rb)
+
   !> Indices for cylindrical coordinates FOR TESTS, negative value when not used:
   integer :: r_ = -1
   integer :: phi_ = -1

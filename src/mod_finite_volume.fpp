@@ -231,9 +231,14 @@ end subroutine finite_volume_local
                 xlocC(1,1) = xlo(1) + dble(ix1-nghostcells-1)*dr(1)
                 xlocC(1,2) = xlocC(1,1) + dr(1)
 #:if defined('LOG_RADIUS')
-                ! the logical radial coordinate is ln(r)
-                xlocC(1,1) = dexp(xlocC(1,1))
-                xlocC(1,2) = dexp(xlocC(1,2))
+                ! the logical radial coordinate is ln(1 + r/r0); this is
+                ! r_of_s, in the reduced form that holds wherever s >= 0.
+                ! That covers this loop, which runs over the mesh interior
+                ! only - the faces it builds are domain faces, and s = 0 is
+                ! r = 0 - so the odd branch r_of_s takes in the ghost layer
+                ! beyond a cylindrical axis is not needed here.
+                xlocC(1,1) = log_ra*dexp(xlocC(1,1)) + log_rb
+                xlocC(1,2) = log_ra*dexp(xlocC(1,2)) + log_rb
 #:endif
                 call ${faceflux_proc}$(tmp, xlocC, 1, f, typelim)
 #:if GEOM == 'Cartesian'
