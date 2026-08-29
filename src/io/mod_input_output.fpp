@@ -1631,6 +1631,27 @@ contains
 
       end select
 
+#:if defined('LOG_RADIUS')
+    ! geometry='logSpherical'/'logCylindrical': the radial mesh is uniform in
+    ! xi = ln(r), not in r. The par file still states physical radii - the same
+    ! convenience the angular bounds above get, where the user writes turns and
+    ! the code stores radians - so convert them here, before dx_vec and the
+    ! level-1 block extents are derived from them further down. Everything
+    ! downstream (ng1, dg1, rnode, the tree, prolongation) then works in the
+    ! uniform logical coordinate and needs no further change; only
+    ! fill_geometry_device, and the handful of sites that reconstruct a face
+    ! position, ever take the exponential back.
+    !
+    ! Dimension 1 is never the phi_ direction in either system, so this cannot
+    ! collide with the 2*pi conversion above.
+    if (xprobmin1 <= zero) call mpistop("geometry='logSpherical'/'logCylindrical' &
+       &need xprobmin1 > 0: the radial coordinate is stretched as ln(r), which &
+       &has no value at r = 0")
+    if (xprobmax1 <= xprobmin1) call mpistop("xprobmax1 must exceed xprobmin1")
+    xprobmin1 = dlog(xprobmin1)
+    xprobmax1 = dlog(xprobmax1)
+#:endif
+
     ! full block size including ghostcells
     ixGhi1 = block_nx1 + 2*nghostcells
     ixGhi2 = block_nx2 + 2*nghostcells

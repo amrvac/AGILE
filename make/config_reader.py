@@ -106,6 +106,13 @@ class Option:
     default: str
     # maps an option value to a list of schema paths of flags it turns on
     implies: dict[str, list[str]] = field(default_factory=dict)
+    # maps an option value to the value actually emitted as the fypp define.
+    # Lets a value be a specialisation of another one - e.g. 'logSpherical'
+    # emits GEOM='spherical' and relies on its `implies` flag to carry the
+    # difference - so that existing `#:if GEOM == 'spherical'` branches keep
+    # applying without being rewritten. The build hash still uses the
+    # unmapped value, so the two remain distinct builds.
+    emit: dict[str, str] = field(default_factory=dict)
 
     def handle(self, schema, val, visited):
         if val not in self.options:
@@ -119,7 +126,7 @@ class Option:
         if "hash" in self.flags:
             print(f"enabled += \"{self.name}={val}\"")
         if "fypp" in self.flags:
-            print(f"fypp_flags += -D{self.name}=\\'{val}\\'")
+            print(f"fypp_flags += -D{self.name}=\\'{self.emit.get(val, val)}\\'")
 
 
 @dataclass

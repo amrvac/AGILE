@@ -268,9 +268,13 @@ end subroutine addsource_local
 !> wprim(iw_mom(:)) holds the spatial four-velocity (celerity) u^i = lfac*v^i
 !> rather than v^i itself (see to_primitive/to_conservative and
 !> mod_con2prim.fpp's xi = tau + D + p, v^2 = S^2/xi^2), so
-!> S^i v^j = xi * v^i * v^j = xi * u^i * u^j / lfac^2. The isotropic pressure
-!> term uses the discrete dAdV factor rather than the continuous 2/r,
-!> cot(theta)/r prefactors upstream uses directly, matching HD's convention.
+!> S^i v^j = xi * v^i * v^j = xi * u^i * u^j / lfac^2. Every geometric
+!> prefactor is the discrete dAdV = (A_upper - A_lower)/dV rather than the
+!> continuous 2/r and cot(theta)/r upstream uses directly, matching HD's
+!> convention: for the metrics fill_geometry_device builds,
+!> dAdV(1) = 2*<1/r> and dAdV(2) = <cot(theta)/r> exactly, so these terms are
+!> well balanced and independent of where in the cell bgeo%x sits - which
+!> matters, since bgeo%x is the volume barycentre, not the face midpoint.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
   !$acc routine seq
@@ -279,33 +283,34 @@ subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
   !> primitive variables (rho, spatial four-velocity, pressure, xi, lfac)
   !> at the current stage
   real(dp), intent(in)     :: wprim(nw_phys)
-  !> cell-centre coordinates (r, theta, phi)
+  !> cell-centre coordinates (r, theta, phi); unused - every geometric factor
+  !> comes from dAdV, see the note above
   real(dp), intent(in)     :: x(1:ndim)
   !> (upper minus lower face area) / cell volume, per direction
   real(dp), intent(in)     :: dAdV(1:ndim)
   real(dp), intent(inout)  :: wnew(nw_phys)
   ! .. local ..
-  real(dp)                 :: pth, xi_inv_lfac2, inv_r, inv_tan, source
+  real(dp)                 :: pth, xi_inv_lfac2, inv_r, cot_r, source
 
   pth          = wprim(iw_e)
   xi_inv_lfac2 = wprim(xi_) / wprim(lfac_)**2
-  inv_r        = 1.0_dp / x(1)
-  inv_tan      = 1.0_dp / tan(x(2))
+  inv_r        = 0.5_dp * dAdV(1)   ! <1/r>
+  cot_r        = dAdV(2)            ! <cot(theta)/r>
 
   ! s[m_r] = (2 p + (xi/lfac^2) (u_theta^2 + u_phi^2)) / r
-  source = pth * x(1) * dAdV(1) + xi_inv_lfac2 * (wprim(iw_mom(2))**2 + &
-     wprim(iw_mom(3))**2)
-  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source * inv_r
+  source = (2.0_dp * pth + xi_inv_lfac2 * (wprim(iw_mom(2))**2 + &
+     wprim(iw_mom(3))**2)) * inv_r
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source
 
   ! s[m_theta] = (p cot(theta) + (xi/lfac^2) (u_phi^2 cot(theta) - u_r u_theta)) / r
-  source = pth * x(1) * dAdV(2) + xi_inv_lfac2 * (wprim(iw_mom(3))**2 * &
-     inv_tan - wprim(iw_mom(1)) * wprim(iw_mom(2)))
-  wnew(iw_mom(2)) = wnew(iw_mom(2)) + qdt * source * inv_r
+  source = (pth + xi_inv_lfac2 * wprim(iw_mom(3))**2) * cot_r - &
+     xi_inv_lfac2 * wprim(iw_mom(1)) * wprim(iw_mom(2)) * inv_r
+  wnew(iw_mom(2)) = wnew(iw_mom(2)) + qdt * source
 
   ! s[m_phi] = -(xi/lfac^2) u_phi (u_r + u_theta cot(theta)) / r
-  source = -xi_inv_lfac2 * wprim(iw_mom(3)) * (wprim(iw_mom(1)) + &
-     wprim(iw_mom(2)) * inv_tan)
-  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source * inv_r
+  source = -xi_inv_lfac2 * wprim(iw_mom(3)) * (wprim(iw_mom(1)) * inv_r + &
+     wprim(iw_mom(2)) * cot_r)
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source
 
 end subroutine addsource_geometry
 #:enddef
@@ -315,10 +320,10 @@ end subroutine addsource_geometry
 !> with the conserved momentum density S^i = xi * v^i in place of rho * v^i,
 !> and using wprim(iw_mom(:)) = u^i = lfac*v^i as in the spherical branch above
 !> (so S^i v^j = xi * u^i * u^j / lfac^2). Only m_r and m_phi pick up curvature
-!> terms; m_z does not. The pressure term uses the discrete dAdV
-!> well-balancing factor, matching HD's convention; for cylindrical this is
-!> exactly 1/r (not just in the continuum limit), since a cylindrical radial
-!> face area is linear in r.
+!> terms; m_z does not. Every geometric prefactor is the discrete dAdV,
+!> matching HD's convention; for cylindrical dAdV(1) is exactly <1/r> - and,
+!> since a cylindrical radial face area is linear in r, exactly 1/r_midpoint
+!> as well. It is *not* 1/x(1): bgeo%x holds the volume barycentre.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
   !$acc routine seq
@@ -327,7 +332,8 @@ subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
   !> primitive variables (rho, spatial four-velocity, pressure, xi, lfac)
   !> at the current stage
   real(dp), intent(in)     :: wprim(nw_phys)
-  !> cell-centre coordinates (r, z, phi)
+  !> cell-centre coordinates (r, z, phi); unused - every geometric factor
+  !> comes from dAdV, see the note above
   real(dp), intent(in)     :: x(1:ndim)
   !> (upper minus lower face area) / cell volume, per direction
   real(dp), intent(in)     :: dAdV(1:ndim)
@@ -337,15 +343,15 @@ subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
 
   pth          = wprim(iw_e)
   xi_inv_lfac2 = wprim(xi_) / wprim(lfac_)**2
-  inv_r        = 1.0_dp / x(1)
+  inv_r        = dAdV(1)   ! <1/r>
 
   ! s[m_r] = (p + (xi/lfac^2) u_phi^2) / r
-  source = pth * x(1) * dAdV(1) + xi_inv_lfac2 * wprim(iw_mom(3))**2
-  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source * inv_r
+  source = (pth + xi_inv_lfac2 * wprim(iw_mom(3))**2) * inv_r
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source
 
   ! s[m_phi] = -(xi/lfac^2) u_phi u_r / r
-  source = -xi_inv_lfac2 * wprim(iw_mom(3)) * wprim(iw_mom(1))
-  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source * inv_r
+  source = -xi_inv_lfac2 * wprim(iw_mom(3)) * wprim(iw_mom(1)) * inv_r
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source
 
 end subroutine addsource_geometry
 #:enddef

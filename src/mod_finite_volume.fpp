@@ -124,6 +124,14 @@ end subroutine finite_volume_local
     ! Inverse cell volume, and the (upper minus lower) face area over volume
     ! per direction, which the curvilinear geometric source terms need.
     real(dp)               :: inv_dvol, dAdV(ndim)
+    ! Block corner in the logical coordinate, for rebuilding face positions.
+    real(dp)               :: xlo(ndim)
+#:endif
+#:if defined('SOURCE_LOCAL') or defined('SOURCE_NONLOCAL') or defined('SOURCE_COMPACT')
+    ! Physical cell size handed to the optional source terms.  dr below is the
+    ! *logical* spacing, which is not a length in a curvilinear system and is
+    ! not even proportional to one under LOG_RADIUS.
+    real(dp)               :: dloc(ndim)
 #:endif
     real(dp)       :: fC1(2,ixImin2:ixOmax2,ixImin3:ixOmax3,1:nwflux)
     real(dp)       :: fC2(2,ixImin1:ixOmax1,ixImin3:ixOmax3,1:nwflux)
@@ -150,7 +158,7 @@ end subroutine finite_volume_local
        igrid_beg = (ibatch-1) * max_batch + 1
        igrid_end = min(ibatch * max_batch, igridstail_active)
 
-       !$acc parallel loop gang private(uprim, inv_dr, dr, n, ix1, ix2, ix3, fC1, fC2, fC3, &
+       !$acc parallel loop gang private(uprim, inv_dr, dr, n#{if GEOM != 'Cartesian'}#, xlo#{endif}#, ix1, ix2, ix3, fC1, fC2, fC3, &
        !$acc& neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, &
        !$acc& neighbor_type_3p) default(present)
        do iigrid = igrid_beg, igrid_end
@@ -158,6 +166,9 @@ end subroutine finite_volume_local
 
           dr  = rnode(rpdx1_:rnodehi, n)
           inv_dr  = 1/dr
+#:if GEOM != 'Cartesian'
+          xlo = rnode(rpxmin1_:rpxmin1_+ndim-1, n)
+#:endif
           typelim = type_limiter(node(plevel_, n))
 
           !JESSENEW These were called many times in the 3D loop below
@@ -182,7 +193,7 @@ end subroutine finite_volume_local
              end do
           end do
 
-       !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT #{endif}##{if defined('SOURCE_LOCAL') or GEOM != 'Cartesian'}#, wprim #{endif}##{if GEOM != 'Cartesian'}#, inv_dvol, dAdV #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}#)
+       !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT #{endif}##{if defined('SOURCE_LOCAL') or GEOM != 'Cartesian'}#, wprim #{endif}##{if GEOM != 'Cartesian'}#, inv_dvol, dAdV #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}##{if defined('SOURCE_LOCAL') or defined('SOURCE_NONLOCAL') or defined('SOURCE_COMPACT')}#, dloc #{endif}#)
        do ix3=ixOmin3,ixOmax3 
           do ix2=ixOmin2,ixOmax2 
              do ix1=ixOmin1,ixOmax1 
@@ -195,8 +206,21 @@ end subroutine finite_volume_local
                 tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
                 xlocC(1:ndim,1) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                 xlocC(1:ndim,2) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
+#:if GEOM == 'Cartesian'
                 xlocC(1,1) = xlocC(1,1)-0.5_dp*dr(1)
                 xlocC(1,2) = xlocC(1,2)+0.5_dp*dr(1)
+#:else
+                ! bgeo%x holds the cell's volume barycentre, so x -/+ dr/2 is
+                ! not a face: rebuild the radial faces from the block corner.
+                ! Under LOG_RADIUS the discrepancy is not a small one either -
+                ! dr(1) is then a ratio in ln(r), not a length.
+                xlocC(1,1) = xlo(1) + dble(ix1-nghostcells-1)*dr(1)
+                xlocC(1,2) = xlocC(1,1) + dr(1)
+  #:if defined('LOG_RADIUS')
+                xlocC(1,1) = dexp(xlocC(1,1))
+                xlocC(1,2) = dexp(xlocC(1,2))
+  #:endif
+#:endif
                 call ${faceflux_proc}$(tmp, xlocC, 1, f, typelim)
 #:if GEOM == 'Cartesian'
                 bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
@@ -227,8 +251,17 @@ end subroutine finite_volume_local
                 tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
                 xlocC(1:ndim,1) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                 xlocC(1:ndim,2) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
+#:if GEOM == 'spherical'
+                ! as for the radial direction: x(2) is the sin(theta)-weighted
+                ! barycentre, not the midpoint of the two polar faces
+                xlocC(2,1) = xlo(2) + dble(ix2-nghostcells-1)*dr(2)
+                xlocC(2,2) = xlocC(2,1) + dr(2)
+#:else
+                ! Cartesian y, and cylindrical z, carry uniform weight, so the
+                ! stored position is the midpoint and this is already exact
                 xlocC(2,1) = xlocC(2,1)-0.5_dp*dr(2)
                 xlocC(2,2) = xlocC(2,2)+0.5_dp*dr(2)
+#:endif
                 call ${faceflux_proc}$(tmp, xlocC, 2, f, typelim)
 #:if GEOM == 'Cartesian'
                 bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
@@ -259,6 +292,8 @@ end subroutine finite_volume_local
                 tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
                 xlocC(1:ndim,1) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
                 xlocC(1:ndim,2) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
+                ! phi (and Cartesian z) carries uniform weight in every
+                ! geometry, so its barycentre is its midpoint and this is exact
                 xlocC(3,1) = xlocC(3,1)-0.5_dp*dr(3)
                 xlocC(3,2) = xlocC(3,2)+0.5_dp*dr(3)
                 call ${faceflux_proc}$(tmp, xlocC, 3, f, typelim)
@@ -306,6 +341,16 @@ end subroutine finite_volume_local
                    bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
 #:endif
 
+#:if defined('SOURCE_LOCAL') or defined('SOURCE_NONLOCAL') or defined('SOURCE_COMPACT')
+                   ! The optional source terms want a physical cell size. In a
+                   ! curvilinear build that is bgeo%ds, not the logical spacing.
+  #:if GEOM == 'Cartesian'
+                   dloc = dr
+  #:else
+                   dloc = bgeo%ds(ix1, ix2, ix3, 1:ndim, n)
+  #:endif
+#:endif
+
 #:if defined('SOURCE_LOCAL')
                    ! Add local source terms:
                    xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
@@ -314,7 +359,7 @@ end subroutine finite_volume_local
                    wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
                    call addsource_local(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, wCT,&
-                        wprim, qt, wnew, xloc, dr, .false. )
+                        wprim, qt, wnew, xloc, dloc, .false. )
                    bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
 #:endif
 
@@ -326,17 +371,17 @@ end subroutine finite_volume_local
                    tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
                    call addsource_nonlocal(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp,&
-                        qt, wnew, xloc, dr, 1, .false. )
+                        qt, wnew, xloc, dloc, 1, .false. )
 
                    tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
                    call addsource_nonlocal(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp,&
-                        qt, wnew, xloc, dr, 2, .false. )
+                        qt, wnew, xloc, dloc, 2, .false. )
 
                    tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
                    call addsource_nonlocal(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp,&
-                        qt, wnew, xloc, dr, 3, .false. )
+                        qt, wnew, xloc, dloc, 3, .false. )
 
                    bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)           
 #:endif
@@ -350,7 +395,7 @@ end subroutine finite_volume_local
                    tmp3 = uprim(1:nw_phys, ix1, ix2, ix3-1:ix3+1)
                    call addsource_compact(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp1,tmp2,tmp3, &
-                        qt, wnew, xloc, dr, .false. )
+                        qt, wnew, xloc, dloc, .false. )
                    bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
 #:endif
 

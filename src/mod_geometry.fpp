@@ -35,9 +35,17 @@ contains
   !> and dvolume are simply never written.
   subroutine set_coordinate_system_from_config()
 #:if GEOM == 'spherical'
+  #:if defined('LOG_RADIUS')
+    call set_coordinate_system("logSpherical_3D")
+  #:else
     call set_coordinate_system("spherical_3D")
+  #:endif
 #:elif GEOM == 'cylindrical'
+  #:if defined('LOG_RADIUS')
+    call set_coordinate_system("logCylindrical_3D")
+  #:else
     call set_coordinate_system("cylindrical_3D")
+  #:endif
 #:else
     call set_coordinate_system("Cartesian_3D")
 #:endif
@@ -118,6 +126,25 @@ contains
       phi_ = 3
       z_   = -1
       coordinate=spherical
+    ! The two logarithmically stretched systems are the same coordinate
+    ! systems - identical ndir, r_, phi_, z_ and the same `coordinate` value,
+    ! so every select case (coordinate) in the code keeps matching. What
+    ! differs is only that the mesh is uniform in ln(r) rather than in r, which
+    ! the LOG_RADIUS define carries. The names are kept distinct here because
+    ! geometry_name goes into the snapshot header, and a log snapshot must not
+    ! restart into a uniformly spaced build.
+    case ("logSpherical","logSpherical_3D")
+      ndir = ndim
+      r_   = 1
+      if(ndir==3) phi_ = 3
+      z_   = -1
+      coordinate=spherical
+    case ("logCylindrical","logCylindrical_3D")
+      ndir = ndim
+      r_   = 1
+      z_   = 2
+      if(ndir==3) phi_ = 3
+      coordinate=cylindrical
     case default
       call mpistop("Unknown geometry specified")
     end select
@@ -147,6 +174,18 @@ contains
     if (coordinate /= Cartesian) call mpistop("meshlist geometry is Cartesian, &
        &but mod_usr set a non-Cartesian coordinate system")
 #:endif
+
+    ! coordinate alone cannot tell a log-stretched system from a uniform one -
+    ! that is the point of the design - so the radial spacing is checked
+    ! separately, on the name.
+#:if defined('LOG_RADIUS')
+    if (geom(1:3) /= "log") call mpistop("meshlist geometry is logSpherical or &
+       &logCylindrical, but mod_usr set a uniformly spaced coordinate system")
+#:else
+    if (geom(1:3) == "log") call mpistop("mod_usr set a logarithmically &
+       &stretched coordinate system, but meshlist geometry is not &
+       &logSpherical or logCylindrical")
+#:endif
   end subroutine set_coordinate_system
 
   subroutine set_pole
@@ -175,6 +214,16 @@ contains
         end if
       end if
     case (cylindrical)
+#:if defined('LOG_RADIUS')
+      ! A logarithmically stretched radius can never reach r = 0, since the
+      ! mesh is uniform in ln(r), so a logCylindrical domain has no axis and
+      ! nothing is detected here. Running the test below would be actively
+      ! wrong rather than merely redundant: xprobmin1 holds ln(r_min) by this
+      ! point, which is exactly zero for the perfectly ordinary domain
+      ! r_min = 1, and the axis would be reported where there is none.
+      ! A user who asks for typeboundary_min1='pole' anyway is caught by
+      ! check_pole_setup, which sees poleB_requested without poleB.
+#:else
       
       if (1 == phi_ .and. periodB(1)) then
         if(mod(ng1(1),2)/=0) then
@@ -226,6 +275,7 @@ contains
           end if
         end if
       end if
+#:endif
     end select
 
   end subroutine set_pole

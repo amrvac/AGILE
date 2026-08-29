@@ -40,6 +40,17 @@ name = "FILL_NWEXTRA_ANALYTIC"
 flags = ["fypp", "hash"]
 default = false
 
+# Logarithmically stretched radial coordinate: the mesh is uniform in
+# xi = ln(r) rather than in r itself. Implied by geometry='logSpherical' and
+# geometry='logCylindrical', which emit GEOM='spherical'/'cylindrical' so that
+# every existing #:if GEOM branch keeps applying - a log grid *is* spherical,
+# only its radial spacing differs.
+[components.log_radius]
+type = "flag"
+name = "LOG_RADIUS"
+flags = ["fypp", "hash"]
+default = false
+
 [methodlist]
 [methodlist.phys]
 type = "option"
@@ -195,9 +206,17 @@ name = "REFINE_USR"
 flags = ["fypp", "hash"]
 default = false
 
+# 'logSpherical'/'logCylindrical' are the same coordinate systems with a
+# logarithmically stretched radius, so they *emit* GEOM='spherical'/
+# 'cylindrical' and additionally turn on LOG_RADIUS. Only the geometry kernel
+# and the handful of sites listed there need to know the difference.
 [meshlist.geometry]
 type = "option"
 name = "GEOM"
-options = ["Cartesian", "spherical", "cylindrical"]
+options = ["Cartesian", "spherical", "cylindrical", "logSpherical", "logCylindrical"]
 flags = ["fypp", "hash"]
 default = "Cartesian"
+emit.logSpherical = "spherical"
+emit.logCylindrical = "cylindrical"
+implies.logSpherical = ["components.log_radius"]
+implies.logCylindrical = ["components.log_radius"]

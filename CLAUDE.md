@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 AGILE is a GPU-enabled fork of MPI-AMRVAC, a Fortran finite-volume code for
 solving hyperbolic PDEs (HD, MHD, FFHD, SRHD) with adaptive mesh refinement.
 Master supports 3D Cartesian, 3D spherical `(r, theta, phi)` and 3D
-cylindrical `(r, z, phi)` grids; see "Coordinate systems" below for the
-limits of the curvilinear support. Domain
+cylindrical `(r, z, phi)` grids, each of the latter two also in a
+logarithmically stretched radial variant (`logSpherical`, `logCylindrical`);
+see "Coordinate systems" below for the limits of the curvilinear support. Domain
 decomposition and GPU offload use MPI + OpenACC (`!$acc` directives throughout
 the hot loops).
 
@@ -106,7 +107,8 @@ curvilinear bookkeeping. Set `geometry` in `&meshlist` of `agile.par`:
 
 ```fortran
  &meshlist
-   geometry = 'spherical'   ! or 'cylindrical', or 'Cartesian' (the default)
+   geometry = 'spherical'   ! 'cylindrical', 'logSpherical',
+                            ! 'logCylindrical', or 'Cartesian' (the default)
  /
 ```
 
@@ -128,7 +130,7 @@ and `dvolume` are never written and the run completes with garbage.
 `tests/hd/spherical_uniform_flow` omits the call and
 `tests/hd/spherical_blast` keeps it, so both paths stay covered.
 
-Two things to know when writing a spherical or cylindrical case:
+Three things to know when writing a spherical or cylindrical case:
 
 - **Angular coordinates in `agile.par` are given in units of 2*pi** (an
   MPI-AMRVAC convention, applied in `src/io/mod_input_output.fpp`). So for
@@ -140,11 +142,14 @@ Two things to know when writing a spherical or cylindrical case:
 - `ndim` is a compile-time `parameter` of 3, so spherical or cylindrical
   means the full 3D `(r, theta, phi)` or `(r, z, phi)` system with
   `ndir = 3`.
+- **`ps(igrid)%x` is the volume barycentre of the cell, not the midpoint of
+  its faces**, so `x +/- dx/2` is not a face. See "Cell positions are volume
+  barycentres" below.
 
 How it works: in a curvilinear build the finite-volume update in
 `src/mod_finite_volume.fpp` divides face fluxes by the cell volume weighted by
 the face areas (`bgeo%surfaceC`, `bgeo%dvolume`, filled per block by
-`fillgeo`/`get_surface_area` in `src/amr/mod_amr_solution_node.fpp`), instead
+`fill_geometry_device` in `src/amr/mod_amr_solution_node.fpp`), instead
 of by the uniform `rnode` cell spacing. The leftover curvature terms of the
 momentum equations are added by `addsource_geometry`, a fypp macro each physics
 template defines (see `src/hd/mod_hd_templates.fpp`);
@@ -210,9 +215,13 @@ deleting the guard.
 
 Two consequences of building the metrics analytically:
 
-- **Grid stretching is rejected.** `stretch_dim` in `&meshlist` makes the cell
-  spacing vary within a block, which the analytic derivation cannot express,
-  so `initialize_vars` calls `mpistop` if any dimension is stretched. The
+- **General grid stretching is rejected.** `stretch_dim` in `&meshlist` makes
+  the cell spacing vary within a block in a way the analytic derivation cannot
+  express, so `initialize_vars` calls `mpistop` if any dimension is stretched.
+  The one stretching that *is* supported, a logarithmic radius, is supported
+  precisely because it does not need that machinery — it is a uniform mesh in
+  `ln(r)` and therefore still an analytic function of the block corner and a
+  constant spacing. See "Logarithmically stretched radius" below. The
   ~1300-line host path that used to handle it (`fill_geometry_host`), and
   `get_surface_area` in `src/mod_geometry.fpp`, are gone. Upstream
   MPI-AMRVAC's stretched-grid machinery (`qstretch`, `dxfirst`, ...) still
@@ -221,6 +230,140 @@ Two consequences of building the metrics analytically:
 - `Cartesian_expansion` was already unreachable here — `set_coordinate_system`
   `mpistop`s on it unless `ndim == 1`, and `ndim` is a compile-time 3 — so the
   `usr_set_surface` hook in `src/mod_usr_methods.fpp` is likewise now unused.
+
+### Cell positions are volume barycentres
+
+`bgeo%x` — and therefore `ps(igrid)%x`, which every case's `mod_usr.fpp` reads
+— holds the **volume barycentre** of the cell, not the midpoint of its faces.
+The solution is stored as a cell average, and a cell average equals the point
+value at the barycentre to second order, because the linear term of the Taylor
+expansion integrates to zero only about that point. So the barycentre is where
+the state, the initial condition and any position-dependent source term belong.
+
+Only the directions with a non-uniform volume weight are affected. `phi` in
+both systems, and `z` in cylindrical, carry uniform weight, so their
+barycentres *are* their midpoints and nothing changed for them. The two that
+differ are, for faces at `r_L`, `r_R` and `theta_L`, `theta_R`:
+
+    spherical    r     = 3/4 * (r_R^4 - r_L^4)/(r_R^3 - r_L^3)
+    cylindrical  r     = 2/3 * (r_R^3 - r_L^3)/(r_R^2 - r_L^2)
+    spherical    theta = theta_c + cot(theta_c) * (sin(u) - u cos(u))/sin(u),
+                         u = dtheta/2
+
+`fill_geometry_device` evaluates all three in forms from which the common
+factor has been cancelled analytically, because the offset from the midpoint is
+`O(h^2)` and computing it as the difference of two `O(1)` quantities would
+throw away most of the mantissa on a fine grid. The offset is about 1% of a
+cell width in the radial direction of the existing test grids, and grows to
+`dtheta/6` — a sixth of a cell, pushed away from the axis — for the first
+polar cell off `theta = 0`.
+
+**The consequence to remember is that `x +/- dx/2` is not a cell face.** Three
+places in the tree needed that and were changed to rebuild the face from
+`rnode` instead:
+
+- the face coordinates handed to the Riemann solver in
+  `src/mod_finite_volume.fpp` (radial always, polar in spherical);
+- the VTU corner grid in `calc_x`, `src/io/mod_calculate_xw.fpp`;
+- `fill_geometry_device` itself, which is now written face-first: the
+  `RADIAL_CELL` macro produces the two faces, the midpoint `rc` and the extent
+  `ds1`, and every area and volume is then written in terms of `rc` and `ds1`.
+  That is what lets those expressions stay algebraically *exact* — `rc*ds1` is
+  precisely `(r_R^2 - r_L^2)/2`, and `(rc^2 + ds1^2/12)*ds1` precisely
+  `(r_R^3 - r_L^3)/3`, for any face pair whatsoever — so the same expressions
+  serve the uniform and the stretched grids unchanged. In a uniform build
+  `rc` and `ds1` are taken straight from the logical centre and spacing rather
+  than rebuilt from the faces, so those builds' metrics are bit-for-bit what
+  they were before, and any change in their results is attributable to the
+  barycentre and the source terms alone.
+
+The curvature source terms take no position at all any more; see the
+`addsource_geometry` bullet under "Current limits" below for why that matters
+at the axis. `bgeo%dx` remains "the extent of the cell in the same units as the
+matching component of `x`", so its radial entry is a physical width.
+
+**`bgeo%ds` deliberately stays on the cell midpoint**, not the barycentre. It
+is a geometric extent that `setdt` turns into the CFL length, so the argument
+that puts the *state* at the barycentre says nothing about it, and following
+the barycentre there would quietly relax the timestep. That is not academic at
+the polar axis: the barycentre sits `dtheta/6` further out, so `sin(theta_bar)`
+runs about a third above `sin(theta_c)` in the first cell — exactly the cell
+whose vanishing `ds(3) = r sin(theta) dphi` sets `dt` for the whole run.
+Measured on `tests/hd/spherical_pole/uflow.par`: following the barycentre in
+`ds` takes the run from 24 timesteps to 20, a 20% larger `dt`, for no reason
+other than a mislabelled cell size. It happens not to move that case's volume
+averages — they are dominated by spatial error — so this is a silent change,
+which is exactly why it is worth pinning down here.
+
+One place was deliberately *not* fixed: the face averages `half*(q(ix)+q(jx))`
+in `divvector` and `curlvector` (`src/mod_geometry.fpp`) assume the face lies
+midway between two cell centres, which is now untrue twice over — once for the
+barycentre, and again for a stretched radius. Upstream's `stretch_uncentered`
+branch, which extrapolates from `x(ix)` by `dx(ix)/2` along the actual centre
+separation, is the fix. Neither routine is on a path this fork currently
+exercises, so this is recorded rather than repaired.
+
+### Logarithmically stretched radius
+
+`geometry = 'logSpherical'` and `geometry = 'logCylindrical'` are the same two
+coordinate systems with a radial mesh that is uniform in `ln(r)` rather than in
+`r`, so the cell width grows in proportion to `r` and the relative resolution
+`dr/r` is constant. That is the one stretching astrophysics usually wants, and
+it is the only one supported.
+
+**It needs almost none of upstream MPI-AMRVAC's stretched-grid machinery, and
+that is the whole design.** Take the *logical* coordinate to be `xi = ln(r)`:
+the mesh is then uniform in `xi`, so it is still exactly what
+`fill_geometry_device` assumes — an analytic function of the block's corner and
+a constant spacing. The tree, the AMR level ladder, `rnode`, block indexing,
+prolongation, coarsening and the ghost exchange all keep working unchanged in
+`xi`; only the step from logical faces to physical ones takes an `exp`.
+Upstream's default `q = (xprobmax1/xprobmin1)^(1/domain_nx1)` stretching *is*
+this grid, and its `q_l = sqrt(q_{l-1})` refinement ladder is just
+`dxi -> dxi/2`, so refinement and log stretching commute for free rather than
+needing per-level `qstretch`/`dxfirst` tables.
+
+Two implementation points follow from that framing:
+
+- **`GEOM` keeps its three values.** `geometry = 'logSpherical'` emits
+  `GEOM='spherical'` *plus* a separate `LOG_RADIUS` flag, via a new `emit`
+  mapping in `make/config_schema.toml` and `make/config_reader.py`. So every
+  existing `#:if GEOM == 'spherical'` branch — the four physics modules'
+  curvature terms, the geometry kernel, the finite-volume update, `setdt` —
+  stays correct untouched, and `coordinate` stays `spherical` at runtime so
+  every `select case (coordinate)` keeps matching. A log grid *is* spherical;
+  only its radial spacing differs. The build hash still distinguishes the two,
+  and `geometry_name` keeps the log name so a log snapshot refuses to restart
+  into a uniformly spaced build.
+- **`xprobmin1`/`xprobmax1` are physical radii in the par file** and are
+  converted to `ln(r)` by `read_par_files`, next to where the angular bounds
+  are already converted from units of `2*pi`. `xprobmin1 <= 0` is rejected
+  there. **A case's `mod_usr.fpp` that reads `xprobmin1`/`xprobmax1` for a
+  physical radius therefore has to exponentiate them** — the `log_*` test
+  directories do exactly that, and it is the one thing about these geometries
+  that reliably catches people out.
+
+Nearly everything else was already right, because it keys off `slab_uniform`
+(false for any curvilinear build) rather than off uniform spacing: `setdt`
+already uses `bgeo%ds`, the flux update already uses `surfaceC`/`dvolume`,
+`coarsen_grid` and `prolong_2nd` already volume-weight, `fix_conserve` already
+divides by `dvolume`, and the ghost-cell prolongation already does all of its
+index arithmetic in the pseudo-uniform `rnode` space — which is precisely the
+logical `xi` space.
+
+Two limits worth stating:
+
+- **A log-radial grid can never reach `r = 0`**, so `logCylindrical` has no
+  polar axis. `set_pole`'s cylindrical branch is compiled out under
+  `LOG_RADIUS`, which also avoids a trap: it detects the axis by
+  `abs(xprobmin1) < smalldouble`, and `ln(r_min)` is exactly zero for the
+  perfectly ordinary domain `r_min = 1`. `logSpherical` keeps full
+  `theta = 0, pi` support.
+- **The reconstruction stays uniform-stencil.** The MUSCL reconstruction in
+  `src/mod_finite_volume.fpp` and the limiters take a scalar spacing and assume
+  equal cells, so the second-order constant degrades as `q` grows. Upstream has
+  the same limitation everywhere outside its `*NM` WENO family. Keep `q`
+  modest — the test cases run at `q ~ 1.04` to `1.09`.
 
 ### Getting the geometry back to the host
 
@@ -281,15 +424,26 @@ Current limits of the curvilinear (spherical and cylindrical) support:
   (`src/mhd/mod_mhd_templates.fpp`, `src/srhd/mod_srhd_templates.fpp`) were
   ported from upstream MPI-AMRVAC's `mhd_add_source_geom` (cell-centred
   GLM-MHD branch; this fork has no `stagger_grid`/constrained-transport
-  support) and `srhd_add_source_geom`, with the isotropic pressure-like terms
-  (`ptot`/`psi` for MHD, `p` for SRHD) rewritten to use the discrete `dAdV`
-  well-balancing factor instead of the continuous `2/r`, `cot(theta)/r`
-  (spherical) or `1/r` (cylindrical) prefactors upstream uses directly, for
-  consistency with this fork's HD implementation. For cylindrical, `x(1)*
-  dAdV(1)` works out to exactly `1/r` rather than merely converging to it,
-  because a cylindrical radial face area is linear in `r` (unlike spherical's
-  `r^2`), so the well-balancing rewrite is exact there, not just consistent
-  in the continuum limit. SRHD's primitive `mom(:)` slot holds the spatial
+  support) and `srhd_add_source_geom`, with **every** geometric prefactor
+  rewritten to come from the discrete `dAdV = (A_upper - A_lower)/dV` instead
+  of the continuous `2/r`, `cot(theta)/r` (spherical) or `1/r` (cylindrical)
+  prefactors upstream uses directly. This is not only a well-balancing trick.
+  For the metrics `fill_geometry_device` builds, those discrete factors are
+  *exactly* the volume averages of the continuous ones,
+
+      spherical:    dAdV(1) = 2*<1/r>       dAdV(2) = <cot(theta)/r>
+      cylindrical:  dAdV(1) =   <1/r>
+
+  for any face pair whatsoever, not merely in the continuum limit. Two things
+  follow. The pressure terms cancel the pressure part of the flux divergence
+  the update actually used, which is the well-balancing; and no curvature term
+  depends on where in the cell the stored position sits, which matters because
+  `bgeo%x` is the volume barycentre rather than the face midpoint. Evaluating
+  `cot(theta)` at the barycentre instead would be about 33% wrong in the first
+  cell off the polar axis, since the exact volume average of `cot(theta)` over
+  a cell is `cot(theta_midpoint)`. `x` is consequently unused by every
+  `addsource_geometry` in the tree; the argument is kept for physics that may
+  want it. SRHD's primitive `mom(:)` slot holds the spatial
   four-velocity `u^i = lfac*v^i` rather than `v^i` itself (see
   `to_primitive`/`to_conservative` and `src/srhd/mod_con2prim.fpp`'s
   `xi = tau + D + p`, `v^2 = S^2/xi^2`), so the curvature terms use the
@@ -311,7 +465,9 @@ Current limits of the curvilinear (spherical and cylindrical) support:
   `dx(idir)`, which is only correct on a slab-uniform mesh — it is missing
   the curvilinear metric factors a true divergence needs in
   `geometry = 'spherical'` or `geometry = 'cylindrical'`, and this fork has
-  not fixed that.
+  not fixed that. Under `LOG_RADIUS` it is further out still, since the radial
+  `dx(idir)` it differences over is then a ratio in `ln(r)` rather than a
+  length.
 - The polar axis is supported for `phys = 'hd'`, `phys = 'mhd'`,
   `phys = 'srhd'` and `phys = 'ffhd'`; see "The polar axis" below. `ffhd`
   reaches the axis by a different route than the others: its conserved
@@ -359,6 +515,30 @@ the union of what every par file in the directory needs. `specialboundary` is
 a runtime logical as well as a fypp define, so `blast.par` leaves it out while
 `specialbound_usr` stays compiled in. **Adding a par file to such a directory
 is free; adding a directory costs a full rebuild in CI.**
+
+A further **eight** directories, `tests/{hd,mhd,ffhd,srhd}/log_spherical` and
+`.../log_cylindrical`, repeat the same setups on a logarithmically stretched
+radius. They are copies of the directories above, differing in three things:
+`geometry` is `'logSpherical'`/`'logCylindrical'`, the radial domain is widened
+to `r` from 1 to 4 so that the cell width varies by a factor of about 3.8
+across it (the stretching is real, not nominal), and every use of
+`xprobmin1`/`xprobmax1` for a physical radius is wrapped in `exp` — see
+"Logarithmically stretched radius" above.
+
+Each registers `check_log_grid` as `usr_process_grid`, and **that check is the
+point of these directories**, not the reference log. A stretched mesh that is
+subtly wrong barely moves a volume average — the same reason the pole cases
+assert on ghost cells — so the mesh is compared against its closed form cell by
+cell at `it = 0`: that consecutive radial positions are in exact geometric
+progression `x(i+1)/x(i) = exp(dxi)`, that `ds(1)` is the physical cell width,
+that each stored position is the volume barycentre of its own two faces, and
+that `dvolume` is the exact integral over those faces. The reference
+expressions are deliberately *different* forms from the ones the geometry
+kernel evaluates — the raw quotient of quartic differences rather than the
+cancellation-free rewrite, and `cos(theta_L) - cos(theta_R)` rather than
+`2 sin(theta_c) sin(dtheta/2)` — so that the two agreeing means something. The
+measured agreement is 2 ULP. **A new log-geometry test needs that check, not
+just a reference log.**
 
 These domains all stay away from the polar axis and from `r = 0`; the axis
 itself is covered by the separate `*_pole` directories below. Pole and non-pole
