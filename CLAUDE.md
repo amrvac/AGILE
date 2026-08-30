@@ -433,9 +433,12 @@ it work, and each of them is a deliberate choice rather than an accident:
   spacings the tests use. That is an O(dx) error at the axis, and it would show
   up as a `2e-4` failure of the `1e-10` `check_pole_ghosts` assertion while
   moving the volume averages in the log not at all. Combined with the pivot,
-  the odd form makes the mirror **bit-exact**: `abs()` and `sign()` carry the
-  exact negation through, and the barycentre and volume expressions are even or
-  odd in the pair of faces.
+  the odd form makes the mirror **exact in exact arithmetic**: `abs()` and
+  `sign()` carry the negation through, and the barycentre and volume
+  expressions are even or odd in the pair of faces. gfortran at `-O3` keeps
+  that bit-for-bit; ifx at `-O3` defaults to `-fp-model=fast` and moves the
+  closing bits, so `check_pole_mesh`'s `assert_exact` compares to `1e-11`
+  rather than exactly (see below).
 - **The odd branch is confined to the ghost layer.** `s >= 0` everywhere in the
   physical domain, so the sites that only ever see the domain — the face
   positions in `src/mod_finite_volume.fpp`, and `calc_x`'s corner grid — use
@@ -799,11 +802,13 @@ worth.
 - `tests/hd/log_cylindrical_pole` — that directory again with
   `geometry = 'logCylindrical'` and `log_r0 = 0.2`, on the same physical
   domain. It is the only place in the tree where a stretched radius reaches
-  `r = 0`, and the reason it exists is `check_pole_mesh`, which asserts with
-  **zero** tolerance that each ghost cell beyond the axis has exactly the
-  mirrored position, width and volume of the interior cell `getbc` fills it
-  from — the property the naive `r = exp(s) - r0` would break and the log
-  would not notice. Its `check_log_grid` is the offset-map rewrite of the one
+  `r = 0`, and the reason it exists is `check_pole_mesh`, which asserts to
+  **`1e-11`** that each ghost cell beyond the axis has the mirrored position,
+  width and volume of the interior cell `getbc` fills it from — the property
+  the naive `r = exp(s) - r0` would break, by several percent of a cell
+  width, and the log would not notice. The mirror is exact in exact
+  arithmetic and bit-exact under gfortran; the tolerance is for ifx's default
+  `-fp-model=fast` (see "Reaching the axis with `log_r0`" above). Its `check_log_grid` is the offset-map rewrite of the one
   in `tests/hd/log_cylindrical`: the stored positions are no longer in
   geometric progression (the map is not self-similar any more), so the check
   is that the *cell widths* are, and the face-based barycentre and volume

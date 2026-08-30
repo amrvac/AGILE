@@ -479,12 +479,17 @@ contains
   !> of a different size, and the ghost is misplaced by an O(ds) fraction of a
   !> cell width however correct the copy itself is.
   !>
-  !> The tolerance is exactly zero, and that is not optimism. xprobmin1 is
-  !> ln(1 + 0/r0) = 0 exactly, rnode's corner for the block on the axis is
-  !> therefore 0 exactly, so the logical positions of a ghost cell and the
-  !> interior cell it mirrors are exact negatives of one another; abs() and
-  !> sign() in the map then carry that through to the last bit, and the
-  !> barycentre and volume expressions are even or odd in the pair of faces.
+  !> The mirror is exact in exact arithmetic, and nearly so in practice.
+  !> xprobmin1 is ln(1 + 0/r0) = 0 exactly, rnode's corner for the block on
+  !> the axis is therefore 0 exactly, so the logical positions of a ghost cell
+  !> and the interior cell it mirrors are exact negatives of one another;
+  !> abs() and sign() in the map then carry that through, and the barycentre
+  !> and volume expressions are even or odd in the pair of faces. Under a
+  !> compiler that respects IEEE semantics (gfortran at -O3) the two sides
+  !> agree bit-for-bit; ifx at -O3 defaults to -fp-model=fast and moves the
+  !> closing bits, so assert_exact compares to 1e-11 rather than exactly -
+  !> still nine orders of magnitude tighter than the error the naive map
+  !> would introduce.
   subroutine check_pole_mesh(igrid,ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
      ixImax3,ixOmin1,ixOmin2,ixOmin3,ixOmax2,ixOmax3,x)
     use mod_global_parameters
@@ -534,13 +539,24 @@ contains
 
   end subroutine assert_close
 
+  !> Assert that got and want agree to a tight relative tolerance.
+  !>
+  !> The mesh mirror across the axis is exact in the source expressions (see
+  !> check_pole_mesh above), so under a compiler that keeps to IEEE semantics
+  !> got == want to the last bit. ifx at -O3 defaults to -fp-model=fast, which
+  !> contracts and reassociates and uses a fast exp, and then the closing bits
+  !> of the mirror move. The tolerance is 1e-11, matching check_log_grid's own
+  !> tolerance for the same kind of geometry arithmetic in this file; it still
+  !> catches the O(ds) misplacement the naive r = exp(s) - r0 map produces -
+  !> several percent of a cell width - by nine orders of magnitude.
   subroutine assert_exact(got, want, what)
     use mod_global_parameters, only: mype, unitterm
     use mod_comm_lib, only: mpistop
     double precision, intent(in) :: got, want
     character(len=*), intent(in) :: what
+    double precision, parameter  :: tol = 1.0d-11
 
-    if (got == want) return
+    if (abs(got - want) <= tol * max(abs(want), tiny(1.0d0))) return
     if (mype == 0) write(unitterm,*) 'check_pole_mesh: ', trim(what), &
        ': got', got, ' expected', want
     call mpistop('check_pole_mesh: the mesh is not mirrored across the axis')
