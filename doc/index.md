@@ -1,9 +1,8 @@
-title: AGILE Documentation
+title: AGILE code
 copy_subdir: figmovdir
 
-# Introduction {: #introduction }
-This is the documentation for AGILE. The code is available on
-[Github](https://github.com/amrvac/AGILE). If you have questions or notice problems, please
+
+AGILE is available on [Github](https://github.com/amrvac/AGILE). If you have questions or notice problems, please
 raise an issue on <https://github.com/amrvac/AGILE/issues>.  
 Contributions via [pull requests](https://github.com/amrvac/AGILE/pulls) welcome!  
 
