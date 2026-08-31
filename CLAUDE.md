@@ -996,6 +996,38 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   in `config.mk`. `make/fypp-deps.py` and `fortdepend` generate `.fpp`/`.f90`
   dependency rules for incremental rebuilds.
 
+## Bug-hunting notes
+
+- **When CPU is correct and one GPU compiler is wrong and the failure is
+  deterministic, it is a miscompile — bisect the kernel's directives
+  mechanically, do not reason about which construct "should" be at fault.**
+  Toggle one thing at a time in the offending kernel (collapse level;
+  array-section assignment vs explicit scalar loop; `vector` placement; loop
+  bounds; `-O` level) and watch a bucketed error metric — e.g. split the
+  ghost-region error into face / edge / corner, or per variable. This is far
+  faster than theorising: the polar-axis GPU bug was chased through several
+  wrong hypotheses (the MPI path, a reversed array section) before mechanical
+  bisection pinned it to `collapse` in one `!$acc loop` in three toggles.
+  Cross-check with `arch=gnu` (gfortran) and `arch=nvidia` *without*
+  `OPENACC=1` (nvfortran, host) to confirm it is the OpenACC offload and not
+  the front end.
+
+- **Do not put `collapse` on an `!$acc loop` inside an `!$acc routine`.**
+  nvfortran's OpenACC miscompiles the un-collapse index arithmetic for a
+  collapsed `vector` loop inside a `!$acc routine vector` (reached from a
+  gang-level `!$acc parallel loop`) when the iteration box is corner-shaped —
+  degenerate in one dimension, e.g. a radial-ghost slab only `nghostcells`
+  wide. It reads/writes the wrong cells; results drift rather than crash.
+  `collapse(2)` and `collapse(3)` are both affected; array-section vs scalar
+  reads make no difference. Put the `!$acc loop vector` on the innermost loop
+  only and leave the outer loops sequential. Collapse is fine at a top-level
+  `!$acc parallel loop`, where the trip counts are large and statically known.
+  This bit every curvilinear `*_pole` test case's `specialbound_usr` on GPU:
+  the miscompiled loop wrote wrong values into cells *outside* its intended
+  range, corrupting the ghost cells where the radial boundary meets the polar
+  axis, and the pole-case logs drifted ~0.6% on nvfortran while gfortran and
+  nvfortran-without-OpenACC stayed exact.
+
 ## API documentation (FORD)
 
 Source-level API docs are generated with [FORD](https://forddocs.readthedocs.io/)

@@ -124,9 +124,16 @@ contains
     double precision                :: x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
-    !$acc loop collapse(3) vector private(v, b, x_loc)
+    ! !$acc loop vector on the innermost loop only, deliberately not
+    ! collapse(3): nvfortran's OpenACC miscompiles a collapsed vector loop
+    ! inside this !$acc routine vector (reached from the gang loops in
+    ! fill_boundary_before_gc / fill_boundary_after_gc) when the boundary
+    ! region is corner-shaped - a ghost slab only nghostcells wide. It then
+    ! writes past its range with wrong un-collapsed indices, rotating the
+    ! ghost cells where the physical boundary meets the polar axis. See CLAUDE.md.
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
+          !$acc loop vector private(v, b, x_loc)
           do ix1 = ixOmin1, ixOmax1
 
              x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
@@ -217,9 +224,12 @@ contains
        else
           jxmin2 = ixOmax2+1; jxmax2 = ixImax2
        end if
-       do ix3 = ixOmin3, ixOmax3
+       ! transverse loops run over the whole block (ixI), not just its
+       ! interior (ixO), so the pole layer's edges and corners are covered -
+       ! in particular the cells where the axis meets the radial boundary
+       do ix3 = ixImin3, ixImax3
           do ix2 = jxmin2, jxmax2
-             do ix1 = ixOmin1, ixOmax1
+             do ix1 = ixImin1, ixImax1
                 x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
                 call analytic_state(x_loc, wpt)
                 err = max(err, maxval(abs(w(ix1,ix2,ix3,&

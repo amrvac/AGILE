@@ -254,9 +254,16 @@ contains
     double precision                :: wpt(1:nw), x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
-    !$acc loop collapse(3) vector private(wpt, x_loc)
+    ! !$acc loop vector on the innermost loop only, deliberately not
+    ! collapse(3): nvfortran's OpenACC miscompiles a collapsed vector loop
+    ! inside this !$acc routine vector (reached from the gang loop in
+    ! fill_boundary_before_gc / fill_boundary_after_gc) when the boundary
+    ! region is corner-shaped - a ghost slab only nghostcells wide - giving
+    ! wrong un-collapsed indices, so the ghost cells where the physical
+    ! boundary meets the polar axis come out rotated. See CLAUDE.md.
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
+          !$acc loop vector private(wpt, x_loc)
           do ix1 = ixOmin1, ixOmax1
              x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
              call analytic_state(x_loc, wpt)
@@ -308,6 +315,13 @@ contains
   !> analytic state, so the pole copy of it has to reproduce that state in the
   !> ghost cells to round-off. Silence means the check passed.
   !>
+  !> For the 'uniform' setup the transverse loops run over the whole block
+  !> (ixI), not just its interior mesh (ixO), so the edge and corner cells of
+  !> the pole layer are covered too - in particular where the axis meets the
+  !> radial physical boundary, filled by bc_phys rather than the pole copy.
+  !> 'blast' keeps the face-only range: near its discontinuous spot surface a
+  !> ghost cell holds a limited cell average that differs from the point value.
+  !>
   !> How far it can be pushed across a *level jump* depends on the setup,
   !> because there the ghost has been restricted or prolonged on the way and
   !> comparing it against the analytic value at a point is only meaningful
@@ -336,6 +350,7 @@ contains
     ! .. local ..
     double precision :: wpt(1:nw), x_loc(1:ndim), err, tol
     integer          :: ix1, ix2, ix3, iside, i2, jxmin2, jxmax2
+    integer          :: tx1lo, tx1hi, tx3lo, tx3hi
 
     if (it /= 0) return
 
@@ -348,6 +363,15 @@ contains
     ! process() runs before the solution is pulled back for output, so the
     ! host copy of w is stale unless we fetch this block ourselves
     !$acc update host(ps(igrid)%w)
+
+    ! 'uniform' is smooth, so check the whole ghost layer including its edges
+    ! and corners; 'blast' keeps the interior-transverse face only (see the
+    ! docstring).
+    if (is_blast) then
+       tx1lo = ixOmin1; tx1hi = ixOmax1; tx3lo = ixOmin3; tx3hi = ixOmax3
+    else
+       tx1lo = ixImin1; tx1hi = ixImax1; tx3lo = ixImin3; tx3hi = ixImax3
+    end if
 
     do iside = 1, 2
        i2 = 2*iside - 3
@@ -364,9 +388,9 @@ contains
           jxmin2 = ixOmax2+1; jxmax2 = ixImax2
        end if
        err = 0.0d0
-       do ix3 = ixOmin3, ixOmax3
+       do ix3 = tx3lo, tx3hi
           do ix2 = jxmin2, jxmax2
-             do ix1 = ixOmin1, ixOmax1
+             do ix1 = tx1lo, tx1hi
                 x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
                 call analytic_state(x_loc, wpt)
                 err = max(err, maxval(abs(w(ix1,ix2,ix3,&

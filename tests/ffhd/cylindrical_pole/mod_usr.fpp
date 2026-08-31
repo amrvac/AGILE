@@ -125,9 +125,16 @@ contains
        ixImin3:ixImax3,1:nw)
     integer                         :: ix1, ix2, ix3
 
-    !$acc loop collapse(3) vector
+    ! !$acc loop vector on the innermost loop only, deliberately not
+    ! collapse(3): nvfortran's OpenACC miscompiles a collapsed vector loop
+    ! inside this !$acc routine vector (reached from the gang loops in
+    ! fill_boundary_before_gc / fill_boundary_after_gc) when the boundary
+    ! region is corner-shaped - a ghost slab only nghostcells wide. It then
+    ! writes past its range with wrong un-collapsed indices, rotating the
+    ! ghost cells where the physical boundary meets the polar axis. See CLAUDE.md.
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
+          !$acc loop vector
           do ix1 = ixOmin1, ixOmax1
              w(ix1,ix2,ix3,iw_rho)    = rho0
              w(ix1,ix2,ix3,iw_mom(1)) = rho0 * vpar0
@@ -168,8 +175,11 @@ contains
     invb = 1.0d0 / sqrt(sum(b0(1:3)**2))
     err  = 0.0d0
 
-    do ix3 = ixOmin3, ixOmax3
-       do ix2 = ixOmin2, ixOmax2
+    ! transverse loops run over the whole block (ixI), not just its interior
+    ! (ixO), so the pole layer's edges and corners are covered - in
+    ! particular the cells where the axis meets the z physical boundary
+    do ix3 = ixImin3, ixImax3
+       do ix2 = ixImin2, ixImax2
           do ix1 = ixImin1, ixOmin1-1
              efluid = max(abs(w(ix1,ix2,ix3,rho_) - rho0), &
                   abs(w(ix1,ix2,ix3,iw_mom(1)) - rho0*vpar0), &

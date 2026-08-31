@@ -2018,6 +2018,22 @@ contains
        end do
     end do
 
+    ! Re-fill the physical-boundary ghost cells now that the internal
+    ! ghost-cell exchange has run, mirroring upstream MPI-AMRVAC's
+    ! post-exchange bc_phys pass. fill_boundary_before_gc fills only the
+    ! interior transverse range of each boundary (corner info is not yet
+    ! known); fill_boundary_after_gc enlarges it to the corners, which is
+    ! where a physical boundary meets a pole face. No current test needs
+    ! this second pass, but it keeps corner-ghost handling complete and
+    ! matches upstream for setups this fork does not yet exercise.
+    if(bcphys.and. .not.stagger_grid) then
+       !$acc parallel loop gang default(present)
+       do iigrid = 1, igridstail; igrid=igrids(iigrid);
+          if (.not.phyboundblock(igrid)) cycle
+          call fill_boundary_after_gc(psb(igrid),igrid,time,qdt)
+       end do
+    end if
+
     ! modify normal component of magnetic field to fix divB=0
     if(bcphys.and.associated(phys_boundary_adjust)) then
        do iigrid=1,igridstail; igrid=igrids(iigrid);
