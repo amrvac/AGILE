@@ -215,18 +215,25 @@ deleting the guard.
 
 Two consequences of building the metrics analytically:
 
-- **General grid stretching is rejected.** `stretch_dim` in `&meshlist` makes
-  the cell spacing vary within a block in a way the analytic derivation cannot
-  express, so `initialize_vars` calls `mpistop` if any dimension is stretched.
-  The one stretching that *is* supported, a logarithmic radius, is supported
-  precisely because it does not need that machinery — it is a uniform mesh in
-  `ln(r)` and therefore still an analytic function of the block corner and a
-  constant spacing. See "Logarithmically stretched radius" below. The
-  ~1300-line host path that used to handle it (`fill_geometry_host`), and
-  `get_surface_area` in `src/mod_geometry.fpp`, are gone. Upstream
-  MPI-AMRVAC's stretched-grid machinery (`qstretch`, `dxfirst`, ...) still
-  sits in `mod_global_parameters` and `read_par_files` but now has no
-  consumer.
+- **General grid stretching is gone.** A `stretch_dim` that made the cell
+  spacing vary within a block could not be expressed by the analytic
+  derivation, so upstream MPI-AMRVAC's stretched-grid machinery was removed
+  outright: the `stretch_dim`, `stretch_uncentered`, `qstretch_baselevel` and
+  `nstretchedblocks_baselevel` keys are no longer read from `&meshlist`, the
+  `read_par_files` block that filled the per-level `qstretch`/`dxfirst`/`dxmid`
+  tables is deleted, and the `initialize_vars` guard that used to `mpistop` on
+  a stretched dimension is gone with it (nothing can request one any more). The
+  `qstretch`/`dxfirst`/`stretched_dim`/`stretch_type` globals still *exist* in
+  `mod_global_parameters`, pinned to the unstretched state, only because a few
+  paths this fork does not exercise (`get_igslice` in `src/io/mod_slice.fpp`,
+  the particle-index lookup in `src/particle/mod_particle_base.fpp`, the
+  line-of-sight sub-grids in `src/physics/mod_thermal_emission.fpp`) still
+  branch on them. The one stretching that *is* supported, a logarithmic
+  radius, never needed any of it — it is a uniform mesh in `ln(r + log_r0)`
+  and therefore still an analytic function of the block corner and a constant
+  spacing (see "Logarithmically stretched radius" below). The ~1300-line host
+  path that used to handle general stretching (`fill_geometry_host`), and
+  `get_surface_area` in `src/mod_geometry.fpp`, are also gone.
 - `Cartesian_expansion` was already unreachable here — `set_coordinate_system`
   `mpistop`s on it unless `ndim == 1`, and `ndim` is a compile-time 3 — so the
   `usr_set_surface` hook in `src/mod_usr_methods.fpp` is likewise now unused.
@@ -301,11 +308,13 @@ which is exactly why it is worth pinning down here.
 
 One place was deliberately *not* fixed: the face averages `half*(q(ix)+q(jx))`
 in `divvector` and `curlvector` (`src/mod_geometry.fpp`) assume the face lies
-midway between two cell centres, which is now untrue twice over — once for the
-barycentre, and again for a stretched radius. Upstream's `stretch_uncentered`
-branch, which extrapolates from `x(ix)` by `dx(ix)/2` along the actual centre
-separation, is the fix. Neither routine is on a path this fork currently
-exercises, so this is recorded rather than repaired.
+midway between two cell centres, which the volume barycentre is not. Both
+routines still carry their upstream `stretched_dim .and. stretch_uncentered`
+branch, now permanently dead (`stretched_dim` is pinned `.false.`); the
+uncentered extrapolation it does — from `x(ix)` by `dx(ix)/2` along the actual
+centre separation — is also the fix for the barycentre offset. Neither routine
+is on a path this fork currently exercises, so this is recorded rather than
+repaired.
 
 ### Logarithmically stretched radius
 
@@ -321,7 +330,8 @@ A positive `log_r0` moves the singularity of the map from `r = 0` out to
 logarithmic for `r >> r0`. That is what lets a stretched radial grid reach
 `r = 0` at all — see "Reaching the axis with `log_r0`" below.
 
-**It needs almost none of upstream MPI-AMRVAC's stretched-grid machinery, and
+**It needed almost none of upstream MPI-AMRVAC's stretched-grid machinery
+(since removed entirely, see "General grid stretching is gone" above), and
 that is the whole design.** Take the *logical* coordinate to be `xi = ln(r)`:
 the mesh is then uniform in `xi`, so it is still exactly what
 `fill_geometry_device` assumes — an analytic function of the block's corner and

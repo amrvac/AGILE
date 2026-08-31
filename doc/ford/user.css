@@ -74,3 +74,54 @@
 [data-bs-theme="dark"] .codehilite .s1,
 [data-bs-theme="dark"] .codehilite .s2 { color: #98c379; }              /* Literal.String */
 [data-bs-theme="dark"] .codehilite .w { color: #5c6370; }               /* Text.Whitespace */
+
+/* Shared style for the hand-drawn inline-SVG figures in the narrative pages
+   (doc/coordinate_systems.md, doc/amrstructure.md). The SVG markup refers to
+   these custom properties -- each with a hardcoded light-mode fallback baked
+   into the `var(...)` call -- so the diagrams re-theme together with the rest
+   of the site; strokes and labels that should simply track the body text use
+   `currentColor` instead. Colours mirror the developer-briefing artefact the
+   first figures were taken from. */
+:root {
+    --fig-diagram:    #2B6C7C;   /* structural lines: cell/block outlines     */
+    --fig-diagram-bg: #DDEBEC;   /* light fill for a called-out region        */
+    --fig-accent:     #B0501F;   /* the one highlighted element               */
+    --fig-accent-bg:  #F2E4DA;   /* light fill behind highlighted elements    */
+    --fig-alt:        #40704E;   /* a second category (e.g. a different CPU)  */
+    --fig-drop:       #9A5350;   /* something removed / unreachable / absent  */
+    --fig-soft:       #566470;   /* secondary annotation text                 */
+    --fig-faint:      #8B98A1;   /* tertiary annotation text                  */
+    --fig-surface:    #ffffff;   /* hollow-marker / node fill                 */
+}
+[data-bs-theme="dark"] {
+    --fig-diagram:    #57A7BA;
+    --fig-diagram-bg: #1B2A2E;
+    --fig-accent:     #DB7C48;
+    --fig-accent-bg:  #33241B;
+    --fig-alt:        #6FA97E;
+    --fig-drop:       #C9807C;
+    --fig-soft:       #9BA8B1;
+    --fig-faint:      #6B7883;
+    --fig-surface:    #1A2128;
+}
+
+figure.doc-figure {
+    max-width: 660px;
+    margin: 1.6rem auto;
+}
+figure.doc-figure.wide {
+    max-width: 780px;
+}
+figure.doc-figure svg {
+    width: 100%;
+    height: auto;
+}
+/* Harmonise the caption with the surrounding body copy rather than setting a
+   separate smaller caption face. */
+figure.doc-figure figcaption {
+    font-family: inherit;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--bs-secondary-color);
+    margin-top: 0.7rem;
+}

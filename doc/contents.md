@@ -11,8 +11,9 @@ financial support.
 
 # General {: #general }
 * [Equations](equations.html) The equations and parameters in physics modules.
-* [Coordinate systems](coordinate_systems.html) Cartesian, spherical and
-  cylindrical geometries, and the geometric source terms each one adds.
+* [Coordinate systems](coordinate_systems.html) Cartesian, spherical,
+  cylindrical and logarithmic-radius geometries, the geometric source terms
+  each one adds, and the polar axis.
 * [Parameters](par.html) Description of all parameters in "amrvac.par" parameter file.
 * [Auxiliary variables](mpiamrvac_nw.html) Description of the intended use
   for _nw, nwflux, nwaux, nwextra, nwauxio_ parameters.

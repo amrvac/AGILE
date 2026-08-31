@@ -33,7 +33,13 @@ Section 2.3, which is also the citable reference for AGILE 1.0.
 | `hd`   | `LF`, `HLL`, `HLLC` |
 | `ffhd` | `LF` |
 | `mhd`  | `LF`, `HLL` |
-| `srhd` | `LF` |
+| `srhd` | `LF`, `HLL` |
+
+The scheme is set per refinement level via `flux_scheme` in `&methodlist`
+(`'tvdlf'` for `LF`, `'hll'`, `'hllc'`; `'tvdlf'` is the default). `srhd`'s
+`HLL` uses the relativistic Davis (1988) min/max signal-speed estimate in
+`estimate_speeds_minmax`; `HLLC` remains `hd`-only, as its Toro (2010) contact-wave
+construction assumes a non-relativistic, scalar-pressure state.
 
 ## Hydrodynamics: hd {: #eq_hd }
 
@@ -254,6 +260,48 @@ target expression κ_∥ b̂·∇T within at most four CFL-limited timesteps
 al. 2022, Zhou et al. 2025). A purely local user-defined heating
 prescription can be coded up by the user in H_user(**x**) (see
 `usr_source`/`usr_source_usr` in `mod_usr.fpp`).
+
+### Setting the frozen field {: #eq_ffhd_bhat }
+
+The unit vector b̂ = **B**/B is a pure function of position: it is never
+evolved and is not a boundary condition. The user supplies it by
+implementing the by-name hook `usr_set_nwextra` in `mod_usr.fpp` — a
+`pure`, `!$acc routine seq` subroutine that takes one point and returns
+the field's components there:
+
+```fortran
+pure subroutine usr_set_nwextra(x, bhat)
+  !$acc routine seq
+  double precision, intent(in)  :: x(1:ndim)   ! one cell position
+  double precision, intent(out) :: bhat(1:3)   ! b-hat there, in grid components
+
+  ! e.g. a dipole, an arcade, a potential extrapolation ...
+  bhat(1:3) = ...
+  bhat(1:3) = bhat(1:3) / sqrt(sum(bhat(1:3)**2))   ! MUST be a unit vector
+end subroutine usr_set_nwextra
+```
+
+Key points:
+
+* **Return a unit vector.** The result is written verbatim into the
+  `b1,b2,b3` slots (the `nwextra` variables), so any non-unit field will
+  simply be wrong. Normalise explicitly, as above.
+* **Use the grid's coordinate components.** In a curvilinear build `bhat`
+  is in `(r, θ, φ)` / `(r, z, φ)` components at `x`, not Cartesian. The
+  spherical/cylindrical `ffhd` test cases carry a small `to_spherical_unit`
+  / `to_cylindrical_unit` helper that rotates a constant Cartesian
+  direction into the local basis and normalises in one step.
+* **Do not set `b1,b2,b3` anywhere else.** In particular
+  `initonegrid_usr` and `usr_special_bc` must leave them alone. AGILE
+  evaluates `usr_set_nwextra` once per cell of *every* block — interior,
+  inter-block ghosts, physical-boundary ghosts and polar-axis ghosts
+  alike — from `alloc_node`, after every grid change, and nothing else
+  writes those slots.
+* **The polar axis needs no special handling.** In an axis ghost cell the
+  stored position carries the mirrored coordinate (a negative `θ` or `r`),
+  so evaluating the analytic field there reproduces on its own the sign
+  flips a vector picks up across the axis (`b_r` symmetric,
+  `b_θ`/`b_z` and `b_φ` antisymmetric).
 
 Note that FFHD re-uses the external gravity module from the hydro case
 (see [Gravity](#eq_gravity) above), but here only the effective gravity

@@ -692,7 +692,8 @@ used 'unlimit'. To retain second order accuracy, the default set is needed.
 ## meshlist {: #par_meshlist }
 ```fortran
 &meshlist
- geometry= 'Cartesian' | 'spherical' | 'cylindrical'
+ geometry= 'Cartesian' | 'spherical' | 'cylindrical' | 'logSpherical' | 'logCylindrical'
+ log_r0= DOUBLE
  refine_max_level= INTEGER
  domain_nx1= INTEGER
  domain_nx2= INTEGER
@@ -724,23 +725,30 @@ used 'unlimit'. To retain second order accuracy, the default set is needed.
  tfixgrid= DOUBLE
  itfixgrid= INTEGER
  ditregrid= INTEGER
- stretch_dim= ndim STRING values ('uni','symm','none')
- stretch_uncentered = F | T
- qstretch_baselevel= DOUBLE
- nstretchedblocks_baselevel= INTEGER
 /
 ```
 
 ### geometry {: #par_geometry }
 `geometry` selects the coordinate system: `'Cartesian'` (the default),
-`'spherical'` (r, theta, phi) or `'cylindrical'` (r, z, phi). This is a
-**compile-time** choice -- changing it and re-running `make` regenerates the
-build's `config.mk` and recompiles the finite-volume kernels for the new
-geometry, rather than switching at runtime. See [Coordinate
-systems](coordinate_systems.html) for the axis conventions, the geometric
-source terms each non-Cartesian choice adds, and its current limitations
-(no polar-axis/cylindrical-axis handling, and only the `hd`, `mhd`, `srhd`
-and `ffhd` physics modules support it).
+`'spherical'` (r, theta, phi), `'cylindrical'` (r, z, phi), or the
+logarithmic-radius variants `'logSpherical'`/`'logCylindrical'` (a radial mesh
+uniform in ln(r + `log_r0`) rather than in r). This is a **compile-time**
+choice -- changing it and re-running `make` regenerates the build's
+`config.mk` and recompiles the finite-volume kernels for the new geometry,
+rather than switching at runtime. Curvilinear support covers the `hd`, `mhd`,
+`srhd` and `ffhd` physics modules, including the polar/cylindrical axis. See
+[Coordinate systems](coordinate_systems.html) for the axis conventions, the
+geometric source terms each non-Cartesian choice adds, the logarithmic radius,
+and the current limitations.
+
+### log_r0 {: #par_log_r0 }
+`log_r0` (default `0.0`) is the offset r0 in the `logSpherical`/`logCylindrical`
+radial map ln(r + r0); it is a **runtime** parameter, not a compile-time one.
+With `log_r0 = 0` the map is the plain ln(r) and the domain cannot reach
+r = 0 (`xprobmin1 <= 0` is rejected). A positive `log_r0` makes the mesh
+uniform for r << r0 and lets a stretched radial grid touch the axis. Ignored
+for the non-log geometries. See [Logarithmically stretched
+radius](coordinate_systems.html#geom_log_radius).
 
 ### refine_max_level, max_blocks, domain_nx^D, block_nx^D, xprobmin^D, xprobmax^D {: #par_refine_max_level }
 `refine_max_level` indicates the maximum number of grid levels that can be used 
@@ -867,34 +875,20 @@ optimal for all times.The parameter `ditregrid` is introduced to reconstruct
 the whole AMR grids once every ditregrid iteration(s) instead of regridding
 once in every iteration by default.
 
-### stretch_dim, stretch_uncentered, qstretch_baselevel, nstretchedblocks_baselevel {: #par_stretched }
-We allow stretching of the grid, in combination with any coordinate system 
-(cartesian/polar/cylindrical/spherical) you choose. You activate grid stretching 
-by setting `stretch_dim(1:ndim)`, for example for the second dimension:
+### Grid stretching {: #par_stretched }
+Upstream MPI-AMRVAC's general grid stretching (`stretch_dim`,
+`qstretch_baselevel`, `nstretchedblocks_baselevel`, `stretch_uncentered`) is
+**not available in AGILE** and those `&meshlist` keys are no longer read. AGILE
+builds every cell metric analytically on the device from the block corner and a
+constant spacing, which a within-block varying spacing cannot express.
 
-```fortran
-stretch_dim(2) = 'none' | 'uni' | 'symm'
-```
-
-* 'none' means don't stretch this dimension, which is the default.
-* 'uni' means unidirectional stretching, where the grid cells change by a 
-constant factor from cell to cell. The factor for the lowest refinement level 
-can be set by setting `qstretch_baselevel=1.01` (typical values are 1.01 to 1.05 
-or so, although any number larger than 1 is possible). 
-* 'symm' means symmetric stretching, which is e.g. useful for setting up 
-periodic domain problems or so. You then specify how many blocks you want to 
-have unstretched (uniform) in the middle. E.g., you may have set up 8 blocks 
-along a dimension at level 1, and then you can ask nstretchedblocks_baselevel=2,4,6 or 8. 
-
-Stretching can be useful for the radial coordinate in polar/spherical/cylindrical, 
-or you can set the angle theta in 3D spherical to be stretched symmetrically, 
-to leverage the CFL condition.
-
-The parameter `stretch_uncentered` (default: true) controls whether
-`mod_geometry.t` routines such as `divvector()` take into account that a cell
-face is not between stretched cell-centers. However, this is not yet taken into
-account in the reconstruction and symm/asymm boundary conditions, which may lead
-to issues, which can sometimes be avoided by setting `stretch_uncentered` to false.
+The one supported non-uniform mesh is a logarithmically stretched radius,
+selected through the coordinate system itself:
+`geometry = 'logSpherical'` / `'logCylindrical'` with the optional `log_r0`
+offset (see [geometry](#par_geometry) and
+[Logarithmically stretched radius](coordinate_systems.html#geom_log_radius)).
+It is exempt precisely because it is still a uniform mesh in the logical
+coordinate `xi = ln(r + log_r0)`.
 
 ## Paramlist {: #par_paramlist }
 ```fortran
