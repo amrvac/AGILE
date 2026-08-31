@@ -39,4 +39,3 @@ visualization.
 visualisation and analysis (e.g. column densities).
 * [Analysis routine](analysis.html) Using the run-time analysis routine.
 * [3D Printing](print3D.html) A note on how to generate 3D printed results.
-* [Yt visualization](yt_usage.html) The recommended yt usage for visualization.
