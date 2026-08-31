@@ -234,13 +234,13 @@ contains
     double precision                :: wpt(1:nw), x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
-    ! !$acc loop vector on the innermost loop only, deliberately not
-    ! collapse(3): nvfortran's OpenACC miscompiles a collapsed vector loop
-    ! inside this !$acc routine vector (reached from the gang loop in
-    ! fill_boundary_before_gc / fill_boundary_after_gc) when the boundary
-    ! region is corner-shaped - a ghost slab only nghostcells wide - giving
-    ! wrong un-collapsed indices, so the ghost cells where the physical
-    ! boundary meets the polar axis come out rotated. See CLAUDE.md.
+    ! Vector on the innermost loop, deliberately not collapse(3): nvfortran's
+    ! OpenACC miscompiles a collapsed vector loop that calls another !$acc
+    ! routine in its body, reached through this !$acc routine vector from the
+    ! gang loops in fill_boundary_before_gc / fill_boundary_after_gc. It bit
+    ! the hd curvilinear pole cases via analytic_state; the fix is to drop
+    ! the collapse or inline the callee. See CLAUDE.md - very likely the
+    ! same defect as issue #154.
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           !$acc loop vector private(wpt, x_loc)

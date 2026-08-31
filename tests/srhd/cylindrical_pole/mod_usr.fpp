@@ -134,13 +134,13 @@ contains
     ! xi = rho*h*lfac^2, gamma-law enthalpy h = 1 + gamma/(gamma-1) * p0/rho0
     xi0 = (rho0 + gamma_to_gamma_1 * p0) * lfac0**2
 
-    ! !$acc loop vector on the innermost loop only, deliberately not
-    ! collapse(3): nvfortran's OpenACC miscompiles a collapsed vector loop
-    ! inside this !$acc routine vector (reached from the gang loops in
-    ! fill_boundary_before_gc / fill_boundary_after_gc) when the boundary
-    ! region is corner-shaped - a ghost slab only nghostcells wide. It then
-    ! writes past its range with wrong un-collapsed indices, rotating the
-    ! ghost cells where the physical boundary meets the polar axis. See CLAUDE.md.
+    ! Vector on the innermost loop, deliberately not collapse(3): nvfortran's
+    ! OpenACC miscompiles a collapsed vector loop that calls another !$acc
+    ! routine in its body, reached through this !$acc routine vector from the
+    ! gang loops in fill_boundary_before_gc / fill_boundary_after_gc. It bit
+    ! the hd curvilinear pole cases via analytic_state; the other physics
+    ! pole cases keep the same form. See CLAUDE.md - very likely the same
+    ! defect as issue #154.
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           !$acc loop vector private(v, x_loc)

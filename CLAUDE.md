@@ -1012,21 +1012,26 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   `OPENACC=1` (nvfortran, host) to confirm it is the OpenACC offload and not
   the front end.
 
-- **Do not put `collapse` on an `!$acc loop` inside an `!$acc routine`.**
-  nvfortran's OpenACC miscompiles the un-collapse index arithmetic for a
-  collapsed `vector` loop inside a `!$acc routine vector` (reached from a
-  gang-level `!$acc parallel loop`) when the iteration box is corner-shaped —
-  degenerate in one dimension, e.g. a radial-ghost slab only `nghostcells`
-  wide. It reads/writes the wrong cells; results drift rather than crash.
-  `collapse(2)` and `collapse(3)` are both affected; array-section vs scalar
-  reads make no difference. Put the `!$acc loop vector` on the innermost loop
-  only and leave the outer loops sequential. Collapse is fine at a top-level
-  `!$acc parallel loop`, where the trip counts are large and statically known.
-  This bit every curvilinear `*_pole` test case's `specialbound_usr` on GPU:
-  the miscompiled loop wrote wrong values into cells *outside* its intended
-  range, corrupting the ghost cells where the radial boundary meets the polar
-  axis, and the pole-case logs drifted ~0.6% on nvfortran while gfortran and
-  nvfortran-without-OpenACC stayed exact.
+- **Do not combine `collapse` on an `!$acc loop` with a `call` to an `!$acc
+  routine` in the loop body, inside an `!$acc routine`.** nvfortran's OpenACC
+  miscompiles a collapsed `vector` loop, reached from a gang-level `!$acc
+  parallel loop` through a `!$acc routine vector`, when the loop body calls
+  another `!$acc routine` — it reads/writes the wrong cells (results drift
+  rather than crash). Isolated by bisection: `collapse(3)` with the callee's
+  body *inlined* passes; `collapse(3)` with the `call` fails; a plain `!$acc
+  loop vector` on the innermost loop with the `call` passes. `collapse(2)`
+  fails too, and it is not about the iteration box being corner-shaped
+  (`collapse(3)` over a boundary-ghost slab works fine as long as there is no
+  call in the body). The fixes are to drop the `collapse` (put `!$acc loop
+  vector` on the innermost loop, outer loops sequential) or to inline the
+  callee. Collapse is fine at a top-level `!$acc parallel loop`. This bit the
+  hd curvilinear `*_pole` cases' `specialbound_usr` (which calls
+  `analytic_state`) on GPU — their logs drifted ~0.6% on nvfortran while
+  gfortran and nvfortran-without-OpenACC stayed exact; the mhd/srhd/ffhd pole
+  cases happened to survive the same pattern but were switched to the
+  `collapse`-free form too. Very likely the same defect as issue #154
+  (`to_primitive`/`to_conservative` called from a `collapse`d loop in
+  `specialbound_usr` returning nonsense).
 
 ## API documentation (FORD)
 
