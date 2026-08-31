@@ -315,12 +315,15 @@ contains
   !> analytic state, so the pole copy of it has to reproduce that state in the
   !> ghost cells to round-off. Silence means the check passed.
   !>
-  !> For the 'uniform' setup the transverse loops run over the whole block
-  !> (ixI), not just its interior mesh (ixO), so the edge and corner cells of
-  !> the pole layer are covered too - in particular where the axis meets the
-  !> radial physical boundary, filled by bc_phys rather than the pole copy.
-  !> 'blast' keeps the face-only range: near its discontinuous spot surface a
-  !> ghost cell holds a limited cell average that differs from the point value.
+  !> The transverse loops run over the whole block (ixI), not just its
+  !> interior mesh (ixO), so the edge and corner cells of the pole layer are
+  !> covered too - in particular where the axis meets the radial physical
+  !> boundary. Only the interior-transverse *face* is held to round-off; the
+  !> edge/corner cells the widening adds are always checked loose (1e-1),
+  !> because a corner cell can be filled by prolongation from a coarser
+  !> neighbour in another direction, where an O(dx^2) difference from the
+  !> point analytic value is expected. That still catches a wrong sign at the
+  !> axis (O(0.1-1)).
   !>
   !> How far it can be pushed across a *level jump* depends on the setup,
   !> because there the ghost has been restricted or prolonged on the way and
@@ -348,9 +351,9 @@ contains
     double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3,1:nw)
     ! .. local ..
-    double precision :: wpt(1:nw), x_loc(1:ndim), err, tol
+    double precision :: wpt(1:nw), x_loc(1:ndim), err, errc, tol
     integer          :: ix1, ix2, ix3, iside, i2, jxmin2, jxmax2
-    integer          :: tx1lo, tx1hi, tx3lo, tx3hi
+    logical          :: face
 
     if (it /= 0) return
 
@@ -363,15 +366,6 @@ contains
     ! process() runs before the solution is pulled back for output, so the
     ! host copy of w is stale unless we fetch this block ourselves
     !$acc update host(ps(igrid)%w)
-
-    ! 'uniform' is smooth, so check the whole ghost layer including its edges
-    ! and corners; 'blast' keeps the interior-transverse face only (see the
-    ! docstring).
-    if (is_blast) then
-       tx1lo = ixOmin1; tx1hi = ixOmax1; tx3lo = ixOmin3; tx3hi = ixOmax3
-    else
-       tx1lo = ixImin1; tx1hi = ixImax1; tx3lo = ixImin3; tx3hi = ixImax3
-    end if
 
     do iside = 1, 2
        i2 = 2*iside - 3
@@ -387,20 +381,30 @@ contains
        else
           jxmin2 = ixOmax2+1; jxmax2 = ixImax2
        end if
-       err = 0.0d0
-       do ix3 = tx3lo, tx3hi
+       ! err: the interior-transverse face, held to `tol` (round-off for a
+       ! same-level pole copy). errc: the edge/corner cells the widening
+       ! added, always checked loose - they can be filled by prolongation
+       ! from a coarser neighbour in another direction, where an O(dx^2)
+       ! difference from the point analytic value is expected, not a bug.
+       err = 0.0d0; errc = 0.0d0
+       do ix3 = ixImin3, ixImax3
           do ix2 = jxmin2, jxmax2
-             do ix1 = tx1lo, tx1hi
+             do ix1 = ixImin1, ixImax1
+                face = ix1>=ixOmin1 .and. ix1<=ixOmax1 .and. &
+                       ix3>=ixOmin3 .and. ix3<=ixOmax3
                 x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
                 call analytic_state(x_loc, wpt)
-                err = max(err, maxval(abs(w(ix1,ix2,ix3,&
-                   1:nwflux) - wpt(1:nwflux))))
+                if (face) then
+                   err  = max(err,  maxval(abs(w(ix1,ix2,ix3,1:nwflux) - wpt(1:nwflux))))
+                else
+                   errc = max(errc, maxval(abs(w(ix1,ix2,ix3,1:nwflux) - wpt(1:nwflux))))
+                end if
              end do
           end do
        end do
-       if (err > tol) then
+       if (err > tol .or. errc > 1.0d-1) then
           write(*,*) 'pole ghost cells deviate from the exact solution by',&
-             err, ' tolerance', tol
+             max(err, errc), ' tolerances', tol, 1.0d-1
           call mpistop('pole ghost-cell check failed')
        end if
     end do
