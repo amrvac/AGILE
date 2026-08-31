@@ -102,12 +102,10 @@ contains
     ! The cell metrics follow the same layout as bg%w: one allocation for all
     ! blocks with the grid index last. They are built per block on the device
     ! by fill_geometry_device, which assumes a uniform block - it derives every
-    ! metric analytically from the block's corner and spacing in rnode. A
-    ! stretched mesh breaks that assumption, and this fork has no device path
-    ! for it, so refuse it loudly rather than compute nonsense.
-    if (any(stretched_dim)) call mpistop("Grid stretching (stretch_dim) is not &
-       &supported: the cell metrics are built on the device assuming uniform &
-       &block spacing. Remove stretch_dim from &meshlist.")
+    ! metric analytically from the block's corner and spacing in rnode. The one
+    ! non-uniform radial mesh supported, LOG_RADIUS, is still uniform in the
+    ! logical coordinate xi = ln(r + log_r0), so the assumption holds; general
+    ! grid stretching was removed rather than given a device path.
     call set_geometry_index_ranges()
     call alloc_geometry(bgeo, ixGlo1,ixGlo2,ixGlo3, ixGhi1,ixGhi2,ixGhi3, &
          ixGextmin1,ixGextmin2,ixGextmin3, ixGextmax1,ixGextmax2,ixGextmax3)

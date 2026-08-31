@@ -143,29 +143,34 @@ module mod_global_parameters
   integer :: nghostcells = 2
   !$acc declare copyin(nghostcells)
 
+  ! --- Vestigial general-grid-stretching state -------------------------------
+  ! Upstream MPI-AMRVAC's qstretch/dxfirst stretched-grid machinery has been
+  ! removed: this fork builds every cell metric analytically on the device
+  ! from the block corner and a constant spacing, which general stretch_dim
+  ! stretching cannot express. The one supported non-uniform radius,
+  ! geometry='logSpherical'/'logCylindrical', is still a uniform mesh in the
+  ! logical coordinate xi = ln(r + log_r0) and needs none of this.
+  !
+  ! The variables below are kept only because a handful of code paths this
+  ! fork does not exercise (mod_slice's get_igslice, mod_particle_base's
+  ! particle-index lookup, mod_thermal_emission's line-of-sight sub-grids)
+  ! still branch on them. They are pinned to the unstretched state here and
+  ! there is no longer any way to change them: stretch_dim and friends are no
+  ! longer read from &meshlist.
   integer, parameter :: stretch_none = 0 !< No stretching
-  integer, parameter :: stretch_uni  = 1 !< Unidirectional stretching from a side
-  integer, parameter :: stretch_symm = 2 !< Symmetric stretching around the center
+  integer, parameter :: stretch_uni  = 1 !< Unidirectional stretching (unused)
+  integer, parameter :: stretch_symm = 2 !< Symmetric stretching (unused)
 
-  !> If true, adjust mod_geometry routines to account for grid stretching (but
-  !> the flux computation will not)
-  logical :: stretch_uncentered
-  !> True if a dimension is stretched
-  logical :: stretched_dim(ndim)
-  !> What kind of stretching is used per dimension
-  integer :: stretch_type(ndim)
-  !> stretch factor between cells at AMR level 1, per dimension
-  double precision ::  qstretch_baselevel(ndim)
-  !> (even) number of (symmetrically) stretched
-  !> blocks at AMR level 1, per dimension
-  integer ::  nstretchedblocks_baselevel(ndim)
-  !> (even) number of (symmetrically) stretched blocks per level and dimension
-  integer, allocatable ::  nstretchedblocks(:,:)
-  !> physical extent of stretched border in symmetric stretching
-  double precision :: xstretch1,xstretch2,xstretch3
-  !> Stretching factors and first cell size for each AMR level and dimension
-  double precision, allocatable :: qstretch(:,:), dxfirst(:,:),  dxfirst_1mq(:,&
-     :), dxmid(:,:)
+  logical :: stretch_uncentered = .false.
+  logical :: stretched_dim(ndim) = .false.
+  integer :: stretch_type(ndim) = stretch_none
+  double precision :: qstretch_baselevel(ndim) = 1.0d0
+  integer :: nstretchedblocks_baselevel(ndim) = 0
+  integer, allocatable :: nstretchedblocks(:,:)
+  double precision :: xstretch1 = 0.0d0, xstretch2 = 0.0d0, xstretch3 = 0.0d0
+  double precision, allocatable :: qstretch(:,:), dxfirst(:,:), dxfirst_1mq(:,:),&
+     dxmid(:,:)
+  ! --------------------------------------------------------------------------
 
   !> grid hierarchy info (level and grid indices)
   integer, parameter :: nodehi=3+1
