@@ -134,16 +134,15 @@ contains
     ! xi = rho*h*lfac^2, gamma-law enthalpy h = 1 + gamma/(gamma-1) * p0/rho0
     xi0 = (rho0 + gamma_to_gamma_1 * p0) * lfac0**2
 
-    ! Vector on the innermost loop, deliberately not collapse(3): nvfortran's
-    ! OpenACC miscompiles a collapsed vector loop that calls another !$acc
-    ! routine in its body, reached through this !$acc routine vector from the
-    ! gang loops in fill_boundary_before_gc / fill_boundary_after_gc. It bit
-    ! the hd curvilinear pole cases via analytic_state; the other physics
-    ! pole cases keep the same form. See CLAUDE.md - very likely the same
-    ! defect as issue #154.
+    ! collapse(3) is fine here even though the body calls uniform_velocity:
+    ! the nvfortran OpenACC miscompile that hit the hd pole cases needs BOTH a
+    ! call AND a runtime-sized private automatic array in the collapsed body
+    ! (hd's wpt(1:nw)). srhd's privates (v, x_loc) are all compile-time sized,
+    ! so there is nothing to miscompile. See CLAUDE.md ("Bug-hunting notes")
+    ! and issue #154.
+    !$acc loop collapse(3) vector private(v, x_loc)
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
-          !$acc loop vector private(v, x_loc)
           do ix1 = ixOmin1, ixOmax1
 
              x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)

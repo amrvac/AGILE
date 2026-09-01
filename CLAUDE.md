@@ -1012,24 +1012,37 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   `OPENACC=1` (nvfortran, host) to confirm it is the OpenACC offload and not
   the front end.
 
-- **Do not combine `collapse` on an `!$acc loop` with a `call` to an `!$acc
-  routine` in the loop body, inside an `!$acc routine`.** nvfortran's OpenACC
-  miscompiles a collapsed `vector` loop, reached from a gang-level `!$acc
-  parallel loop` through a `!$acc routine vector`, when the loop body calls
-  another `!$acc routine` — it reads/writes the wrong cells (results drift
-  rather than crash). Isolated by bisection: `collapse(3)` with the callee's
-  body *inlined* passes; `collapse(3)` with the `call` fails; a plain `!$acc
-  loop vector` on the innermost loop with the `call` passes. `collapse(2)`
-  fails too, and it is not about the iteration box being corner-shaped
-  (`collapse(3)` over a boundary-ghost slab works fine as long as there is no
-  call in the body). The fixes are to drop the `collapse` (put `!$acc loop
-  vector` on the innermost loop, outer loops sequential) or to inline the
-  callee. Collapse is fine at a top-level `!$acc parallel loop`. This bit the
-  hd curvilinear `*_pole` cases' `specialbound_usr` (which calls
-  `analytic_state`) on GPU — their logs drifted ~0.6% on nvfortran while
-  gfortran and nvfortran-without-OpenACC stayed exact; the mhd/srhd/ffhd pole
-  cases happened to survive the same pattern but were switched to the
-  `collapse`-free form too. Very likely the same defect as issue #154
+- **In a `collapse`d `!$acc loop` inside an `!$acc routine`, a `call` in the
+  loop body needs every one of the body's `private` automatic arrays to have
+  a compile-time size.** nvfortran's OpenACC miscompiles a collapsed `vector`
+  loop — reached from a gang-level `!$acc parallel loop` through a `!$acc
+  routine vector` — when the body both `call`s another `!$acc routine` *and*
+  declares a `private` automatic array whose size is a run-time value: it
+  gets that array's per-lane stride wrong and scatters the results into the
+  wrong cells (the ghost layer comes back index-rotated; results drift rather
+  than crash). Both conditions are needed. Remove the `call` (inline the
+  callee) *or* give every such `private` array a `parameter` bound and the
+  same `collapse(3)` is generated correctly. The reduced reproducer is on
+  branch `reproducer/issue-154` (`tests/regression/issue154/repro154.f90`);
+  its variant 4 keeps `collapse(3)` and the `call` and only changes
+  `wpt(1:nw)` to `wpt(1:nw_phys)`.
+
+  This bit every hd curvilinear `*_pole` case's `specialbound_usr`, whose
+  `wpt(1:nw)` private buffer is sized by the run-time `nw` — logs stayed put
+  but `check_pole_ghosts` failed by ~0.4 on nvfortran while gfortran and
+  nvfortran-without-OpenACC were exact. **The fix now in the tree** is
+  `wpt(1:nw_phys)` (the compile-time conserved-variable count from the
+  physics templates, `= nw` for these cases), `collapse(3)` kept. The
+  mhd/srhd pole cases call a helper too but their `private` arrays
+  (`v`, `b`, `x_loc`) are already compile-time sized, and the ffhd pole
+  cases have no `call` in the loop at all, so all six also keep
+  `collapse(3)`. Dropping the `collapse` (`!$acc loop vector` on the
+  innermost loop, outer loops sequential) also stops the corruption and was
+  the first fix shipped, but the reproducer shows it still silently reorders
+  a short vector loop that has a `call` and a run-time-sized `private` — it
+  only looked correct because the pole cases' boundary state does not vary
+  along that axis. Collapse is fine at a top-level `!$acc parallel loop`.
+  This is very likely the same defect as issue #154
   (`to_primitive`/`to_conservative` called from a `collapse`d loop in
   `specialbound_usr` returning nonsense).
 

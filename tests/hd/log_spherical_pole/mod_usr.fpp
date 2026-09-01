@@ -251,19 +251,21 @@ contains
     double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3,1:nw)
     ! .. local ..
-    double precision                :: wpt(1:nw), x_loc(1:ndim)
+    ! wpt: compile-time nw_phys, NOT the runtime nw - see the note on the loop
+    double precision                :: wpt(1:nw_phys), x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
-    ! Vector on the innermost loop, deliberately not collapse(3): nvfortran's
-    ! OpenACC miscompiles a collapsed vector loop that calls another !$acc
-    ! routine in its body, reached through this !$acc routine vector from the
-    ! gang loops in fill_boundary_before_gc / fill_boundary_after_gc. It bit
-    ! the hd curvilinear pole cases via analytic_state; the fix is to drop
-    ! the collapse or inline the callee. See CLAUDE.md - very likely the
-    ! same defect as issue #154.
+    ! nvfortran's OpenACC miscompiles a collapsed vector loop whose body has a
+    ! call AND a runtime-sized private automatic array, reached through this
+    ! !$acc routine vector from the gang loops in fill_boundary_before_gc /
+    ! fill_boundary_after_gc: it gets the array's per-lane stride wrong and the
+    ! ghost layer comes back index-rotated. Sizing wpt with the compile-time
+    ! nw_phys is the minimal fix (dropping the collapse also works but still
+    ! reorders the short vector loop). It bit the hd curvilinear pole cases via
+    ! analytic_state. See CLAUDE.md ("Bug-hunting notes") and issue #154.
+    !$acc loop collapse(3) vector private(wpt, x_loc)
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
-          !$acc loop vector private(wpt, x_loc)
           do ix1 = ixOmin1, ixOmax1
              x_loc(1:ndim) = x(ix1,ix2,ix3,1:ndim)
              call analytic_state(x_loc, wpt)

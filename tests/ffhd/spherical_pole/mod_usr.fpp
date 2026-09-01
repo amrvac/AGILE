@@ -140,16 +140,13 @@ contains
     integer                         :: ix1, ix2, ix3
 
     ! b1,b2,b3 in these ghost cells come from fill_nwextra_device
-    ! Vector on the innermost loop, deliberately not collapse(3): nvfortran's
-    ! OpenACC miscompiles a collapsed vector loop that calls another !$acc
-    ! routine in its body, reached through this !$acc routine vector from the
-    ! gang loops in fill_boundary_before_gc / fill_boundary_after_gc. It bit
-    ! the hd curvilinear pole cases via analytic_state; the other physics
-    ! pole cases keep the same form. See CLAUDE.md - very likely the same
-    ! defect as issue #154.
+    ! collapse(3) is fine here: this loop body has no call at all, just scalar
+    ! stores. The nvfortran OpenACC miscompile that hit the hd pole cases
+    ! needs a call together with a runtime-sized private automatic array in
+    ! the collapsed body. See CLAUDE.md ("Bug-hunting notes") and issue #154.
+    !$acc loop collapse(3) vector
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
-          !$acc loop vector
           do ix1 = ixOmin1, ixOmax1
              w(ix1,ix2,ix3,iw_rho)    = rho0
              w(ix1,ix2,ix3,iw_mom(1)) = rho0 * vpar0
