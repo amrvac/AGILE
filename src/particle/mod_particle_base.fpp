@@ -2114,16 +2114,13 @@ contains
     sndrqst_payload = MPI_REQUEST_NULL; rcvrqst_payload = MPI_REQUEST_NULL;
 
     ! check if and where to send each particle, destroy if necessary
-    !    !$OMP PARALLEL DO PRIVATE(ipart)
     do iipart=1,nparticles_on_mype;ipart=particles_on_mype(iipart);
 
        ! first check if the particle should be destroyed (user defined criterion)
        if (associated(usr_destroy_particle)) then
          if (usr_destroy_particle(particle(ipart))) then
-           !          !$OMP CRITICAL(destroy)
            destroy_n_particles_mype  = destroy_n_particles_mype + 1
            particle_index_to_be_destroyed(destroy_n_particles_mype) = ipart
-           !          !$OMP END CRITICAL(destroy)
            cycle
          end if
        end if
@@ -2138,11 +2135,9 @@ contains
              call apply_periodB(particle(ipart)%self,igrid_particle,&
                 ipe_particle,BC_applied)
              if (.not. BC_applied .or. igrid_particle == -1) then
-                !                !$OMP CRITICAL(destroy2)
                 destroy_n_particles_mype  = destroy_n_particles_mype + 1
                 particle_index_to_be_destroyed(destroy_n_particles_mype) = &
                    ipart
-                !                !$OMP END CRITICAL(destroy2)
                 cycle
              end if
           end if
@@ -2153,7 +2148,6 @@ contains
 
           ! if we have more than one core, is it on another cpu?
           if (npe .gt. 1 .and. particle(ipart)%ipe .ne. mype) then
-             !             !$OMP CRITICAL(send)
              send_n_particles_to_ipe(ipe_particle) = &
                 send_n_particles_to_ipe(ipe_particle) + 1
              if (send_n_particles_to_ipe(ipe_particle) .gt. &
@@ -2161,13 +2155,11 @@ contains
                 mpistop('too many particles, increase nparticles_per_cpu_hi')
              particle_index_to_be_sent_to_ipe(send_n_particles_to_ipe(&
                 ipe_particle),ipe_particle) = ipart
-             !             !$OMP END CRITICAL(send)
           end if ! ipe_particle
 
        end if ! particle_in_grid
 
     end do ! ipart
-    !    !$OMP END PARALLEL DO
 
     call destroy_particles(destroy_n_particles_mype,&
        particle_index_to_be_destroyed(1:destroy_n_particles_mype))
@@ -2322,7 +2314,6 @@ contains
     sndrqst = MPI_REQUEST_NULL; rcvrqst = MPI_REQUEST_NULL;
 
     ! check if and where to send each particle, relocate all of them (in case grid has changed)
-    !    !$OMP PARALLEL DO PRIVATE(ipart)
     do iipart=1,nparticles_on_mype;ipart=particles_on_mype(iipart);
 
        call find_particle_ipe(particle(ipart)%self%x,igrid_particle,&
@@ -2333,7 +2324,6 @@ contains
 
        ! if we have more than one core, is it on another cpu?
        if (particle(ipart)%ipe .ne. mype) then
-          !          !$OMP CRITICAL(send)
           send_n_particles_to_ipe(ipe_particle) = &
              send_n_particles_to_ipe(ipe_particle) + 1
           if (send_n_particles_to_ipe(ipe_particle) .gt. &
@@ -2341,11 +2331,9 @@ contains
              mpistop('G: too many particles increase nparticles_per_cpu_hi')
           particle_index_to_be_sent_to_ipe(send_n_particles_to_ipe(&
              ipe_particle),ipe_particle) = ipart
-          !          !$OMP END CRITICAL(send)
        end if ! ipe_particle
 
     end do ! ipart
-    !    !$OMP END PARALLEL DO
 
     ! get out when only one core:
     if (npe == 1) then

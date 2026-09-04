@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 module mod_selectgrids
 
   implicit none
@@ -50,7 +53,7 @@ contains
   
   !     Check if user wants to deactivate grids at all and return if not:
         if (userflag == -1) then
- !$acc update device(igrids_active, igrids_passive, igridstail_active, igridstail_passive)
+           ${GPU_UPDATE_DEVICE('igrids_active, igrids_passive, igridstail_active, igridstail_passive')}$
            return
         end if
   
@@ -110,7 +113,7 @@ contains
            end do
         end do
 
- !$acc update device(igrids_active, igrids_passive, igridstail_active, igridstail_passive)
+   ${GPU_UPDATE_DEVICE('igrids_active, igrids_passive, igridstail_active, igridstail_passive')}$
         
         contains
   !=============================================================================

@@ -2,6 +2,16 @@ ifdef DEBUG
 fypp_flags += -DDEBUG
 endif
 
+ifdef OPENACC
+ifdef OPENMP
+$(error OPENACC and OPENMP are mutually exclusive GPU offload backends)
+endif
+fypp_flags += -DOPENACC
+endif
+ifdef OPENMP
+fypp_flags += -DOPENMP
+endif
+
 ifeq (, $(shell which fypp))
 $(error "fypp not found. Check the readme, or pip install fypp.")
 endif

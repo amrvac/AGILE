@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 #:if PHYS == 'srhd'
 
 #:if defined('N_TRACER')
@@ -14,62 +17,62 @@
   
   !> Whether synge eos is used
   logical, public                         :: srhd_eos = .false.
-  !$acc declare copyin(srhd_eos)
+  ${GPU_DECLARE_COPYIN('srhd_eos')}$
 
   !> Index of the density (in the w array) as primitive or conserved
   integer, public                         :: rho_
   integer, public                         :: d_
-  !$acc declare create(rho_,d_)
+  ${GPU_DECLARE_CREATE('rho_,d_')}$
 
   !> Indices of the momentum density
   integer, allocatable, public            :: mom(:)
-  !$acc declare create(mom)
+  ${GPU_DECLARE_CREATE('mom')}$
 
 #:if defined('N_TRACER')
   !> Indices of the tracers
   integer, public                         :: tracer(${N_TRACER_}$)
-  !$acc declare create(tracer)
+  ${GPU_DECLARE_CREATE('tracer')}$
 #:endif
 
   !> Index of the energy density
   integer, public                         :: e_
-  !$acc declare create(e_)
+  ${GPU_DECLARE_CREATE('e_')}$
 
   !> Index of the gas pressure should equal e_
   integer, public                         :: p_
-  !$acc declare create(p_)
+  ${GPU_DECLARE_CREATE('p_')}$
 
   !> Index of the Lorentz factor
   integer, public     :: lfac_
-  !$acc declare create(lfac_)
+  ${GPU_DECLARE_CREATE('lfac_')}$
 
   !> Index of the inertia
   integer, public     :: xi_
-  !$acc declare create(xi_)
+  ${GPU_DECLARE_CREATE('xi_')}$
 
   !> Number of tracer species
   integer, public                         :: srhd_n_tracer = 0
-  !$acc declare copyin(srhd_n_tracer)
+  ${GPU_DECLARE_COPYIN('srhd_n_tracer')}$
 
   !> The adiabatic index
   double precision, public                :: srhd_gamma = 5.d0/3.0d0
-  !$acc declare copyin(srhd_gamma)
+  ${GPU_DECLARE_COPYIN('srhd_gamma')}$
 
   !> derived values from adiabatic index 
   double precision, public                :: gamma_1,inv_gamma_1,gamma_to_gamma_1
-  !$acc declare copyin(gamma_1,inv_gamma_1,gamma_to_gamma_1)
+  ${GPU_DECLARE_COPYIN('gamma_1,inv_gamma_1,gamma_to_gamma_1')}$
 
   !> Helium abundance over Hydrogen
   double precision, public  :: He_abundance=0.1d0
-  !$acc declare copyin(He_abundance)
+  ${GPU_DECLARE_COPYIN('He_abundance')}$
 
   !> Whether particles module is added
   logical, public                         :: srhd_particles = .false.
-  !$acc declare copyin(srhd_particles)
+  ${GPU_DECLARE_COPYIN('srhd_particles')}$
 
   !> switch for source user
   logical, public                         :: srhd_source_usr = .false.
-  !$acc declare copyin(srhd_source_usr)
+  ${GPU_DECLARE_COPYIN('srhd_source_usr')}$
 
 #:enddef
 
@@ -89,11 +92,7 @@
 111    close(unitpar)
     end do
 
-#ifdef _OPENACC
-    !$acc update device(srhd_eos, &
-    !$acc&     srhd_gamma, srhd_n_tracer, &
-    !$acc&     He_abundance, srhd_source_usr)
-#endif
+    ${GPU_UPDATE_DEVICE('srhd_eos, srhd_gamma, srhd_n_tracer, He_abundance, srhd_source_usr')}$
 
   end subroutine read_params
 #:enddef
@@ -122,7 +121,7 @@
     unit_time=unit_length/unit_velocity
     unit_mass=unit_density*unit_length**3
 
-    !$acc update device(unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass)
+    ${GPU_UPDATE_DEVICE('unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass')}$
   end subroutine phys_units
 #:enddef
   
@@ -142,7 +141,7 @@
     gamma_1=srhd_gamma-1.0d0
     inv_gamma_1=1.0d0/gamma_1
     gamma_to_gamma_1=srhd_gamma/gamma_1
-    !$acc update device(gamma_1,inv_gamma_1,gamma_to_gamma_1)
+    ${GPU_UPDATE_DEVICE('gamma_1,inv_gamma_1,gamma_to_gamma_1')}$
 
     phys_internal_e=.false.
     phys_partial_ionization=.false.
@@ -151,41 +150,41 @@
     ! Whether diagonal ghost cells are required for the physics
     phys_req_diagonal = .false.
 
- !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,phys_req_diagonal)
+    ${GPU_UPDATE_DEVICE('physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,phys_req_diagonal')}$
 
     use_particles = srhd_particles
 
     ! Determine flux variables
     rho_ = var_set_rho()
     d_=rho_
-    !$acc update device(rho_,d_)
+    ${GPU_UPDATE_DEVICE('rho_,d_')}$
 
     allocate(mom(ndir))
     mom(:) = var_set_momentum(ndir)
-    !$acc update device(mom)
+    ${GPU_UPDATE_DEVICE('mom')}$
 
     ! Set index of energy variable
     e_ = var_set_energy()
     p_ = e_
-    !$acc update device(e_,p_)
+    ${GPU_UPDATE_DEVICE('e_,p_')}$
 
     ! Register tracer fields
 #:if defined('N_TRACER')
     #:for i in range(1, N_TRACER_+1)
         tracer(${i}$) = var_set_fluxvar("trc", "trp", ${i}$, need_bc=.false.)
     #:endfor
-    !$acc update device(tracer)
+    ${GPU_UPDATE_DEVICE('tracer')}$
 #:endif
 
     ! Set index for auxiliary variables
     ! MUST be after the possible tracers (which have fluxes)
     xi_  = var_set_auxvar('xi','xi')
     lfac_= var_set_auxvar('lfac','lfac')
-    !$acc update device(xi_,lfac_)
+    ${GPU_UPDATE_DEVICE('xi_,lfac_')}$
 
     ! set number of variables which need update ghostcells
     nwgc=nwflux+nwaux
-    !$acc update device(nwgc)
+    ${GPU_UPDATE_DEVICE('nwgc')}$
 
     ! Define custom flux types:
     if (.not. allocated(flux_type)) then
@@ -194,7 +193,7 @@
     else if (any(shape(flux_type) /= [ndir, nw_flux])) then
        call mpistop("phys_check error: flux_type has wrong shape")
     end if
-    !$acc update device(flux_type)
+    ${GPU_UPDATE_DEVICE('flux_type')}$
 
 ! use cycle, needs to be dealt with:    
 !    ! Initialize particles module
@@ -208,7 +207,7 @@
 
 #:def phys_get_dt()
   subroutine phys_get_dt(w, x, dx, dtnew)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
     real(dp), intent(out)  :: dtnew
 
@@ -224,10 +223,10 @@
 #:def addsource_local()
 subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
     qsourcesplit)
-  !$acc routine seq
 #:if defined('SOURCE_USR')
   use mod_usr, only: addsource_usr
 #:endif
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCT(nw_phys), wCTprim(nw_phys)
@@ -256,8 +255,8 @@ end subroutine addsource_local
 
 #:def to_primitive()
   pure subroutine to_primitive(u)
-    !$acc routine seq
     use mod_con2prim
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
 
     real(dp) :: rho,rhoh,pth,E
@@ -295,7 +294,7 @@ end subroutine addsource_local
 
 #:def to_conservative()  
   pure subroutine to_conservative(u)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
 
     real(dp) :: rho,rhoh,pth
@@ -333,7 +332,7 @@ end subroutine addsource_local
 #:def get_flux()
   subroutine get_flux(u, xC, flux_dim, flux)
     use mod_global_parameters, only:cmax_global
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys)
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim
@@ -372,7 +371,7 @@ end subroutine addsource_local
 !> Returns maximum local signal speed from primitive state u in direction flux_dim;
 !> used in LLF/TVDLF flux estimation.
 pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: u(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
   integer, intent(in)   :: flux_dim
@@ -421,7 +420,7 @@ end function get_cmax
 
 #:def get_rho()
   pure real(dp) function get_rho(w, x) result(rho)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: w(nw_phys)
     real(dp), intent(in)  :: x(1:ndim)
 
@@ -431,7 +430,7 @@ end function get_cmax
 
 #:def get_pthermal()
 pure real(dp) function get_pthermal(w, x) result(pth)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: w(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
 
@@ -441,7 +440,7 @@ end function get_pthermal
 
 #:def get_Rfactor()
 pure real(dp) function get_Rfactor() result(Rfactor)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
 
     ! TODO: only for local rad loss
 end function get_Rfactor
@@ -450,7 +449,7 @@ end function get_Rfactor
 #:def estimate_speeds_minmax()
 !> used in HLL flux estimation.
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim

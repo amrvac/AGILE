@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 module mod_comm_lib
 
   implicit none
@@ -26,7 +29,7 @@ contains
     ! Store the number of processes
     call MPI_COMM_SIZE(MPI_COMM_WORLD,npe,ierrmpi)
 
-    !$acc update device(mype,npe)
+    ${GPU_UPDATE_DEVICE('mype,npe')}$
 
     ! Use the default communicator, which contains all the processes
     icomm = MPI_COMM_WORLD
@@ -226,17 +229,17 @@ contains
   !> Exit MPI-AMRVAC with an error message
   ! cray does not allow char type on the GPU
   subroutine mpistop(message)
-#ifndef _CRAYFTN
-    !$acc routine
-#endif
     use mod_global_parameters
+#ifndef _CRAYFTN
+    ${GPU_ROUTINE()}$
+#endif
 
     character(len=*), intent(in) :: message !< The error message
     integer                      :: ierrcode
 
     write(*, *) "ERROR for processor", mype, ":"
 
-#ifdef _OPENACC
+#if defined(_OPENACC) || defined(_OPENMP)
     write(*, *) message
     STOP
 #else
@@ -247,8 +250,8 @@ contains
   end subroutine mpistop
 
   subroutine mpistop_gpu()
-    !$acc routine seq
     use mod_global_parameters
+    ${GPU_ROUTINE_SEQ()}$
 
     integer                      :: ierrcode
 

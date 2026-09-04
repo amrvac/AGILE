@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 module mod_errest
   use mod_comm_lib, only: mpistop
   implicit none
@@ -21,7 +24,7 @@ contains
        ! all refinement solely based on user routine usr_refine_grid
     case (3)
        ! Error estimation is based on Lohner's scheme
-       !$acc parallel loop gang private(igrid)
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
        do iigrid=1,igridstail; igrid=igrids(iigrid);
           call lohner_grid(igrid)
        end do
@@ -30,20 +33,20 @@ contains
     end select
 
     if ( refine_usr ) then
-       !$acc parallel loop gang private(igrid)
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
        do iigrid=1,igridstail; igrid=igrids(iigrid);
           call forcedrefine_grid(igrid)
        end do
     end if
 
-    !$acc update host(refine, coarsen)
+    ${GPU_UPDATE_HOST("refine, coarsen")}$
 
   end subroutine errest
 
   subroutine lohner_grid(igrid)
-    !$acc routine vector
     use mod_forest, only: coarsen, refine
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
 
     integer, intent(in) :: igrid
 
@@ -55,25 +58,21 @@ contains
 
       level       = node(plevel_,igrid)
       threshold   = refine_threshold(level)
-
       refineflag  = .false.
       coarsenflag = .true.
-      !$acc loop vector collapse(3) reduction(.or.:refineflag) reduction(.and.:coarsenflag)
+      ${GPU_LOOP_VECTOR("collapse(3) reduction(.or.:refineflag) reduction(.and.:coarsenflag) private(error,numerator,denominator)")}$
       do ix3 = ixMlo3, ixMhi3
          do ix2 = ixMlo2, ixMhi2
             do ix1 = ixMlo1, ixMhi1
-
                error = zero
-               !$acc loop seq reduction(+:error)
+               ${GPU_LOOP_SEQ()}$
                do iflag = 1, nw
                   if(w_refine_weight(iflag)==0.d0) cycle
-
                   numerator   = zero
                   denominator = zero
-                  !$acc loop seq reduction(+:numerator, denominator)
+                  ${GPU_LOOP_SEQ()}$
                   do idims1 = 1, ndim
                      do idims2 = 1, ndim
-
                         numerator = numerator + &
                              ( &
                              ( bg(1)%w(ix1+kr(1,idims2)+kr(1,idims1), &
@@ -90,7 +89,6 @@ contains
                              ix2-kr(2,idims2)-kr(2,idims1), &
                              ix3-kr(3,idims2)-kr(3,idims1), iflag, igrid) )  &
                              )**2
-
                         denominator = denominator + &
                              ( &
                              abs( &
@@ -118,34 +116,28 @@ contains
                              )**2
                      end do
                   end do
-
                   error = error + w_refine_weight(iflag) * sqrt( numerator / max( denominator, epsilon ) )
-
                end do
-
                if (error > threshold) then
                   refineflag = .true.
                end if
                if (error > derefine_ratio(level) * threshold) then
                   coarsenflag = .false.
                end if
-
             end do
          end do
       end do
-
       if (refineflag .and. level < refine_max_level) refine(igrid,mype)=.true.
       if (coarsenflag .and. level > 1) coarsen(igrid,mype)=.true.
-
   end subroutine lohner_grid
 
   subroutine forcedrefine_grid(igrid)
-    !$acc routine vector
     #:if defined('REFINE_USR')
     use mod_usr, only: usr_refine_grid
     #:endif
     use mod_forest, only: coarsen, refine, buffer
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
 
     integer, intent(in) :: igrid
 

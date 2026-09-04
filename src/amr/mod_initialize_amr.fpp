@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 module mod_initialize_amr
 
   implicit none
@@ -69,7 +72,7 @@ contains
               ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,ps(igrid)%x)
       end if
       
-      !$acc update device(bg(1)%w(:,:,:,:,igrid))
+      ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
     end subroutine initial_condition
 
     !> modify initial condition
@@ -92,7 +95,7 @@ contains
              ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,&
              ps(igrid)%x)
        end if
-       !$acc update device(bg(1)%w(:,:,:,:,igrid))
+       ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
     end do
   
   end subroutine modify_IC

@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 module mod_refine
 
   implicit none
@@ -136,7 +139,7 @@ contains
     ixCgmin1=ixComin1;ixCgmin2=ixComin2;ixCgmin3=ixComin3;ixCgmax1=ixComax1
     ixCgmax2=ixComax2;ixCgmax3=ixComax3;
 
-    !$acc parallel loop collapse(3) private(slope)
+    ${GPU_PARALLEL_LOOP("collapse(3) private(slope)")}$
     do ixCo3 = ixCgmin3,ixCgmax3
        do ixCo2 = ixCgmin2,ixCgmax2
           do ixCo1 = ixCgmin1,ixCgmax1
@@ -251,7 +254,7 @@ contains
     integer :: ixCo1,ixCo2,ixCo3, ixFi1,ixFi2,ixFi3, iw
     integer :: ixFimin1,ixFimin2,ixFimin3,ixFimax1,ixFimax2,ixFimax3
 
-    !$acc parallel loop collapse(3)
+    ${GPU_PARALLEL_LOOP("collapse(3)")}$
     do ixCo3 = ixComin3,ixComax3
        do ixCo2 = ixComin2,ixComax2
           do ixCo1 = ixComin1,ixComax1

@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 module mod_physicaldata
   implicit none
 
@@ -113,11 +116,11 @@ module mod_physicaldata
   type(state), dimension(:), allocatable, target :: ps4
   !> array of physical blocks, one level coarser representative
   type(state), dimension(:), allocatable, target :: psc
-  !$acc declare create(ps, ps1, ps2, ps3, ps4, psc)
+  ${GPU_DECLARE_CREATE('ps, ps1, ps2, ps3, ps4, psc')}$
 
   !> one block grid to rule them all
   type(block_grid_t), dimension(:), allocatable, target   :: bg, bgc
-  !$acc declare create(bg, bgc)
+  ${GPU_DECLARE_CREATE('bg, bgc')}$
 
   !> array of physical blocks in reduced dimension
   type(state_sub), dimension(:), allocatable, target :: ps_sub

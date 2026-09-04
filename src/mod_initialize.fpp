@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 !> This module handles the initialization of various components of amrvac
 module mod_initialize
   use mod_comm_lib, only: mpistop
@@ -64,7 +67,7 @@ contains
     allocate(ps4(max_blocks))
     
     allocate(psc(max_blocks))
-    !$acc enter data copyin(ps,ps1,ps2,ps3,ps4,psc)
+    ${GPU_ENTER_DATA_COPYIN('ps,ps1,ps2,ps3,ps4,psc')}$
     
     allocate(ps_sub(max_blocks+1)) ! since we reserve one for communication
     allocate(neighbor(2,-1:1,-1:1,-1:1,max_blocks),neighbor_child(2,0:3,0:3,&
@@ -80,13 +83,13 @@ contains
     allocate(pflux(2,3,max_blocks))
 
     allocate( bg(1:nstep) )
-    !$acc enter data copyin(bg)
+    ${GPU_ENTER_DATA_COPYIN('bg')}$
     do istep = 1 , nstep
        bg(istep)%istep = istep
        allocate( bg(istep)%w(ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3, 1:nw,&
             1:max_blocks) )
-       !$acc update device(bg(istep))
-       !$acc enter data copyin( bg(istep)%w )
+       ${GPU_UPDATE_DEVICE('bg(istep)')}$
+       ${GPU_ENTER_DATA_COPYIN('bg(istep)%w')}$
     end do
     allocate( bgc(1) )
     ixCoGmin1=1;ixCoGmin2=1;ixCoGmin3=1;
@@ -96,8 +99,8 @@ contains
 
     allocate ( bgc(1)%w(ixCoGmin1:ixCoGmax1, ixCoGmin2:ixCoGmax2, &
     ixCoGmin3:ixCoGmax3, 1:nw, 1:max_blocks) )
-     !$acc update device( bgc(1) )
-     !$acc enter data copyin( bgc(1)%w ) 
+     ${GPU_UPDATE_DEVICE('bgc(1)')}$
+     ${GPU_ENTER_DATA_COPYIN('bgc(1)%w')}$
 
     do igrid = 1, max_blocks
        ps(igrid)%igrid  = igrid; ps(igrid)%istep  = 1
@@ -130,7 +133,7 @@ contains
     ixMlo1=ixGlo1+nghostcells;ixMlo2=ixGlo2+nghostcells
     ixMlo3=ixGlo3+nghostcells;ixMhi1=ixGhi1-nghostcells
     ixMhi2=ixGhi2-nghostcells;ixMhi3=ixGhi3-nghostcells;
-    !$acc update device(ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3)
+    ${GPU_UPDATE_DEVICE('ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3')}$
 
     if (nbufferx1>(ixMhi1-ixMlo1+1).or.nbufferx2>(ixMhi2-ixMlo2+&
        1).or.nbufferx3>(ixMhi3-ixMlo3+1)) then
@@ -248,7 +251,7 @@ contains
     end if
     allocate(igrid_inuse(max_blocks,0:npe-1))
     igrid_inuse=.false.
-    !$acc update device(coarsen, refine, buffer, igrid_inuse)
+    ${GPU_UPDATE_DEVICE('coarsen, refine, buffer, igrid_inuse')}$
 
     allocate(tree_root(1:ng1(1),1:ng2(1),1:ng3(1)))
     do ig3=1,ng3(1)

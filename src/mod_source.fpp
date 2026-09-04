@@ -1,6 +1,7 @@
 !> Module for handling split source terms (split from the fluxes)
 
 #:mute
+#:include "mod_gpu_directives.fpp"
 #:include "physics/mod_physics_templates.fpp"
 #:endmute
 
@@ -17,7 +18,7 @@ module mod_source
   !> @ref discretization.md
   !> defaulting to sfs
   integer :: sourcesplit = 0
-  !$acc declare copyin(sourcesplit)
+  ${GPU_DECLARE_COPYIN('sourcesplit')}$
   integer, parameter :: sourcesplit_sfs    = 0
   integer, parameter :: sourcesplit_sf     = 1
   integer, parameter :: sourcesplit_ssf    = 2
@@ -68,12 +69,12 @@ contains
 
       select case (sourcesplit)
       case (sourcesplit_sfs)
-         !$acc parallel loop gang private(n, dr) default(present)
+         ${GPU_PARALLEL_LOOP_GANG("private(n, dr)")}$ ${GPU_DEFAULT_PRESENT()}$
          do iigrid=1,igridstail_active
             n = igrids_active(iigrid)            
             dr  = rnode(rpdx1_:rnodehi, n)
             
-            !$acc loop collapse(ndim) vector private(xloc, wprim, wnew, wCT)
+            ${GPU_LOOP_VECTOR("collapse(ndim) private(xloc, wprim, wnew, wCT)")}$
             do ix3=ixOmin3,ixOmax3 
                do ix2=ixOmin2,ixOmax2 
                   do ix1=ixOmin1,ixOmax1

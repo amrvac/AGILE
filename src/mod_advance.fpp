@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 !> Module containing all the time stepping schemes
 module mod_advance
 
@@ -72,10 +75,9 @@ contains
     fix_conserve_at_step = time_advance .and. levmax>levmin
     
     ! copy w instead of wold because of potential use of dimsplit or sourcesplit
-    !$OMP PARALLEL DO PRIVATE(igrid)
-    !$acc parallel loop present(bg, bg(1), bg(2)) private(igrid)
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_PRESENT('bg, bg(1), bg(2)')}$
     do iigrid=1,igridstail; igrid=igrids(iigrid);
-       !$acc loop collapse(ndim+1)
+       ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
        do iw = 1, nw
           do ix3 = ixGlo3, ixGhi3 
              do ix2 = ixGlo2, ixGhi2 
@@ -86,13 +88,11 @@ contains
           end do
        end do
     end do
-    !$OMP END PARALLEL DO
     
     if(stagger_grid) then
-       !$OMP PARALLEL DO PRIVATE(igrid)
-       !$acc parallel loop present(ps1, ps) private(igrid)
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_PRESENT('ps1, ps')}$
        do iigrid=1,igridstail; igrid=igrids(iigrid);
-          !$acc loop collapse(ndim+1)
+          ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
           do iw = 1, nws
              do ix3 = ps(igrid)%ixGsmin3, ps(igrid)%ixGsmax3 
                 do ix2 = ps(igrid)%ixGsmin2, ps(igrid)%ixGsmax2 
@@ -104,7 +104,6 @@ contains
           end do
        end do
     end if
-    !$OMP END PARALLEL DO
 
  istep = 0
 
@@ -119,10 +118,9 @@ contains
           call advect1(flux_method,rk_beta11, idimmin,idimmax,global_time,ps,&
                bg(1),global_time,ps1,bg(2))
 
-          !$OMP PARALLEL DO PRIVATE(igrid)
-          !$acc parallel loop present(bg, ps2, ps1, ps) private(igrid)
+          ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_PRESENT('bg, ps2, ps1, ps')}$
           do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
-             !$acc loop collapse(ndim+1)
+             ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
              do iw = 1, nw
                 do ix3 = ixGlo3, ixGhi3 
                    do ix2 = ixGlo2, ixGhi2 
@@ -136,16 +134,14 @@ contains
              if(stagger_grid) ps2(igrid)%ws=rk_alfa21*ps(igrid)%ws+&
                   rk_alfa22*ps1(igrid)%ws
           end do
-          !$OMP END PARALLEL DO
 
           call advect1(flux_method,rk_beta22, idimmin,idimmax,&
                global_time+rk_c2*dt,ps1,bg(2),global_time+rk_alfa22*rk_c2*dt,ps2,&
                bg(3))
 
-          !$OMP PARALLEL DO PRIVATE(igrid)
-          !$acc parallel loop present(bg, ps2, ps) private(igrid)
+          ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_PRESENT('bg, ps2, ps')}$
           do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
-             !$acc loop collapse(ndim+1)
+             ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
              do iw = 1, nw
                 do ix3 = ixGlo3, ixGhi3 
                    do ix2 = ixGlo2, ixGhi2 
@@ -159,7 +155,6 @@ contains
              if(stagger_grid) ps(igrid)%ws=rk_alfa31*ps(igrid)%ws+&
                   rk_alfa33*ps2(igrid)%ws
           end do
-          !$OMP END PARALLEL DO
 
           call advect1(flux_method,rk_beta33, idimmin,idimmax,&
                global_time+rk_c3*dt,ps2,bg(3),global_time+(1.0d0-rk_beta33)*dt,&
@@ -237,14 +232,6 @@ contains
     double precision, intent(in) :: qtC
     double precision, intent(in) :: qt
     integer, intent(in)          :: method(nlevelshi)
-
-    ! cell face flux
-    double precision             :: fC(ixGlo1:ixGhi1,ixGlo2:ixGhi2,&
-       ixGlo3:ixGhi3,1:nwflux,1:ndim)
-    ! cell edge flux
-    double precision             :: fE(ixGlo1:ixGhi1,ixGlo2:ixGhi2,&
-       ixGlo3:ixGhi3,sdim:3)
-    !$acc declare create(fC,fE)
     double precision             :: qdt
     integer                      :: iigrid, igrid
 
@@ -272,8 +259,7 @@ contains
         qtC, &                          ! scalar related to time stepping
         bga, &                          ! first block grid
         qt,  &                          ! scalar related to time stepping
-        bgb, &                          ! second block grid
-        fC, fE &                        ! fluxes
+        bgb  &                          ! second block grid
         )
 
     ! AGILE: todo
@@ -284,19 +270,17 @@ contains
     !   if(stagger_grid) then
     !     call fix_edges(psb,idimmin,idimmax)
     !     ! fill the cell-center values from the updated staggered variables
-    !     !$OMP PARALLEL DO PRIVATE(igrid)
     !     do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
     !       call phys_face_to_center(ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,&
     !          psb(igrid))
     !     end do
-    !     !$OMP END PARALLEL DO
     !   end if
     ! end if
 
     
     ! For all grids: fill ghost cells
     call getbc(qt+qdt,qdt,psb,iwstart,nwgc,phys_req_diagonal)
-    
+
   end subroutine advect1
 
   !> process is a user entry in time loop, before output and advance
@@ -318,7 +302,6 @@ contains
     end if
 
     if (associated(usr_process_grid)) then
-      !$OMP PARALLEL DO PRIVATE(igrid)
       do iigrid=1,igridstail; igrid=igrids(iigrid);
          ! next few lines ensure correct usage of routines like divvector etc
          dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
@@ -328,7 +311,6 @@ contains
             ixGhi1,ixGhi2,ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3, qt,&
             ps(igrid)%w,ps(igrid)%x)
       end do
-      !$OMP END PARALLEL DO
       call getbc(qt,dt,ps,iwstart,nwgc,phys_req_diagonal)
     end if
   end subroutine process
@@ -353,7 +335,6 @@ contains
     end if
 
     if (associated(usr_process_adv_grid)) then
-      !$OMP PARALLEL DO PRIVATE(igrid)
       do iigrid=1,igridstail; igrid=igrids(iigrid);
          ! next few lines ensure correct usage of routines like divvector etc
          dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
@@ -364,7 +345,6 @@ contains
             ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,&
             ixMhi3, qt,ps(igrid)%w,ps(igrid)%x)
       end do
-      !$OMP END PARALLEL DO
       call getbc(qt,dt,ps,iwstart,nwgc,phys_req_diagonal)
     end if
   end subroutine process_advanced

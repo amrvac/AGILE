@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
   use mod_amrvac
   use mod_physics
@@ -108,7 +112,7 @@ contains
 
   !> analytical fomula for the unit vectors along B
   pure real(dp) function bfield(x, idim) result(field)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)    :: x(1:ndim)
     integer, value, intent(in)     :: idim
 

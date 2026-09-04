@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 module mod_coarsen
   use mod_global_parameters
   use mod_physics
@@ -36,9 +39,9 @@ contains
 
     if(slab_uniform) then
        CoFiratio=one/dble(2**ndim)
-       !$acc parallel loop gang
+       ${GPU_PARALLEL_LOOP_GANG()}$
        do iw=1,nw
-          !$acc loop collapse(3) vector
+          ${GPU_LOOP_VECTOR("collapse(3)")}$
           do ixCo3 = ixComin3,ixComax3
              do ixCo2 = ixComin2,ixComax2
                 do ixCo1 = ixComin1,ixComax1
@@ -52,9 +55,9 @@ contains
           end do
       end do
     else
-       !$acc parallel loop gang
+       ${GPU_PARALLEL_LOOP_GANG()}$
        do iw=1,nw
-          !$acc loop collapse(3) vector
+          ${GPU_LOOP_VECTOR("collapse(3)")}$
           do ixCo3 = ixComin3,ixComax3
              do ixCo2 = ixComin2,ixComax2
                 do ixCo1 = ixComin1,ixComax1

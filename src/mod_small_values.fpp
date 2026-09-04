@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 !> Module for handling problematic values in simulations, such as negative
 !> pressures
 module mod_small_values
@@ -7,19 +10,19 @@ module mod_small_values
 
   !> How to handle small values
   character(len=20), public :: small_values_method = "error"
-  !$acc declare copyin(small_values_method)
+  ${GPU_DECLARE_COPYIN('small_values_method')}$
 
   !> Average over this many cells in each direction
   integer, public :: small_values_daverage = 1
-  !$acc declare copyin(small_values_daverage)
+  ${GPU_DECLARE_COPYIN('small_values_daverage')}$
 
   !> trace small values in the source file using traceback flag of compiler
   logical, public :: trace_small_values=.false.
-  !$acc declare copyin(trace_small_values)
+  ${GPU_DECLARE_COPYIN('trace_small_values')}$
 
   !> Whether to apply small value fixes to certain variables
   logical, public, allocatable :: small_values_fix_iw(:)
-  !$acc declare create(small_values_fix_iw)
+  ${GPU_DECLARE_CREATE('small_values_fix_iw')}$
 
   public :: small_values_error
   public :: small_values_average
@@ -29,8 +32,8 @@ contains
 #if defined(_CRAYFTN) && defined(_OPENACC)
   subroutine small_values_error_gpu(wprim, x, ixImin1,ixImin2,ixImin3,ixImax1,&
      ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, w_flag)
-    !$acc routine seq
     use mod_global_parameters
+    ${GPU_ROUTINE_SEQ()}$
     integer, intent(in)          :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     double precision, intent(in) :: wprim(ixImin1:ixImax1,ixImin2:ixImax2,&
@@ -48,7 +51,7 @@ contains
           do ix1= ixOmin1,ixOmax1
           if(w_flag(ix1,ix2,ix3,iw)) then
 !FIXME:
-#ifndef _OPENACC
+#if !defined(_OPENACC) && !defined(_OPENMP)
             write(*,*) "Error: small value of ", trim(prim_wnames(iw)),&
                wprim(ix1,ix2,ix3,iw)," encountered"
             write(*,*) "Iteration: ", it, " Time: ", global_time,&
@@ -77,10 +80,10 @@ contains
   subroutine small_values_error(wprim, x, ixImin1,ixImin2,ixImin3,ixImax1,&
      ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, w_flag,&
       subname)
-#ifndef _CRAYFTN
-    !$acc routine
-#endif
     use mod_global_parameters
+#ifndef _CRAYFTN
+    ${GPU_ROUTINE()}$
+#endif
     integer, intent(in)          :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     double precision, intent(in) :: wprim(ixImin1:ixImax1,ixImin2:ixImax2,&
@@ -99,7 +102,7 @@ contains
           do ix1= ixOmin1,ixOmax1
           if(w_flag(ix1,ix2,ix3,iw)) then
 !FIXME:
-#ifndef _OPENACC
+#if !defined(_OPENACC) && !defined(_OPENMP)
             write(*,*) "Error: small value of ", trim(prim_wnames(iw)),&
                wprim(ix1,ix2,ix3,iw)," encountered when call ", subname
             write(*,*) "Iteration: ", it, " Time: ", global_time,&
@@ -127,8 +130,8 @@ contains
   subroutine small_values_average(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
      ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, w, x, w_flag,&
       windex)
-    !$acc routine seq
     use mod_global_parameters
+    ${GPU_ROUTINE_SEQ()}$
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     logical, intent(in)             :: w_flag(ixImin1:ixImax1,ixImin2:ixImax2,&
@@ -185,7 +188,7 @@ contains
             end if
          else
 !FIXME:            
-#ifndef _OPENACC
+#if !defined(_OPENACC) && !defined(_OPENMP)
             write(*,*) "no cells without error were found in cube of size",&
                 small_values_daverage
             write(*,*) "at location:", x(ix1,ix2,ix3, 1:ndim)

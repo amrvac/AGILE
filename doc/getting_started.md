@@ -31,10 +31,15 @@ title: Getting started
         module load 2023
         module load OpenMPI/4.1.5-NVHPC-24.5-CUDA-12.1.1
 
-* Compile with `nvfortran` and OpenACC activated via
+* Compile with `nvfortran` and the OpenACC GPU backend activated via
 
         make arch=nvidia OPENACC=1
 
+  or the OpenMP target-offload backend via
+
+        make arch=nvidia OPENMP=1
+
+  (`OPENACC` and `OPENMP` are mutually exclusive GPU offload backends).
   For a plain CPU build (`gfortran`/OpenMPI, no GPU toolchain required),
   use `make arch=gnu` instead.
 

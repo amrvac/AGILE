@@ -1,5 +1,8 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 #:if PHYS == 'hd'
- 
+
 #:if defined('N_TRACER')
 #:set N_TRACER_ = N_TRACER
 #:else
@@ -14,67 +17,67 @@
 
   !> Whether an energy equation is used
   logical, public                         :: hd_energy = .true.
-  !$acc declare copyin(hd_energy)
+  ${GPU_DECLARE_COPYIN('hd_energy')}$
 
   !> Index of the density (in the w array)
   integer, public                         :: rho_
-  !$acc declare create(rho_)
+  ${GPU_DECLARE_CREATE('rho_')}$
 
   !> Indices of the momentum density
   integer, allocatable, public            :: mom(:)
-  !$acc declare create(mom)
+  ${GPU_DECLARE_CREATE('mom')}$
 
 #:if defined('N_TRACER')
   !> Indices of the tracers
   integer, public                         :: tracer(${N_TRACER_}$)
-  !$acc declare create(tracer)
+  ${GPU_DECLARE_CREATE('tracer')}$
 #:endif
 
   !> Index of the energy density (-1 if not present)
   integer, public                         :: e_
-  !$acc declare create(e_)
+  ${GPU_DECLARE_CREATE('e_')}$
 
   !> Index of the gas pressure (-1 if not present) should equal e_
   integer, public                         :: p_
-  !$acc declare create(p_)
+  ${GPU_DECLARE_CREATE('p_')}$
 
   !> The adiabatic index
   double precision, public                :: hd_gamma = 5.d0/3.0d0
   double precision, public                :: gamma_1, inv_gamma_1
-  !$acc declare copyin(hd_gamma)
-  !$acc declare create(gamma_1, inv_gamma_1)
+  ${GPU_DECLARE_COPYIN('hd_gamma')}$
+  ${GPU_DECLARE_CREATE('gamma_1, inv_gamma_1')}$
 
   !> The adiabatic constant
   double precision, public                :: hd_adiab = 1.0d0
-  !$acc declare copyin(hd_adiab)
+  ${GPU_DECLARE_COPYIN('hd_adiab')}$
 
   !> The helium abundance
   double precision, public                :: He_abundance=0.1d0
-  !$acc declare copyin(He_abundance)
+  ${GPU_DECLARE_COPYIN('He_abundance')}$
 
   !> Number of tracer species
   integer, public                         :: hd_n_tracer = 0
-  !$acc declare copyin(hd_n_tracer)
+  ${GPU_DECLARE_COPYIN('hd_n_tracer')}$
 
   !> Whether plasma is partially ionized
   logical, public                         :: hd_partial_ionization = .false.
-  !$acc declare copyin(hd_partial_ionization)
+  ${GPU_DECLARE_COPYIN('hd_partial_ionization')}$
   
   !> Whether to use gravity
   logical, public                         :: hd_gravity = .false.
-  !$acc declare copyin(hd_gravity)
+  ${GPU_DECLARE_COPYIN('hd_gravity')}$
 
   !> switch for radiative cooling
   logical, public                         :: hd_radiative_cooling = .false.
-  !$acc declare copyin(hd_radiative_cooling)
+  ${GPU_DECLARE_COPYIN('hd_radiative_cooling')}$
 
   !> Allows overruling default corner filling (for debug mode, since otherwise corner primitives fail)
   logical, public                         :: hd_force_diagonal = .true.
-  !$acc declare copyin(hd_force_diagonal)
+  ${GPU_DECLARE_COPYIN('hd_force_diagonal')}$
 
   !> Whether particles module is added
   logical, public                         :: hd_particles = .false.
-  !$acc declare copyin(hd_particles)
+  ${GPU_DECLARE_COPYIN('hd_particles')}$
 
 #:enddef
 
@@ -94,11 +97,7 @@
 111    close(unitpar)
     end do
 
-#ifdef _OPENACC
-    !$acc update device(hd_energy, hd_gamma, hd_adiab, &
-    !$acc&     hd_partial_ionization, hd_force_diagonal, hd_particles, &
-    !$acc&     hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance)
-#endif
+    ${GPU_UPDATE_DEVICE('hd_energy, hd_gamma, hd_adiab, hd_partial_ionization, hd_force_diagonal, hd_particles, hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance')}$
 
   end subroutine read_params
 #:enddef
@@ -187,7 +186,7 @@
     end if
     unit_mass=unit_density*unit_length**3
 
-    !$acc update device(unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass)
+    ${GPU_UPDATE_DEVICE('unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass')}$
   end subroutine phys_units
 #:enddef
   
@@ -210,17 +209,17 @@
     phys_partial_ionization=hd_partial_ionization
     gamma_1 = hd_gamma - 1.0d0
     inv_gamma_1 = 1.0d0/gamma_1
- !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization, gamma_1, inv_gamma_1)
+    ${GPU_UPDATE_DEVICE('physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization, gamma_1, inv_gamma_1')}$
 
     use_particles = hd_particles
 
     ! Determine flux variables
     rho_ = var_set_rho()
-    !$acc update device(rho_)
+    ${GPU_UPDATE_DEVICE('rho_')}$
 
     allocate(mom(ndir))
     mom(:) = var_set_momentum(ndir)
-    !$acc update device(mom)
+    ${GPU_UPDATE_DEVICE('mom')}$
 
     ! Set index of energy variable
     if (hd_energy) then
@@ -230,7 +229,7 @@
        e_ = -1
        p_ = -1
     end if
-    !$acc update device(e_,p_)
+    ${GPU_UPDATE_DEVICE('e_,p_')}$
 
     ! Whether diagonal ghost cells are required for the physics
     phys_req_diagonal = .false.
@@ -245,12 +244,12 @@
     #:for i in range(1, N_TRACER_+1)
         tracer(${i}$) = var_set_fluxvar("trc", "trp", ${i}$, need_bc=.false.)
     #:endfor
-    !$acc update device(tracer)
+    ${GPU_UPDATE_DEVICE('tracer')}$
 #:endif
 
     ! set number of variables which need update ghostcells
     nwgc=nwflux
-    !$acc update device(nwgc)
+    ${GPU_UPDATE_DEVICE('nwgc')}$
 
     ! Define custom flux types:
     if (.not. allocated(flux_type)) then
@@ -259,7 +258,7 @@
     else if (any(shape(flux_type) /= [ndir, nw_flux])) then
        call mpistop("phys_check error: flux_type has wrong shape")
     end if
-    !$acc update device(flux_type)
+    ${GPU_UPDATE_DEVICE('flux_type')}$
     
 ! use cycle, needs to be dealt with:    
 !    ! Initialize particles module
@@ -271,14 +270,14 @@
     nvector      = 1 ! No. vector vars
     allocate(iw_vector(nvector))
     iw_vector(1) = mom(1) - 1
-    !$acc update device(nvector, iw_vector)
-    !$acc update device(phys_req_diagonal)
+    ${GPU_UPDATE_DEVICE('nvector, iw_vector')}$
+    ${GPU_UPDATE_DEVICE('phys_req_diagonal')}$
 
 #:if defined('COOLING')
     call radiative_cooling_init_params(phys_gamma,He_abundance)
     call radiative_cooling_init(rc_fl)
-    !$acc update device(rc_fl)
-    !$acc enter data copyin(rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc)
+    ${GPU_UPDATE_DEVICE('rc_fl')}$
+    ${GPU_ENTER_DATA_COPYIN('rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc')}$
 #:endif
 
   end subroutine phys_init
@@ -286,15 +285,15 @@
 
 #:def phys_get_dt()
   subroutine phys_get_dt(w, x, dx, dtnew)
-  !$acc routine seq
 #:if defined('GRAVITY')
   use mod_usr, only: gravity_field
 #:endif    
-    real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
-    real(dp), intent(out)  :: dtnew
-    ! .. local ..
-    integer                :: idim
-    real(dp)               :: field
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
+  real(dp), intent(out)  :: dtnew
+  ! .. local ..
+  integer                :: idim
+  real(dp)               :: field
 
     dtnew = huge(1.0d0)
     
@@ -312,13 +311,13 @@
 #:def addsource_local()
 subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
     qsourcesplit)
-  !$acc routine seq
 #:if defined('GRAVITY')
   use mod_usr, only: gravity_field
 #:endif    
 #:if defined('COOLING')
   use mod_radiative_cooling, only: rc_fl, radiative_cooling_add_source
 #:endif
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCT(nw_phys), wCTprim(nw_phys)
@@ -360,7 +359,7 @@ end subroutine addsource_local
 
 #:def to_primitive()
 pure subroutine to_primitive(u)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(inout) :: u(nw_phys)
 
   ! Compute velocity from momentum
@@ -377,7 +376,7 @@ end subroutine to_primitive
 
 #:def to_conservative()  
 pure subroutine to_conservative(u)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(inout) :: u(nw_phys)
 
   ! Compute energy from pressure and kinetic energy
@@ -394,7 +393,7 @@ end subroutine to_conservative
 
 #:def get_flux()
 subroutine get_flux(u, xC, flux_dim, flux)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: u(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
@@ -427,7 +426,7 @@ end subroutine get_flux
 
 #:def get_cmax()  
 pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: u(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
   integer, intent(in)   :: flux_dim
@@ -442,7 +441,7 @@ end function get_cmax
 !> Wave speed estimates: min/max acoustic bounds (Davis 1988) 
 !> Reference: Toro 2010, Chapter 10.
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
@@ -464,7 +463,7 @@ end subroutine estimate_speeds_minmax
 !> Wave speed estimates for HLL/HLLC using Toro (2010) PVRS pressure estimate
 !> Implements Eq. (10.67)-(10.69)
 subroutine estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer,  intent(in)  :: flux_dim
@@ -515,7 +514,7 @@ end subroutine estimate_speeds_toro_pvrs
 
 #:def get_rho()
   pure real(dp) function get_rho(w, x) result(rho)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: w(nw_phys)
     real(dp), intent(in)  :: x(1:ndim)
 
@@ -525,7 +524,7 @@ end subroutine estimate_speeds_toro_pvrs
 
 #:def get_pthermal()
 pure double precision function get_pthermal(w, x) result(pth)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   double precision, intent(in)  :: w(nw_flux)
   double precision, intent(in)  :: x(1:ndim)
 
@@ -535,7 +534,7 @@ end function get_pthermal
 
 #:def get_Rfactor()
 pure double precision function get_Rfactor() result(Rfactor)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   Rfactor = 1.0d0
 end function get_Rfactor
 #:enddef

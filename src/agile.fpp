@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 !> AMRVAC solves a set of hyperbolic equations
 !> \f$\vec{u}_t + \nabla_x \cdot \vec{f}(\vec{u}) = \vec{s}\f$
 !> using adaptive mesh refinement.
@@ -6,9 +9,15 @@ program agile
   integer        :: ierror
   ! Initialize MPI
   call MPI_INIT(ierror)
-  ! The OpenACC device must be set before any data is initialized on the GPU
+  ! The GPU device must be set before any data is initialized on the GPU
+#if defined(_OPENACC) && defined(_OPENMP)
+  error stop "Both OpenACC and OpenMP are enabled, this is not supported"
+#endif
 #ifdef _OPENACC
   call set_openacc_device()
+#endif
+#ifdef _OPENMP
+  call set_openmp_device()
 #endif
   call main()
 
@@ -33,6 +42,25 @@ contains
     call acc_set_device_num(my_device, dev_type)
 
   end subroutine set_openacc_device
+#endif
+
+#ifdef _OPENMP
+  subroutine set_openmp_device
+    use mpi
+    use omp_lib
+    integer :: local_rank, comm_shared, my_device, num_devices, ierror
+
+    call MPI_COMM_SPLIT_TYPE(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, comm_shared, ierror)
+    call MPI_COMM_RANK(comm_shared, local_rank, ierror)
+
+    num_devices = omp_get_num_devices()
+
+    if (num_devices < 1) error stop "No devices available on host"
+
+    my_device = mod(local_rank, num_devices)
+    call omp_set_default_device(my_device)
+
+  end subroutine set_openmp_device
 #endif
 
   subroutine main
@@ -69,7 +97,7 @@ contains
 
     time0 = MPI_WTIME()
     time_advance = .false.
-    !$acc update device(time_advance)
+    ${GPU_UPDATE_DEVICE('time_advance')}$
     time_bc      = zero
 
     ! read command line arguments first
@@ -289,7 +317,7 @@ contains
     dt_loop=0.d0
 
     time_advance=.true.
-    !$acc update device(time_advance)
+    ${GPU_UPDATE_DEVICE('time_advance')}$
 
     time_evol : do
 
@@ -421,7 +449,7 @@ contains
     end if
 
     time_advance=.false.
-    !$acc update device(time_advance)
+    ${GPU_UPDATE_DEVICE('time_advance')}$
 
     timeloop=MPI_WTIME()-timeloop0
 

@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 module mod_amr_solution_node
   use mod_comm_lib, only: mpistop
 
@@ -41,9 +44,9 @@ contains
     if (ipe==mype) then
        ! initialize node on host and device
        node(1:nodehi,getnode) = 0
-       !$acc update device(node(1:nodehi,getnode))
+       ${GPU_UPDATE_DEVICE('node(1:nodehi,getnode)')}$
        rnode(1:rnodehi,getnode) = zero
-       !$acc update device(rnode(1:rnodehi,getnode))
+       ${GPU_UPDATE_DEVICE('rnode(1:rnodehi,getnode)')}$
     end if
   
   end function getnode
@@ -61,9 +64,9 @@ contains
   
   !> allocate arrays on igrid node
   subroutine alloc_node(igrid)
-#ifdef _OPENACC
-    use acc_utils
-#endif    
+#if defined(_OPENACC) || defined(_OPENMP)
+    use gpu_utils
+#endif
     use mod_forest
     use mod_global_parameters
     use mod_geometry
@@ -190,14 +193,14 @@ contains
     node(pig1_,igrid)=ig1
     node(pig2_,igrid)=ig2
     node(pig3_,igrid)=ig3
- !$acc update device(node(plevel_,igrid),node(pig1_,igrid),node(pig2_,igrid),node(pig3_,igrid))
+ ${GPU_UPDATE_DEVICE('node(plevel_,igrid),node(pig1_,igrid),node(pig2_,igrid),node(pig3_,igrid)')}$
     
     ! set dx information
     rnode(rpdx1_,igrid)=dx(1,level)
     rnode(rpdx2_,igrid)=dx(2,level)
     rnode(rpdx3_,igrid)=dx(3,level)
     dxlevel(:)=dx(:,level)
- !$acc update device(rnode(rpdx1_,igrid),rnode(rpdx2_,igrid),rnode(rpdx3_,igrid), dxlevel)
+ ${GPU_UPDATE_DEVICE('rnode(rpdx1_,igrid),rnode(rpdx2_,igrid),rnode(rpdx3_,igrid), dxlevel')}$
 
     ! uniform cartesian case as well as all unstretched coordinates
     ! determine the minimal and maximal corners
@@ -211,7 +214,7 @@ contains
    if(rnode(rpxmax2_,igrid)>xprobmax2) rnode(rpxmax2_,igrid)=xprobmax2
    if(rnode(rpxmax3_,igrid)>xprobmax3) rnode(rpxmax3_,igrid)=xprobmax3
 
- !$acc update device( rnode(rpxmax1_,igrid),rnode(rpxmax2_,igrid),rnode(rpxmax3_,igrid), rnode(rpxmin1_,igrid),rnode(rpxmin2_,igrid),rnode(rpxmin3_,igrid) )
+ ${GPU_UPDATE_DEVICE('rnode(rpxmax1_,igrid),rnode(rpxmax2_,igrid),rnode(rpxmax3_,igrid), rnode(rpxmin1_,igrid),rnode(rpxmin2_,igrid),rnode(rpxmin3_,igrid)')}$
    
     dx1=rnode(rpdx1_,igrid)
     dx2=rnode(rpdx2_,igrid)
@@ -1597,9 +1600,9 @@ contains
       phyboundblock(igrid)=.false.
    end if
 
-   !$acc update device( phyboundblock(igrid) )
-#ifdef _OPENACC
-   call copy_or_update(ps(igrid)%igrid) 
+   ${GPU_UPDATE_DEVICE('phyboundblock(igrid)')}$
+#if defined(_OPENACC) || defined(_OPENMP)
+   call copy_or_update(ps(igrid)%igrid)
    call copy_or_update(ps1(igrid)%igrid) 
    call copy_or_update(ps2(igrid)%igrid)
 

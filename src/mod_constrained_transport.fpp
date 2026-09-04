@@ -15,7 +15,6 @@ contains
 
     call init_comm_fix_conserve(1,ndim,3)
 
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        ! Make zero the magnetic fluxes
        ! Fake advance, storing electric fields at edges
@@ -23,7 +22,6 @@ contains
        call fake_advance(igrid,1,3,ps(igrid))
 
     end do
-    !$OMP END PARALLEL DO
 
     ! Do correction
     call recvflux(1,ndim)
@@ -33,7 +31,6 @@ contains
     call fix_edges(ps,1,3)
 
     ! Now we fill the centers for the staggered variables
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
        call phys_to_primitive(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,&
           ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,ps(igrid)%x)
@@ -43,7 +40,6 @@ contains
        call phys_to_conserved(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,&
           ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,ps(igrid)%x)
     end do
-    !$OMP END PARALLEL DO
 
     call getbc(global_time,0.d0,ps,iwstart,nwgc)
 

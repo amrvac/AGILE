@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 module mod_variables
   use mod_basic_types
 
@@ -6,51 +9,50 @@ module mod_variables
 
   !> Number of flux variables
   integer           :: nwflux = 0
-  !$acc declare copyin(nwflux)
+  ${GPU_DECLARE_COPYIN('nwflux')}$
 
   !> Number of flux variables which need user to specify boundary type
   integer           :: nwfluxbc = 0
-  !$acc declare copyin(nwfluxbc)
+  ${GPU_DECLARE_COPYIN('nwfluxbc')}$
 
   !> Number of auxiliary variables in w
   integer           :: nwaux = 0
-  !$acc declare copyin(nwaux)
+  ${GPU_DECLARE_COPYIN('nwaux')}$
 
   !> Number of extra variables in w
   integer           :: nwextra = 0
-  !$acc declare copyin(nwextra)
+  ${GPU_DECLARE_COPYIN('nwextra')}$
 
   !> Number of extra variables in wextra seperated from w
   integer           :: nw_extra = 0
-  !$acc declare copyin(nw_extra)
+  ${GPU_DECLARE_COPYIN('nw_extra')}$
 
   !> Total number of variables
   integer           :: nw = 0
-  !$acc declare copyin(nw)
+  ${GPU_DECLARE_COPYIN('nw')}$
 
   !> Total number of stagger variables
   integer           :: nws = 0
-  !$acc declare copyin(nws)
+  ${GPU_DECLARE_COPYIN('nws')}$
 
   !> Number of variables which need to be updated in ghost cells
   integer           :: nwgc = 0
-  !$acc declare copyin(nwgc)
+  ${GPU_DECLARE_COPYIN('nwgc')}$
 
   !> Number of vector variables (used for writing output)
   integer           :: nvector = 0
-  !$acc declare copyin(nvector)
+  ${GPU_DECLARE_COPYIN('nvector')}$
 
   !> Indices of vector variables
   integer, dimension(:), allocatable :: iw_vector
-  !$acc declare create(iw_vector)
+  ${GPU_DECLARE_CREATE('iw_vector')}$
 
   ! the number of the first w variable to exchange ghost cells
   integer            :: iwstart=1
-  !$acc declare copyin(iwstart)
+  ${GPU_DECLARE_COPYIN('iwstart')}$
   
   !> Maximum number of variables
   integer, parameter :: max_nw = 50
-  !$acc declare copyin(max_nw)
 
   !> Primitive variable names
   character(len=name_len) :: prim_wnames(max_nw)
@@ -62,64 +64,64 @@ module mod_variables
 
   !> Index of the (gas) density
   integer :: iw_rho = -1
-  !$acc declare copyin(iw_rho)
+  ${GPU_DECLARE_COPYIN('iw_rho')}$
 
   !> Indices of the momentum density
   integer, allocatable :: iw_mom(:)
-  !$acc declare create(iw_mom)
+  ${GPU_DECLARE_CREATE('iw_mom')}$
 
   !> Index of the energy density
   integer :: iw_e = -1
-  !$acc declare copyin(iw_e)
+  ${GPU_DECLARE_COPYIN('iw_e')}$
 
   !> Index of the (scalar, field-aligned-only) heat flux (isotropic HTC only)
   integer :: iw_q = -1
-  !$acc declare copyin(iw_q)
+  ${GPU_DECLARE_COPYIN('iw_q')}$
 
   !> Indices of the heat flux vector components (anisotropic HTC only)
   integer, allocatable, protected :: iw_qvec(:)
-  !$acc declare create(iw_qvec)
+  ${GPU_DECLARE_CREATE('iw_qvec')}$
 
   !> Index of the radiation energy density
   integer :: iw_r_e = -1
-  !$acc declare copyin(iw_r_e)
+  ${GPU_DECLARE_COPYIN('iw_r_e')}$
 
   !> Indices of the magnetic field components
   integer, allocatable, protected :: iw_mag(:)
-  !$acc declare create(iw_mag)
+  ${GPU_DECLARE_CREATE('iw_mag')}$
 
   !> Index of the cutoff temperature for the TRAC method
   integer :: iw_tcoff = -1
-  !$acc declare copyin(iw_tcoff)
+  ${GPU_DECLARE_COPYIN('iw_tcoff')}$
 
   !> number of species: each species has different characterictic speeds and should
   !> be used accordingly in mod_finite_volume and mod_finite_difference
   integer :: number_species = 1
-  !$acc declare copyin(number_species)
+  ${GPU_DECLARE_COPYIN('number_species')}$
 
   !> index of the var
   !> whose velocity appears in the induction eq.
   integer :: index_v_mag = 1
-  !$acc declare copyin(index_v_mag)
+  ${GPU_DECLARE_COPYIN('index_v_mag')}$
 
   !> the indices in 1:nwflux array are assumed consecutive for each species
   !> this array should be of size number_species and contain the first index in the array of
   !> the number_species
   integer, allocatable :: start_indices(:)
-  !$acc declare create(start_indices)
+  ${GPU_DECLARE_CREATE('start_indices')}$
 
   !> the indices in 1:nwflux array are assumed consecutive for each species
   !> this array should be of size number_species and contain the last index in the array of
   !> the first number_species, the last index for the last one is nwflux
   integer, allocatable :: stop_indices(:)
-  !$acc declare create(stop_indices)
+  ${GPU_DECLARE_CREATE('stop_indices')}$
 
 
   ! indices of equi for the species index_v_mag
   ! these are needed for hlld solver, TODO: consider moving in a separate file
   integer :: iw_equi_rho = -1
   integer :: iw_equi_p = -1
-  !$acc declare copyin(iw_equi_rho, iw_equi_p)
+  ${GPU_DECLARE_COPYIN('iw_equi_rho, iw_equi_p')}$
 
 contains
 
@@ -148,7 +150,7 @@ contains
       write(prim_wnames(nwflux),"(A,I0)") name_prim, ix
    end if
 
-   !$acc update device(nwflux, nw, nwfluxbc)
+   ${GPU_UPDATE_DEVICE('nwflux, nw, nwfluxbc')}$
   end function var_set_fluxvar
 
   !> Set extra variable in w, which is not advected and has no boundary conditions.
@@ -169,7 +171,7 @@ contains
       write(cons_wnames(iw),"(A,I0)") name_cons, ix
       write(prim_wnames(iw),"(A,I0)") name_prim, ix
    end if
-   !$acc update device(nwextra,nw)
+   ${GPU_UPDATE_DEVICE('nwextra,nw')}$
   end function var_set_extravar
 
   !> Set extra variable in wextra, which is not advected and has no boundary conditions and not output in dat.
@@ -179,7 +181,7 @@ contains
 
     nw_extra = nw_extra + 1
     iw      = nw_extra
-   !$acc update device(nw_extra)
+   ${GPU_UPDATE_DEVICE('nw_extra')}$
   end function var_set_wextra
 
   !> Set auxiliary variable, which is not advected but has boundary conditions.
@@ -200,7 +202,7 @@ contains
       write(cons_wnames(iw),"(A,I0)") name_cons, ix
       write(prim_wnames(iw),"(A,I0)") name_prim, ix
    end if
-   !$acc update device(nwaux,nw)
+   ${GPU_UPDATE_DEVICE('nwaux,nw')}$
   end function var_set_auxvar
 
   !> Set density variable
@@ -214,7 +216,7 @@ contains
     iw                  = nwflux
     prim_wnames(nwflux) = 'rho'
     cons_wnames(nwflux) = 'rho'
-    !$acc update device(nwflux,nw,nwfluxbc,iw_rho)
+    ${GPU_UPDATE_DEVICE('nwflux,nw,nwfluxbc,iw_rho')}$
   end function var_set_rho
 
   ! THE INCLUDE files cannot use other modules
@@ -246,7 +248,7 @@ contains
       write(cons_wnames(nwflux),"(A1,I1)") "m", idir
       write(prim_wnames(nwflux),"(A1,I1)") "v", idir
     end do
-    !$acc update device(nwflux,nw,nwfluxbc,iw_mom)
+    ${GPU_UPDATE_DEVICE('nwflux,nw,nwfluxbc,iw_mom')}$
   end function var_set_momentum
 
   !> Set energy variable
@@ -260,7 +262,7 @@ contains
     iw                  = nwflux
     cons_wnames(nwflux) = 'e'
     prim_wnames(nwflux) = 'p'
-    !$acc update device(nwflux,nw,nwfluxbc,iw_e)
+    ${GPU_UPDATE_DEVICE('nwflux,nw,nwfluxbc,iw_e')}$
   end function var_set_energy
 
   !> Set heat flux variable (hyperbolic TC treatment)
@@ -279,7 +281,7 @@ contains
     iw                  = nwflux
     cons_wnames(nwflux) = 'q'
     prim_wnames(nwflux) = 'q'
-    !$acc update device(nwflux,nw,nwfluxbc,iw_q)
+    ${GPU_UPDATE_DEVICE('nwflux,nw,nwfluxbc,iw_q')}$
   end function var_set_q
 
   !> Set heat-flux vector variables (anisotropic HTC only): the full
@@ -305,7 +307,7 @@ contains
       write(cons_wnames(nwflux),"(A4,I1)") "qvec", idir
       write(prim_wnames(nwflux),"(A4,I1)") "qvec", idir
     end do
-    !$acc update device(nwflux,nw,nwfluxbc,iw_qvec)
+    ${GPU_UPDATE_DEVICE('nwflux,nw,nwfluxbc,iw_qvec')}$
   end function var_set_qvec
 
   function var_set_radiation_energy() result(iw)
@@ -318,7 +320,7 @@ contains
     iw                  = nwflux
     cons_wnames(nwflux) = 'r_e'
     prim_wnames(nwflux) = 'r_e'
-    !$acc update device(nwflux,nw,nwfluxbc,iw_r_e)
+    ${GPU_UPDATE_DEVICE('nwflux,nw,nwfluxbc,iw_r_e')}$
   end function var_set_radiation_energy
 
   !> Set magnetic field variables
@@ -338,7 +340,7 @@ contains
       write(cons_wnames(nwflux),"(A1,I1)") "b", idir
       write(prim_wnames(nwflux),"(A1,I1)") "b", idir
    end do
-   !$acc update device(nwflux,nw,nwfluxbc,iw_mag)
+   ${GPU_UPDATE_DEVICE('nwflux,nw,nwfluxbc,iw_mag')}$
   end function var_set_bfield
 
 end module mod_variables

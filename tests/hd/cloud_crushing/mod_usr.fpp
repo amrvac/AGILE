@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
   use mod_amrvac
   use mod_physics
@@ -6,7 +10,7 @@ module mod_usr
   ! --- User parameters (code units) ---
   double precision :: ca, mach, chi, rc, eps_rho
   double precision :: x1c, x2c, x3c
-  !$acc declare create(ca, mach)
+  ${GPU_DECLARE_CREATE('ca, mach')}$
 
   ! --- Turbulence ---
   logical :: use_turbulence = .true.
@@ -60,7 +64,7 @@ contains
 
     eps_rho = 0.20d0  ! density gradient across cloud
 
-    !$acc update device(ca, mach)
+    ${GPU_UPDATE_DEVICE('ca, mach')}$
 
     call init_turbulence_modes()
 
@@ -222,8 +226,8 @@ contains
 
   subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
                               ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3
     integer, intent(in)             :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     integer, intent(in)             :: iB
@@ -245,7 +249,7 @@ contains
 
       inv_gamma_m1 = 1.0d0/(hd_gamma - 1.0d0)
 
-      !$acc loop collapse(3) vector
+      ${GPU_LOOP_VECTOR("collapse(3)")}$
       do ix3 = ixOmin3, ixOmax3
         do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1
@@ -277,13 +281,12 @@ contains
   subroutine usr_refine_grid(igrid,level,ixGmin1,ixGmin2,ixGmin3,&
     ixGmax1,ixGmax2,ixGmax3,ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,&
     qt,w,x,refine,coarsen)
-#ifdef _OPENACC
+#if defined(_CRAYFTN) && (defined(_OPENACC) || defined(_OPENMP))
     ! disable inlining for Cray
     !dir$ inlinenever usr_refine_grid
 #endif
-    !$acc routine seq
-
     use mod_global_parameters
+    ${GPU_ROUTINE_SEQ()}$
 
     ! Enforce additional refinement or coarsening
     ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.

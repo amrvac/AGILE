@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 #ifdef _CRAYFTN
 ! locally switch off gpudirect since it does not work reliably with the nested datastructures on LUMI
 #ifndef NOGPUDIRECT
@@ -21,19 +24,19 @@ module mod_ghostcells_update
 
   ! A switch of update physical boundary or not
   logical, public :: bcphys=.true.
-  !$acc declare copyin(bcphys)
+  ${GPU_DECLARE_COPYIN('bcphys')}$
 
   integer :: ixMmin1,ixMmin2,ixMmin3,ixMmax1,ixMmax2,ixMmax3, ixCoGmin1,&
        ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3, ixCoMmin1,ixCoMmin2,&
        ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3, ixCoGsmin1,ixCoGsmin2,ixCoGsmin3,&
        ixCoGsmax1,ixCoGsmax2,ixCoGsmax3
-  !$acc declare create(ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3)
-  !$acc declare create(ixMmin1,ixMmin2,ixMmin3,ixMmax1,ixMmax2,ixMmax3)
-  !$acc declare create(ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3)
-  !$acc declare create(ixCoGsmin1,ixCoGsmin2,ixCoGsmin3,ixCoGsmax1,ixCoGsmax2,ixCoGsmax3)
+  ${GPU_DECLARE_CREATE('ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3')}$
+  ${GPU_DECLARE_CREATE('ixMmin1,ixMmin2,ixMmin3,ixMmax1,ixMmax2,ixMmax3')}$
+  ${GPU_DECLARE_CREATE('ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3')}$
+  ${GPU_DECLARE_CREATE('ixCoGsmin1,ixCoGsmin2,ixCoGsmin3,ixCoGsmax1,ixCoGsmax2,ixCoGsmax3')}$
 
   logical  :: req_diagonal = .true.
-  !$acc declare copyin(req_diagonal)
+  ${GPU_DECLARE_COPYIN('req_diagonal')}$
 
 
   ! The first index goes from -1:2, where -1 is used when a block touches the
@@ -45,9 +48,9 @@ module mod_ghostcells_update
   integer, dimension(-1:2,-1:1) :: ixS_srl_min1,ixS_srl_min2,ixS_srl_min3,&
        ixS_srl_max1,ixS_srl_max2,ixS_srl_max3, ixR_srl_min1,ixR_srl_min2,&
        ixR_srl_min3,ixR_srl_max1,ixR_srl_max2,ixR_srl_max3
-  !$acc declare create(ixS_srl_min1,ixS_srl_min2,ixS_srl_min3)
-  !$acc declare create(ixS_srl_max1,ixS_srl_max2,ixS_srl_max3, ixR_srl_min1,ixR_srl_min2)
-  !$acc declare create(ixR_srl_min3,ixR_srl_max1,ixR_srl_max2,ixR_srl_max3)
+  ${GPU_DECLARE_CREATE('ixS_srl_min1,ixS_srl_min2,ixS_srl_min3')}$
+  ${GPU_DECLARE_CREATE('ixS_srl_max1,ixS_srl_max2,ixS_srl_max3, ixR_srl_min1,ixR_srl_min2')}$
+  ${GPU_DECLARE_CREATE('ixR_srl_min3,ixR_srl_max1,ixR_srl_max2,ixR_srl_max3')}$
 
   ! index ranges of staggered variables to send (S) to sibling blocks, receive (R) from sibling blocks
   integer, dimension(3,-1:1) :: ixS_srl_stg_min1,ixS_srl_stg_min2,&
@@ -58,7 +61,7 @@ module mod_ghostcells_update
   ! index ranges to send (S) restricted (r) ghost cells to coarser blocks
   integer, dimension(-1:1,-1:1) :: ixS_r_min1,ixS_r_min2,ixS_r_min3,ixS_r_max1,&
        ixS_r_max2,ixS_r_max3
-  !$acc declare create(ixS_r_min1,ixS_r_min2,ixS_r_min3,ixS_r_max1,ixS_r_max2,ixS_r_max3)
+  ${GPU_DECLARE_CREATE('ixS_r_min1,ixS_r_min2,ixS_r_min3,ixS_r_max1,ixS_r_max2,ixS_r_max3')}$
 
   ! index ranges of staggered variables to send (S) restricted (r) ghost cells to coarser blocks
   integer, dimension(3,-1:1) :: ixS_r_stg_min1,ixS_r_stg_min2,ixS_r_stg_min3,&
@@ -67,7 +70,7 @@ module mod_ghostcells_update
   ! index ranges to receive restriced ghost cells from finer blocks
   integer, dimension(-1:1, 0:3) :: ixR_r_min1,ixR_r_min2,ixR_r_min3,ixR_r_max1,&
        ixR_r_max2,ixR_r_max3
-  !$acc declare create(ixR_r_min1,ixR_r_min2,ixR_r_min3,ixR_r_max1,ixR_r_max2,ixR_r_max3)
+  ${GPU_DECLARE_CREATE('ixR_r_min1,ixR_r_min2,ixR_r_min3,ixR_r_max1,ixR_r_max2,ixR_r_max3')}$
 
   ! index ranges of staggered variables to receive restriced ghost cells from finer blocks
   integer, dimension(3,0:3)  :: ixR_r_stg_min1,ixR_r_stg_min2,ixR_r_stg_min3,&
@@ -77,8 +80,8 @@ module mod_ghostcells_update
   integer, dimension(-1:1, 0:3) :: ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,&
        ixS_p_max2,ixS_p_max3, ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,&
        ixR_p_max2,ixR_p_max3
-  !$acc declare create(ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,ixS_p_max2,ixS_p_max3)
-  !$acc declare create(ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,ixR_p_max2,ixR_p_max3)
+  ${GPU_DECLARE_CREATE('ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,ixS_p_max2,ixS_p_max3')}$
+  ${GPU_DECLARE_CREATE('ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,ixR_p_max2,ixR_p_max3')}$
 
   ! send prolongated (p) staggered ghost cells to finer blocks, receive prolongated from coarser blocks
   integer, dimension(3,0:3)  :: ixS_p_stg_min1,ixS_p_stg_min2,ixS_p_stg_min3,&
@@ -156,7 +159,7 @@ module mod_ghostcells_update
 contains
 
   subroutine idecode(i1, i2, i3, i)
-    !$acc routine vector
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in)                       :: i
     integer, intent(out)                      :: i1, i2, i3
     ! .. local ..
@@ -1089,17 +1092,17 @@ contains
 
     end if
 
-    !$acc update device(ixS_srl_min1,ixS_srl_min2,ixS_srl_min3)
-    !$acc update device(ixS_srl_max1,ixS_srl_max2,ixS_srl_max3, ixR_srl_min1,ixR_srl_min2)
-    !$acc update device(ixR_srl_min3,ixR_srl_max1,ixR_srl_max2,ixR_srl_max3)
-    !$acc update device(ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3)
-    !$acc update device(ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3)
-    !$acc update device(ixCoGsmin1,ixCoGsmin2,ixCoGsmin3,ixCoGsmax1,ixCoGsmax2,ixCoGsmax3)
-    !$acc update device(ixMmin1,ixMmin2,ixMmin3,ixMmax1,ixMmax2,ixMmax3)
-    !$acc update device(ixS_r_min1,ixS_r_min2,ixS_r_min3,ixS_r_max1,ixS_r_max2,ixS_r_max3)
-    !$acc update device(ixR_r_min1,ixR_r_min2,ixR_r_min3,ixR_r_max1,ixR_r_max2,ixR_r_max3)
-    !$acc update device(ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,ixS_p_max2,ixS_p_max3)
-    !$acc update device(ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,ixR_p_max2,ixR_p_max3)
+    ${GPU_UPDATE_DEVICE('ixS_srl_min1,ixS_srl_min2,ixS_srl_min3')}$
+    ${GPU_UPDATE_DEVICE('ixS_srl_max1,ixS_srl_max2,ixS_srl_max3, ixR_srl_min1,ixR_srl_min2')}$
+    ${GPU_UPDATE_DEVICE('ixR_srl_min3,ixR_srl_max1,ixR_srl_max2,ixR_srl_max3')}$
+    ${GPU_UPDATE_DEVICE('ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3')}$
+    ${GPU_UPDATE_DEVICE('ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3')}$
+    ${GPU_UPDATE_DEVICE('ixCoGsmin1,ixCoGsmin2,ixCoGsmin3,ixCoGsmax1,ixCoGsmax2,ixCoGsmax3')}$
+    ${GPU_UPDATE_DEVICE('ixMmin1,ixMmin2,ixMmin3,ixMmax1,ixMmax2,ixMmax3')}$
+    ${GPU_UPDATE_DEVICE('ixS_r_min1,ixS_r_min2,ixS_r_min3,ixS_r_max1,ixS_r_max2,ixS_r_max3')}$
+    ${GPU_UPDATE_DEVICE('ixR_r_min1,ixR_r_min2,ixR_r_min3,ixR_r_max1,ixR_r_max2,ixR_r_max3')}$
+    ${GPU_UPDATE_DEVICE('ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,ixS_p_max2,ixS_p_max3')}$
+    ${GPU_UPDATE_DEVICE('ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,ixR_p_max2,ixR_p_max3')}$
 
   end subroutine init_bc
 
@@ -1154,7 +1157,7 @@ contains
 
     req_diagonal = .true.
     if (present(req_diag)) req_diagonal = req_diag
-    !$acc update device(req_diagonal)
+    ${GPU_UPDATE_DEVICE('req_diagonal')}$
 
     ! fill internal physical boundary
     if (internalboundary) then
@@ -1163,7 +1166,7 @@ contains
 
     ! fill physical-boundary ghost cells before internal ghost-cell values exchange
     if(bcphys.and. .not.stagger_grid) then
-       !$acc parallel loop gang default(present)
+       ${GPU_PARALLEL_LOOP_GANG()}$ ${GPU_DEFAULT_PRESENT()}$
        do iigrid = 1, igridstail; igrid=igrids(iigrid);
           if (.not.phyboundblock(igrid)) cycle
           call fill_boundary_before_gc(psb(igrid),igrid,time,qdt)
@@ -1172,12 +1175,12 @@ contains
 
 
     ! prepare coarse values to send to coarser neighbors
-    !$acc parallel loop gang default(present)
+    ${GPU_PARALLEL_LOOP_GANG()}$ ${GPU_DEFAULT_PRESENT()}$
     do iigrid = 1, igridstail; igrid=igrids(iigrid);
        if (any(neighbor_type(:,:,:,igrid)==neighbor_coarse)) then
 
           CoFiratio=one/dble(2**ndim)
-          !$acc loop collapse(4) vector
+          ${GPU_LOOP_VECTOR("collapse(4)")}$
           do iw = nwhead, nwtail
              do ixCo3 = ixCoMmin3,ixCoMmax3
                 do ixCo2 = ixCoMmin2,ixCoMmax2
@@ -1218,9 +1221,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_srl
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%srl_nb(inb)%rcv%buffer, nbprocs_info%srl_nb(inb)%info_rcv%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%srl_nb(inb)%rcv%buffer, nbprocs_info%srl_nb(inb)%info_rcv%buffer')}$
 #endif
 #endif
        call mpi_irecv_wrapper(nbprocs_info%srl_nb(inb)%rcv%buffer, &
@@ -1231,7 +1234,7 @@ contains
             MPI_INTEGER, nbprocs_info%nbprocs_srl_list(inb), 2, icomm, recv_srl_nb(nbprocs_info%nbprocs_srl + inb), ierrmpi)
 
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
@@ -1239,9 +1242,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_f
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%info_rcv%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%info_rcv%buffer')}$
 #endif
 #endif
        call mpi_irecv_wrapper(nbprocs_info%fine_nb(inb)%rcv%buffer, &
@@ -1251,13 +1254,13 @@ contains
             nbprocs_info%fine_nb(inb)%info_rcv%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_f_list(inb), 2, icomm, recv_f_nb(nbprocs_info%nbprocs_f + inb), ierrmpi)
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
     ! fill the SRL send buffers on GPU
     do inb = 1, nbprocs_info%nbprocs_srl
-       !$acc parallel loop default(present) gang private(igrid, ienc, ibuf_start, i1, i2, i3, ixSmin1, ixSmin2, ixSmin3, Nx1)
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid, ienc, ibuf_start, i1, i2, i3, ixSmin1, ixSmin2, ixSmin3, Nx1)")}$ ${GPU_DEFAULT_PRESENT()}$
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
              igrid = nbprocs_info%srl_nb(inb)%info%igrid(i)
              ienc = nbprocs_info%srl_nb(inb)%info%iencode(i)
@@ -1271,7 +1274,7 @@ contains
              ixSmin3=ixS_srl_min3(iib3,i3); ixSmax3=ixS_srl_max3(iib3,i3)
              Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
-             !$acc loop collapse(4) vector independent
+             ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
              do iw = nwhead, nwtail
                 do ix3 = ixSmin3, ixSmax3
                    do ix2 = ixSmin2, ixSmax2
@@ -1294,7 +1297,7 @@ contains
 
     ! fill the C send buffers on GPU (send_restrict)
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc parallel loop gang default(present) private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3)
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3)")}$ ${GPU_DEFAULT_PRESENT()}$
        do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%course_nb(inb)%info%igrid(i)
@@ -1320,7 +1323,7 @@ contains
           ixSmax2=ixS_r_max2(iib2,i2);ixSmax3=ixS_r_max3(iib3,i3)
           Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
-          !$acc loop collapse(4) vector independent
+          ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixSmin3, ixSmax3
                 do ix2 = ixSmin2, ixSmax2
@@ -1344,12 +1347,12 @@ contains
 
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_srl
-       !$acc update host(nbprocs_info%srl_nb(inb)%info_send%buffer)
-       !$acc update host(nbprocs_info%srl_nb(inb)%send%buffer)
+       ${GPU_UPDATE_HOST('nbprocs_info%srl_nb(inb)%info_send%buffer')}$
+       ${GPU_UPDATE_HOST('nbprocs_info%srl_nb(inb)%send%buffer')}$
     end do
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc update host(nbprocs_info%course_nb(inb)%info_send%buffer)
-       !$acc update host(nbprocs_info%course_nb(inb)%send%buffer)
+       ${GPU_UPDATE_HOST('nbprocs_info%course_nb(inb)%info_send%buffer')}$
+       ${GPU_UPDATE_HOST('nbprocs_info%course_nb(inb)%send%buffer')}$
     end do
 #endif
 
@@ -1357,9 +1360,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_srl
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%srl_nb(inb)%send%buffer, nbprocs_info%srl_nb(inb)%info_send%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%srl_nb(inb)%send%buffer, nbprocs_info%srl_nb(inb)%info_send%buffer')}$
 #endif
 #endif
        call mpi_isend_wrapper(nbprocs_info%srl_nb(inb)%send%buffer, &
@@ -1369,7 +1372,7 @@ contains
             nbprocs_info%srl_nb(inb)%info_send%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_srl_list(inb), 2, icomm, send_srl_nb(nbprocs_info%nbprocs_srl + inb), ierrmpi)
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
@@ -1377,9 +1380,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_c
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%course_nb(inb)%send%buffer, nbprocs_info%course_nb(inb)%info_send%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%course_nb(inb)%send%buffer, nbprocs_info%course_nb(inb)%info_send%buffer')}$
 #endif
 #endif
        call mpi_isend_wrapper(nbprocs_info%course_nb(inb)%send%buffer, &
@@ -1389,13 +1392,13 @@ contains
             nbprocs_info%course_nb(inb)%info_send%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_c_list(inb), 2, icomm, send_c_nb(nbprocs_info%nbprocs_c + inb), ierrmpi)
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
     ! fill ghost-cell values of sibling blocks and if neighbor is coarser (f2c)
     ! same process case
-    !$acc parallel loop gang collapse(2) default(present)
+    ${GPU_PARALLEL_LOOP_GANG("collapse(2)")}$ ${GPU_DEFAULT_PRESENT()}$
     do iigrid = 1, igridstail
        do i = 1, 27
           call idecode( i1, i2, i3, i)
@@ -1418,7 +1421,7 @@ contains
                    ixRmin3=ixR_srl_min3(iib3,n_i3); ixRmax1=ixR_srl_max1(iib1,n_i1)
                    ixRmax2=ixR_srl_max2(iib2,n_i2); ixRmax3=ixR_srl_max3(iib3,n_i3)
 
-                   !$acc loop collapse(ndim+1) independent vector
+                   ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$ ${GPU_INDEPENDENT()}$
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
@@ -1448,7 +1451,7 @@ contains
                    ixRmin3=ixR_r_min3(iib3,n_inc3);ixRmax1=ixR_r_max1(iib1,n_inc1)
                    ixRmax2=ixR_r_max2(iib2,n_inc2);ixRmax3=ixR_r_max3(iib3,n_inc3);
 
-                   !$acc loop collapse(ndim+1) independent vector
+                   ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$ ${GPU_INDEPENDENT()}$
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
@@ -1473,14 +1476,14 @@ contains
     call MPI_WAITALL(nbprocs_info%nbprocs_srl*2, send_srl_nb, sendstatus_srl_nb, ierrmpi)
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_srl
-      !$acc update device(nbprocs_info%srl_nb(inb)%info_rcv%buffer)
-      !$acc update device(nbprocs_info%srl_nb(inb)%rcv%buffer)
+      ${GPU_UPDATE_DEVICE('nbprocs_info%srl_nb(inb)%info_rcv%buffer')}$
+      ${GPU_UPDATE_DEVICE('nbprocs_info%srl_nb(inb)%rcv%buffer')}$
     end do
 #endif
 
     ! unpack the MPI buffers
     do inb = 1, nbprocs_info%nbprocs_srl
-      !$acc parallel loop gang default(present) independent private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, ixRmin1, ixRmin2, ixRmin3, Nx1)
+      ${GPU_PARALLEL_LOOP_GANG("private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, ixRmin1, ixRmin2, ixRmin3, Nx1)")}$ ${GPU_INDEPENDENT()}$ ${GPU_DEFAULT_PRESENT()}$
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%srl_nb(inb)%info_rcv%buffer( 3 * (i - 1) + 1 )
@@ -1497,7 +1500,7 @@ contains
           ixRmax2=ixR_srl_max2(iib2,i2); ixRmax3=ixR_srl_max3(iib3,i3)
           Nx1=ixRmax1-ixRmin1+1; Nx2=ixRmax2-ixRmin2+1; Nx3=ixRmax3-ixRmin3+1
 
-          !$acc loop collapse(4) vector independent private(tempval)
+          ${GPU_LOOP_VECTOR("collapse(4) private(tempval)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixRmin3, ixRmax3
                 do ix2 = ixRmin2, ixRmax2
@@ -1525,14 +1528,14 @@ contains
 
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc update device(nbprocs_info%fine_nb(inb)%info_rcv%buffer(1:nbprocs_info%fine_nb(inb)%info_rcv%size))
-       !$acc update device(nbprocs_info%fine_nb(inb)%rcv%buffer(1:nbprocs_info%fine_nb(inb)%rcv%size))
+       ${GPU_UPDATE_DEVICE('nbprocs_info%fine_nb(inb)%info_rcv%buffer(1:nbprocs_info%fine_nb(inb)%info_rcv%size)')}$
+       ${GPU_UPDATE_DEVICE('nbprocs_info%fine_nb(inb)%rcv%buffer(1:nbprocs_info%fine_nb(inb)%rcv%size)')}$
     end do
 #endif
 
     ! unpack the MPI buffers, fine neighbor, (f_recv), recv_restrict
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc parallel loop gang default(present)
+       ${GPU_PARALLEL_LOOP_GANG()}$ ${GPU_DEFAULT_PRESENT()}$
        do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%fine_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 1 )
@@ -1548,7 +1551,7 @@ contains
           ixRmax2=ixR_r_max2(iib2,inc2); ixRmax3=ixR_r_max3(iib3,inc3)
           Nx1=ixRmax1-ixRmin1+1; Nx2=ixRmax2-ixRmin2+1; Nx3=ixRmax3-ixRmin3+1
 
-          !$acc loop collapse(4) vector independent
+          ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixRmin3, ixRmax3
                 do ix2 = ixRmin2, ixRmax2
@@ -1575,9 +1578,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_c
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%course_nb(inb)%rcv%buffer, nbprocs_info%course_nb(inb)%info_rcv%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%course_nb(inb)%rcv%buffer, nbprocs_info%course_nb(inb)%info_rcv%buffer')}$
 #endif
 #endif
        call mpi_irecv_wrapper(nbprocs_info%course_nb(inb)%rcv%buffer, &
@@ -1587,13 +1590,13 @@ contains
             nbprocs_info%course_nb(inb)%info_rcv%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_c_list(inb), 2, icomm, recv_c_nb(nbprocs_info%nbprocs_c + inb), ierrmpi)
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
     ! fill the F (neighbor is finer) send buffer on GPU (send_prolong)
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3) default(present)
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3)")}$ ${GPU_INDEPENDENT()}$ ${GPU_DEFAULT_PRESENT()}$
        do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%fine_nb(inb)%info%igrid(i)
@@ -1610,7 +1613,7 @@ contains
           ixSmax2=ixS_p_max2(iib2,inc2);ixSmax3=ixS_p_max3(iib3,inc3)
           Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
-          !$acc loop collapse(4) vector independent
+          ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixSmin3, ixSmax3
                 do ix2 = ixSmin2, ixSmax2
@@ -1640,8 +1643,8 @@ contains
 
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_f
-      !$acc update host(nbprocs_info%fine_nb(inb)%info_send%buffer)
-      !$acc update host(nbprocs_info%fine_nb(inb)%send%buffer)
+      ${GPU_UPDATE_HOST('nbprocs_info%fine_nb(inb)%info_send%buffer')}$
+      ${GPU_UPDATE_HOST('nbprocs_info%fine_nb(inb)%send%buffer')}$
     end do
 #endif
 
@@ -1649,9 +1652,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_f
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%fine_nb(inb)%send%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%fine_nb(inb)%send%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer')}$
 #endif
 #endif
        call mpi_isend_wrapper(nbprocs_info%fine_nb(inb)%send%buffer, &
@@ -1661,13 +1664,13 @@ contains
             nbprocs_info%fine_nb(inb)%info_send%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_f_list(inb), 2, icomm, send_f_nb(nbprocs_info%nbprocs_f + inb), ierrmpi)
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
 
     ! fill coarse ghost-cell values of finer neighbors in the same processor
-    !$acc parallel loop gang collapse(4) private(iib1,iib2,iib3,igrid) default(present)
+    ${GPU_PARALLEL_LOOP_GANG("collapse(4) private(iib1,iib2,iib3,igrid)")}$ ${GPU_DEFAULT_PRESENT()}$
     do iigrid=1,igridstail
        do i3=-1,1
           do i2=-1,1
@@ -1701,7 +1704,7 @@ contains
                                ixRmax2=ixR_p_max2(iib2,n_inc2)
                                ixRmax3=ixR_p_max3(iib3,n_inc3)
 
-                               !$acc loop collapse(4) vector independent
+                               ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
                                do iw = nwhead, nwtail
                                   do ix3 =0, ixRmax3-ixRmin3
                                      do ix2 = 0, ixRmax2-ixRmin2
@@ -1727,7 +1730,6 @@ contains
        end do
 
     end do
-    !$OMP END PARALLEL DO
 
     call MPI_WAITALL(nbprocs_info%nbprocs_c*2, recv_c_nb, recvstatus_c_nb, ierrmpi)
     call MPI_WAITALL(nbprocs_info%nbprocs_f*2, send_f_nb, sendstatus_f_nb, ierrmpi)
@@ -1735,14 +1737,14 @@ contains
 
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_c
-      !$acc update device(nbprocs_info%course_nb(inb)%info_rcv%buffer(1:nbprocs_info%course_nb(inb)%info_rcv%size))
-      !$acc update device(nbprocs_info%course_nb(inb)%rcv%buffer(1:nbprocs_info%course_nb(inb)%rcv%size))
+      ${GPU_UPDATE_DEVICE('nbprocs_info%course_nb(inb)%info_rcv%buffer(1:nbprocs_info%course_nb(inb)%info_rcv%size)')}$
+      ${GPU_UPDATE_DEVICE('nbprocs_info%course_nb(inb)%rcv%buffer(1:nbprocs_info%course_nb(inb)%rcv%size)')}$
     end do
 #endif
 
     ! unpack the MPI buffers, coarse neighbor, (c_recv), recv_prolong
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3) default(present)
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,inc1,inc2,inc3)")}$ ${GPU_INDEPENDENT()}$ ${GPU_DEFAULT_PRESENT()}$
        do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%course_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 1 )
@@ -1758,7 +1760,7 @@ contains
           ixRmax2=ixR_p_max2(iib2,inc2); ixRmax3=ixR_p_max3(iib3,inc3)
           Nx1=ixRmax1-ixRmin1+1; Nx2=ixRmax2-ixRmin2+1; Nx3=ixRmax3-ixRmin3+1
 
-          !$acc loop collapse(4) vector independent
+          ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixRmin3, ixRmax3
                 do ix2 = ixRmin2, ixRmax2
@@ -1782,7 +1784,7 @@ contains
     end do
 
     ! do prolongation on the ghost-cell values based on the received coarse values from coarser neighbors (f2c)
-    !$acc parallel loop gang collapse(4) default(present)
+    ${GPU_PARALLEL_LOOP_GANG("collapse(4)")}$ ${GPU_DEFAULT_PRESENT()}$
     do iigrid=1, igridstail
        !      inline variant of call gc_prolong(igrid)
        do i3 = -1, 1
@@ -1813,7 +1815,7 @@ contains
                    xComin2=rnode(rpxmin2_,igrid)-dble(nghostcells)*dxCo2
                    xComin3=rnode(rpxmin3_,igrid)-dble(nghostcells)*dxCo3;
 
-                   !$acc loop collapse(3) vector independent private(slope)
+                   ${GPU_LOOP_VECTOR("collapse(3) private(slope)")}$ ${GPU_INDEPENDENT()}$
                    do ixFi3 = ixFimin3,ixFimax3
                       do ixFi2 = ixFimin2,ixFimax2
                          do ixFi1 = ixFimin1,ixFimax1
@@ -1892,7 +1894,7 @@ contains
     ! This is a Cray compiler directive to force inlining.
     ! Required for OpenACC at optimization levels where it would not be inlined.
     !dir$ inlinealways skip_direction
-    !$acc routine vector
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in) :: dir(3)
 
     if (all(dir == 0)) then
@@ -1906,9 +1908,9 @@ contains
 
 
   subroutine fill_coarse_boundary(time,igrid,i1,i2,i3)
-    !$acc routine vector
     use mod_global_parameters
     use mod_boundary_conditions, only: bc_phys
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in) :: igrid,i1,i2,i3
     double precision, intent(in) :: time
 
@@ -1982,9 +1984,9 @@ contains
 
   !> Physical boundary conditions
   subroutine fill_boundary_before_gc(s,igrid,time,qdt)
-    !$acc routine vector
     use mod_global_parameters
     use mod_boundary_conditions, only: bc_phys
+    ${GPU_ROUTINE_VECTOR()}$
 
     type(state), intent(inout) :: s
     integer, intent(in) :: igrid
@@ -2045,9 +2047,9 @@ contains
 
   !> Physical boundary conditions
   subroutine fill_boundary_after_gc(s,igrid,time,qdt)
-    !$acc routine vector
     use mod_global_parameters
     use mod_boundary_conditions, only: bc_phys
+    ${GPU_ROUTINE_VECTOR()}$
 
     type(state), intent(inout) :: s
     integer, intent(in) :: igrid
