@@ -47,7 +47,6 @@ contains
 
   !> Initialize (and allocate) simulation and grid variables
   subroutine initialize_vars
-    use openacc
     use mod_forest
     use mod_global_parameters
     use mod_ghostcells_update
