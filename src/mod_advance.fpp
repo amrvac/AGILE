@@ -278,9 +278,12 @@ contains
 
     ! AGILE: todo
     ! if (fix_conserve_global .and. fix_conserve_at_step) then
-    !   call recvflux(idimmin,idimmax)
-    !   call sendflux(idimmin,idimmax)
+
+    ! JESSENEW 
+    call recvflux(idimmin,idimmax)
+    call sendflux(idimmin,idimmax)
     call fix_conserve(psb,idimmin,idimmax,1,nwflux)
+
     !   if(stagger_grid) then
     !     call fix_edges(psb,idimmin,idimmax)
     !     ! fill the cell-center values from the updated staggered variables
