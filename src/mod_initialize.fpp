@@ -144,12 +144,10 @@ contains
       allocate(pflux(iside,1)%flux(1,1:nx2,1:nx3,1:nwflux,1:max_blocks))
       pflux(iside,1)%flux = 0.0d0
       !$acc enter data create(pflux(iside,1)%flux)
-      
          
       allocate(pflux(iside,2)%flux(1:nx1,1,1:nx3,1:nwflux,1:max_blocks))
       pflux(iside,2)%flux = 0.0d0
       !$acc enter data create(pflux(iside,2)%flux)
-      
          
       allocate(pflux(iside,3)%flux(1:nx1,1:nx2,1,1:nwflux,1:max_blocks))
       pflux(iside,3)%flux = 0.0d0
