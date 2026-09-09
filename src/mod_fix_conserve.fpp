@@ -30,7 +30,8 @@ module mod_fix_conserve
   integer, dimension(:), allocatable   :: fc_recvreq, fc_sendreq
   integer, dimension(:,:), allocatable :: fc_recvstat, fc_sendstat
   integer, dimension(3), save        :: isize
-  !JESSENEW
+  
+  !JESSENEW added for fluxfixing
   integer, allocatable, save         :: ibuf_offset(:)
   integer, save                      :: nwflux_fc
   integer, dimension(3,3), save      :: nxCo_fc
@@ -49,8 +50,6 @@ module mod_fix_conserve
       irecv, irecv_cc
 
   public :: init_comm_fix_conserve
-!!  public :: allocateBflux
-!!  public :: deallocateBflux
   public :: sendflux
   public :: recvflux
   public :: store_flux
@@ -104,11 +103,6 @@ module mod_fix_conserve
      sendsize = 0
      if(stagger_grid) then
        ! Special communication for diagonal 'coarse corners'
-       ! nrecv/send_cc (for 'coarse corners' is a dim=ndim-1 array which
-       ! stores the faces that must be communicated in each direction.
-       ! nrecv/send_ct (for 'corners total' is the total number of
-       ! necessary communications. These special cases have their own
-       ! send and receive buffers (send/recvbuffer_cc), their tags, etc.
        nsend_ct=0
        nrecv_ct=0
        recvsize_cc=0
@@ -120,9 +114,6 @@ module mod_fix_conserve
          case (1)
          nrecv=nrecv+nrecv_fc(1)
          nsend=nsend+nsend_fc(1)
-         !!nxCo1=1;nxCo2=ixGhi2/2-nghostcells;nxCo3=ixGhi3/2-nghostcells;
-         !!isize(1)=nxCo1*nxCo2*nxCo3*(nwfluxin)
-         !JESSENEW
          isize(1)=nxCo_fc(1,1)*nxCo_fc(2,1)*nxCo_fc(3,1)*(nwfluxin)
          recvsize=recvsize+nrecv_fc(1)*isize(1)
          sendsize=sendsize+nsend_fc(1)*isize(1)
@@ -144,9 +135,6 @@ module mod_fix_conserve
          case (2)
          nrecv=nrecv+nrecv_fc(2)
          nsend=nsend+nsend_fc(2)
-         !!nxCo1=ixGhi1/2-nghostcells;nxCo2=1;nxCo3=ixGhi3/2-nghostcells;
-         !!isize(2)=nxCo1*nxCo2*nxCo3*(nwfluxin)
-         !!JESSENEW
          isize(2)=nxCo_fc(1,2)*nxCo_fc(2,2)*nxCo_fc(3,2)*(nwfluxin)
          recvsize=recvsize+nrecv_fc(2)*isize(2)
          sendsize=sendsize+nsend_fc(2)*isize(2)
@@ -168,9 +156,6 @@ module mod_fix_conserve
          case (3)
          nrecv=nrecv+nrecv_fc(3)
          nsend=nsend+nsend_fc(3)
-         !!nxCo1=ixGhi1/2-nghostcells;nxCo2=ixGhi2/2-nghostcells;nxCo3=1;
-         !!isize(3)=nxCo1*nxCo2*nxCo3*(nwfluxin)
-         !!JESSENEW
          isize(3)=nxCo_fc(1,3)*nxCo_fc(2,3)*nxCo_fc(3,3)*(nwfluxin)
          recvsize=recvsize+nrecv_fc(3)*isize(3)
          sendsize=sendsize+nsend_fc(3)*isize(3)
@@ -205,15 +190,13 @@ module mod_fix_conserve
        !$acc enter data create(recvbuffer)
      end if
 
-     ! Offset table, sized by the tag space.  Allocated once; max_blocks is fixed.
+     ! Offset table, sized by the tag space.  Allocated once, max_blocks is fixed.
      if (.not.allocated(ibuf_offset)) then
        allocate(ibuf_offset(4**3*max_blocks))
        ibuf_offset = -1
        !$acc enter data copyin(ibuf_offset)
      end if
 
-     ! sendflux packs into sendbuffer, so it is needed unconditionally now
-     ! (it used to be allocated only under stagger_grid, further down).
      if (allocated(sendbuffer)) then
        if (sendsize /= size(sendbuffer)) then
          !$acc exit data delete(sendbuffer)
@@ -488,11 +471,7 @@ module mod_fix_conserve
                  !!     fc_sendreq(isend),ierrmpi)
                  !!  ibuf_send=ibuf_send_next
                  else
-                   !!call mpi_isend_wrapper(pflux(iside,1,igrid)%flux,isize(1),&
-                   !!    MPI_DOUBLE_PRECISION,ipe_neighbor,itag, icomm,&
-                   !!   fc_sendreq(isend),ierrmpi)
 
-                   ! JESSENEW
                    !$acc parallel loop collapse(3) default(present)
                    do iw=1,nwflux_fc
                      do ix3=1,nxCo_fc(3,1)
@@ -619,10 +598,7 @@ module mod_fix_conserve
                  !!     fc_sendreq(isend),ierrmpi)
                  !!  ibuf_send=ibuf_send_next
                  else
-                   !!call mpi_isend_wrapper(pflux(iside,2,igrid)%flux,isize(2),&
-                   !!    MPI_DOUBLE_PRECISION,ipe_neighbor,itag, icomm,&
-                   !!   fc_sendreq(isend),ierrmpi)
-                   !!JESSENEW
+
                    !$acc parallel loop collapse(3) default(present)
                    do iw=1,nwflux_fc
                      do ix3=1,nxCo_fc(3,2)
@@ -748,10 +724,7 @@ module mod_fix_conserve
                  !!     fc_sendreq(isend),ierrmpi)
                  !!  ibuf_send=ibuf_send_next
                  else
-                   !!call mpi_isend_wrapper(pflux(iside,3,igrid)%flux,isize(3),&
-                   !!    MPI_DOUBLE_PRECISION,ipe_neighbor,itag, icomm,&
-                   !!   fc_sendreq(isend),ierrmpi)
-                   !!JESSENEW
+
                    !$acc parallel loop collapse(3) default(present)
                    do iw=1,nwflux_fc
                      do ix2=1,nxCo_fc(2,3)
@@ -848,174 +821,6 @@ module mod_fix_conserve
        end do
      end do
    end subroutine sendflux
-
-!!! TODO: these should not be called anymore
-!!subroutine allocateBflux()
-!!  use openacc
-!!  use mod_global_parameters
-!!
-!!  integer :: iigrid, igrid, iside
-!!  integer :: i1,i2,i3
-!!  integer :: nx1,nx2,nx3, nxCo1,nxCo2,nxCo3
-!!
-!!  nx1 = ixMhi1-ixMlo1+1
-!!  nx2 = ixMhi2-ixMlo2+1
-!!  nx3 = ixMhi3-ixMlo3+1
-!!
-!!  nxCo1 = nx1/2
-!!  nxCo2 = nx2/2
-!!  nxCo3 = nx3/2
-!!
-!!  do iigrid = 1, igridstail
-!!    igrid = igrids(iigrid)
-!!
-!!    ! DIMENSION 1
-!!    do iside = 1, 2
-!!      i1 = kr(1,1)*(2*iside-3)
-!!      i2 = kr(2,1)*(2*iside-3)
-!!      i3 = kr(3,1)*(2*iside-3)
-!!
-!!      if (neighbor_pole(i1,i2,i3,igrid) /= 0) cycle
-!!
-!!      select case (neighbor_type(i1,i2,i3,igrid))
-!!
-!!      case (neighbor_fine)
-!!
-!!        allocate(pflux(iside,1,igrid)%flux(1,1:nx2,1:nx3,1:nwflux))
-!!
-!!        if (acc_is_present(pflux(iside,1,igrid)%flux)) then
-!!          !$acc update device(pflux(iside,1,igrid)%flux)
-!!        else
-!!          !$acc enter data create(pflux(iside,1,igrid)%flux)
-!!        end if
-!!
-!!      case (neighbor_coarse)
-!!        allocate(pflux(iside,1,igrid)%flux(1,1:nxCo2,1:nxCo3,1:nwflux))
-!!        !!$acc update device(pflux(iside,1,igrid)%flux)
-!!
-!!        if (acc_is_present(pflux(iside,1,igrid)%flux)) then
-!!          !$acc update device(pflux(iside,1,igrid)%flux)
-!!        else
-!!          !$acc enter data create(pflux(iside,1,igrid)%flux)
-!!        end if
-!!
-!!      end select
-!!    end do
-!!
-!!    ! DIMENSION 2
-!!    do iside = 1, 2
-!!      i1 = kr(1,2)*(2*iside-3)
-!!      i2 = kr(2,2)*(2*iside-3)
-!!      i3 = kr(3,2)*(2*iside-3)
-!!
-!!      if (neighbor_pole(i1,i2,i3,igrid) /= 0) cycle
-!!
-!!      select case (neighbor_type(i1,i2,i3,igrid))
-!!
-!!      case (neighbor_fine)
-!!        allocate(pflux(iside,2,igrid)%flux(1:nx1,1,1:nx3,1:nwflux))
-!!
-!!        if (acc_is_present(pflux(iside,2,igrid)%flux)) then
-!!          !$acc update device(pflux(iside,2,igrid)%flux)
-!!        else
-!!          !$acc enter data create(pflux(iside,2,igrid)%flux)
-!!        end if
-!!
-!!      case (neighbor_coarse)
-!!        allocate(pflux(iside,2,igrid)%flux(1:nxCo1,1,1:nxCo3,1:nwflux))
-!!
-!!        if (acc_is_present(pflux(iside,2,igrid)%flux)) then
-!!          !$acc update device(pflux(iside,2,igrid)%flux)
-!!        else
-!!          !$acc enter data create(pflux(iside,2,igrid)%flux)
-!!        end if
-!!
-!!      end select
-!!    end do
-!!
-!!    ! DIMENSION 3
-!!    do iside = 1, 2
-!!      i1 = kr(1,3)*(2*iside-3)
-!!      i2 = kr(2,3)*(2*iside-3)
-!!      i3 = kr(3,3)*(2*iside-3)
-!!
-!!      if (neighbor_pole(i1,i2,i3,igrid) /= 0) cycle
-!!
-!!      select case (neighbor_type(i1,i2,i3,igrid))
-!!
-!!      case (neighbor_fine)
-!!        allocate(pflux(iside,3,igrid)%flux(1:nx1,1:nx2,1,1:nwflux))
-!!
-!!        if (acc_is_present(pflux(iside,3,igrid)%flux)) then
-!!          !$acc update device(pflux(iside,3,igrid)%flux)
-!!        else
-!!          !$acc enter data create(pflux(iside,3,igrid)%flux)
-!!        end if
-!!
-!!      case (neighbor_coarse)
-!!        allocate(pflux(iside,3,igrid)%flux(1:nxCo1,1:nxCo2,1,1:nwflux))
-!!
-!!        if (acc_is_present(pflux(iside,3,igrid)%flux)) then
-!!          !$acc update device(pflux(iside,3,igrid)%flux)
-!!        else
-!!          !$acc enter data create(pflux(iside,3,igrid)%flux)
-!!        end if
-!!
-!!      end select
-!!    end do
-!!
-!!  end do
-!!
-!!end subroutine allocateBflux
-!!
-!!! TODO: these should not be called anymore
-!!! except that the deallocateBflux call should happen at the very end,
-!!! once
-!!subroutine deallocateBflux()
-!!  use openacc
-!!  use mod_global_parameters
-!!
-!!  integer :: igrid, iigrid, iside
-!!
-!!  do iigrid = 1, igridstail
-!!    igrid = igrids(iigrid)
-!!
-!!    do iside = 1, 2
-!!
-!!#ifdef _OPENACC
-!!      ! delete device memory first
-!!      !$acc exit data delete(pflux(iside,1,igrid)%flux)
-!!      !$acc exit data delete(pflux(iside,2,igrid)%flux)
-!!      !$acc exit data delete(pflux(iside,3,igrid)%flux)
-!!
-!!#endif
-!!
-!!      ! deallocate host memory
-!!      if (allocated(pflux(iside,1,igrid)%flux)) then
-!!        deallocate(pflux(iside,1,igrid)%flux)
-!!      end if
-!!
-!!      if (allocated(pflux(iside,2,igrid)%flux)) then
-!!        deallocate(pflux(iside,2,igrid)%flux)
-!!      end if
-!!
-!!      if (allocated(pflux(iside,3,igrid)%flux)) then
-!!        deallocate(pflux(iside,3,igrid)%flux)
-!!      end if
-!!
-!!    end do
-!!  end do
-!!
-!!  !!optional full delete of the structure,
-!!  !!which was a rather regorous test (that worked btw)
-!!  !!!!!$acc exit data delete(pflux%flux)
-!!  !!!$acc exit data delete(pflux)
-!!  !!deallocate(pflux)
-!!
-!!  !!allocate(pflux(2,3,max_blocks))
-!!  !!!$acc enter data create(pflux) !JESSE
-!!
-!!end subroutine deallocateBflux
 
    subroutine fix_conserve(psb,idimmin,idimmax,nw0,nwfluxin)
      use mod_global_parameters
@@ -1197,7 +1002,6 @@ module mod_fix_conserve
                !    ibuf=ibufnext
                !  end if
                else
-                 !JESSENEW
                  if (slab_uniform) then
                    do ix3=1,nxCo_fc(3,1)
                      do ix2=1,nxCo_fc(2,1)
@@ -1354,7 +1158,6 @@ module mod_fix_conserve
                !    ibuf=ibufnext
                !  end if
                else
-                 !JESSENEW
                  if (slab_uniform) then
                    do ix3=1,nxCo_fc(3,2)
                      do ix1=1,nxCo_fc(1,2)
@@ -1508,7 +1311,6 @@ module mod_fix_conserve
                !    ibuf=ibufnext
                !  end if
                else
-                 !JESSENEW
                  if (slab_uniform) then
                    do ix2=1,nxCo_fc(2,3)
                      do ix1=1,nxCo_fc(1,3)
