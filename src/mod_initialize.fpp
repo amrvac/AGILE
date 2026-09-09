@@ -56,7 +56,7 @@ contains
     use mod_geometry
 
     integer :: igrid, level, ipe, ig1,ig2,ig3
-    integer :: nx1, nx2, nx3, iside !JESSE TODO
+    integer :: nx1, nx2, nx3, iside 
     logical :: ok
 
     allocate(ps(max_blocks))
