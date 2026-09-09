@@ -1,6 +1,7 @@
  &filelist
    base_filename    = 'output/TRML'
    saveprim         = T
+   autoconvert      = T
  /
 
  &savelist
