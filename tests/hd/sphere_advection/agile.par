@@ -29,7 +29,7 @@
  &methodlist
    time_stepper    = 'threestep'
    flux_scheme     = 20*'tvdlf'
-   limiter         = 20*'vanleer'
+   limiter         = 20*'koren'
    phys            = 'hd'
  /
 
@@ -43,7 +43,7 @@
  /
 
  &meshlist
-   max_blocks         =  2048
+   max_blocks         =  512
    refine_max_level   =  4
    refine_criterion   =  3 ! Lohner criterion
    refine_usr         =  .false.

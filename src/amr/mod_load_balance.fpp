@@ -18,7 +18,7 @@ module mod_load_balance
   integer, allocatable, dimension(:)  :: rcv_info_lb
   !$acc declare create(snd_buff_lb,rcv_buff_lb,rcv_info_lb)
   !> maximum number of blocks to send
-  integer, parameter :: max_buff=1024
+  integer :: max_buff
 
   public :: load_balance
 
@@ -64,6 +64,8 @@ contains
 
     ! Allocate the send and receive buffers
     if ( .not. allocated(snd_buff_lb) ) then
+       ! This is greedy, consider fixing.
+       max_buff = max_blocks
        allocate( snd_buff_lb(block_nx1, block_nx2, block_nx3, nw, max_buff), &
             rcv_buff_lb(block_nx1, block_nx2, block_nx3, nw, max_buff), &
             rcv_info_lb(max_buff) )

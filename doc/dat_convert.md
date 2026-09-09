@@ -1,12 +1,9 @@
-# Dump variables to dat files
+title: Dump variables to dat files
 
 There are two ways to add variables to the dat files:
 
 ## Extra variables
-This method adds extra variables in the dat file (which is also used for restart) and it is used in many tests: `ard/analytic_test_1d`, `demo/Advect_ParticleSampling_2D`, `hd/Gresho_Chan_2D`, ...
-To see all the tests which use this method, in the tests folder run: 
-
-    find . -name 'mod_usr.t' -exec grep -H "var_set_extravar" {} \;
+This method adds extra variables in the dat file (which is also used for restart).  
 
 This method  consists in:
 1. Assign an index in the variable list w in `usr_init` subroutine (in `mod_usr.t`) using `var_set_extravar`
@@ -15,28 +12,34 @@ This method  consists in:
 
 .
 ## New dat files
-With this method an extra dat file is generated with new variables. (see `amrvacio/mod_convert.t`). 
+With this method an extra dat file is generated with new variables. (see `io/mod_convert.fpp`). 
 1. Set `convert_type` to `"dat_generic_mpi"`:
 
-        &filelist
-              ...
-              convert_type = "dat_generic_mpi"
-              ...
-        /
+```fortran
+&filelist
+      ...
+      convert_type = "dat_generic_mpi"
+      ...
+/
+```
 
 2. Add a convert method in `usr_init` subroutine (`use mod_convert`):
 
-        call add_convert_method2(dump_vars, 4, "jx jy jz sxr", "_aux_") 
-
+```fortran
+    call add_convert_method2(dump_vars, 4, "jx jy jz sxr", "_aux_") 
+```
 or
 
-        call add_convert_method(dump_vars, 4, (/" jx", " jy", " jz", "sxr"/), "_aux_")
+```fortran
+    call add_convert_method(dump_vars, 4, (/" jx", " jy", " jz", "sxr"/), "_aux_")
+```
 
-The first way is preferred as because Fortran requires the strrings in an array to have the same length and extra spaces might be necessary for this.
+The first way is preferred as because Fortran requires the strings in an array to have the same length and extra spaces might be necessary for this.
 The last argument `_aux_` is the suffix added to `base_filename`  in order to generate  the name of the new dat file.
 
 3. Implement `dump_vars` function: 
 
+```fortran
         function dump_vars(ixI^L, ixO^L, w, x, nwc) result(wnew)
           use mod_global_parameters
           use mod_thermal_emission
@@ -54,32 +57,16 @@ The last argument `_aux_` is the suffix added to `base_filename`  in order to ge
           call get_SXR(ixI^L,ixO^L,w,x,te_fl_c,tmp,9,12)
           wnew(ixO^S,4) =  tmp(ixO^S)
         end function dump_vars
+```
 
 ### Examples of use in the main code
 
 1. For the mhd model for dumping full variables by setting in the parameter file:
 
-        &mhd_list
-          mhd_dump_full_vars=.true.
-        /  
+```fortran
+&mhd_list
+    mhd_dump_full_vars=.true.
+/  
+```
 
 A new file is created with hardcoded suffix `new`.
-
-2. For the two-fluid  model for:
-    1. dumping full variables by setting in the parameter file:
-
-            &twofl_list
-              twofl_dump_full_vars=.true.
-            /  
-
-    A new file is created with hardcoded suffix `new`.
-
-    2. dumping the collisional terms by setting in the parameter file:
-
-            &twofl_list
-              twofl_dump_coll_terms=.true.
-            /  
-
-  A new file is created with hardcoded suffix `_coll`.
-
- 

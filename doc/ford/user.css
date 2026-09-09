@@ -1,0 +1,76 @@
+/* Dark-mode support for the FORD site, layered on top of Bootstrap 5.3's
+   built-in [data-bs-theme] theming (see templates/base.html for the toggle
+   button and the script that sets the attribute). Bootstrap's own
+   components already re-theme themselves; this file only patches the bits
+   of FORD's local.css/pygments.css that hardcode light-mode colors. */
+
+/* Images embedded in narrative page content (e.g. doc/examples.md figures)
+   are plain <img> tags emitted by the Markdown renderer with no sizing
+   class, so they display at their native pixel size -- often wider than
+   the #text content column. Constrain them to the column width at
+   render time via a percentage (not a fixed pixel max-width) so this
+   holds at any viewport size or browser zoom level, and center them. */
+#text img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto 1rem;
+}
+
+#theme-toggle {
+    color: rgba(255, 255, 255, 0.85);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+#theme-toggle:hover {
+    color: #fff;
+    border-color: #fff;
+}
+#theme-toggle .fa-sun {
+    display: none;
+}
+[data-bs-theme="dark"] #theme-toggle .fa-moon {
+    display: none;
+}
+[data-bs-theme="dark"] #theme-toggle .fa-sun {
+    display: inline;
+}
+
+[data-bs-theme="dark"] ol.hierarchy {
+    background-color: var(--bs-tertiary-bg);
+    border-color: var(--bs-border-color);
+}
+
+/* FORD's default templates hardcode Bootstrap's `.bg-light` utility for the
+   "well" boxes wrapping page summaries and the landing page's TOC sidebar
+   (`--bs-light-rgb` isn't redefined per-theme by Bootstrap itself, so
+   `.bg-light` stays light even under [data-bs-theme=dark] unless we
+   override it here). */
+[data-bs-theme="dark"] .bg-light {
+    background-color: var(--bs-secondary-bg) !important;
+    color: var(--bs-body-color);
+}
+
+/* Source code panels: give them a dark gray background to match, and
+   replace pygments' light-background token colors with a readable dark-mode
+   palette (loosely modeled on One Dark) covering the token classes FORD's
+   Fortran highlighting actually emits. */
+[data-bs-theme="dark"] .codehilite {
+    background-color: var(--bs-secondary-bg);
+    border-color: var(--bs-border-color);
+}
+[data-bs-theme="dark"] .hl pre a::before {
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-secondary-color);
+    border-color: var(--bs-border-color);
+}
+[data-bs-theme="dark"] .codehilite .c { color: #7f848e; }               /* Comment */
+[data-bs-theme="dark"] .codehilite .cp { color: #61afef; }              /* Comment.Preproc */
+[data-bs-theme="dark"] .codehilite .k,
+[data-bs-theme="dark"] .codehilite .kd { color: #c678dd; }              /* Keyword(.Declaration) */
+[data-bs-theme="dark"] .codehilite .kt { color: #e5c07b; }              /* Keyword.Type */
+[data-bs-theme="dark"] .codehilite .nb { color: #56b6c2; }              /* Name.Builtin */
+[data-bs-theme="dark"] .codehilite .mf,
+[data-bs-theme="dark"] .codehilite .mi { color: #d19a66; }              /* Literal.Number */
+[data-bs-theme="dark"] .codehilite .s1,
+[data-bs-theme="dark"] .codehilite .s2 { color: #98c379; }              /* Literal.String */
+[data-bs-theme="dark"] .codehilite .w { color: #5c6370; }               /* Text.Whitespace */

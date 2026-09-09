@@ -275,7 +275,8 @@ contains
        small_temperature,small_pressure,small_density, small_values_method,&
         small_values_daverage, fix_small_values, check_small_values,&
         trace_small_values, small_values_fix_iw, schmid_rad1,schmid_rad2,&
-       schmid_rad3, phys
+       schmid_rad3, phys,&
+       flux_adaptive_diffusion, flux_ad_min, flux_ad_scale
 
     namelist /boundlist/ nghostcells,ghost_copy,internalboundary,&
         typeboundary_min1,typeboundary_min2,typeboundary_min3,&
@@ -2042,6 +2043,7 @@ contains
     !$acc update device(refine_threshold, derefine_ratio)
     !$acc update device(block_nx1, block_nx2, block_nx3)
     !$acc update device(courantpar, dtdiffpar)
+    !$acc update device(flux_adaptive_diffusion, flux_ad_min, flux_ad_scale)
 
   end subroutine read_par_files
 

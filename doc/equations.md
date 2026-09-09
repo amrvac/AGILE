@@ -1,190 +1,356 @@
-# Physics modules and equations
+title: Physics modules and equations
 
-[TOC]
-
-# List of physics modules {#eq_list_physics}
-
+# List of physics modules {: #eq_list_physics }
 This document describes the equations implemented.
-Information about user defined source terms are in [user module](amrvacusr.md). In
+Information about user defined source terms are in the user module. In
 principle, the code handles anything of generic form
 
-![](figmovdir/eq.general.gif)
+\begin{equation}
+    \partial_t \mathbf{U} + \nabla \cdot \mathbf{F}(\mathbf{U}) = \mathbf{S}(\mathbf{U},\nabla \mathbf{U},\mathbf{x},t)
+\end{equation}
 
-The code is configured to use the specified set of equations by activating it in 
-the usr_init subroutine of user module "mod_usr.t"
+The code is configured to use the specified set of equations by activating it via 
+the code's parameter file in the methodlist
 
-    subroutine usr_init()
-      ...
-      call EQUATION_activate()
-    end subroutine usr_init
+```fortran
+&methodlist
+   phys            = 'mhd'
+/
+```
 
+where `phys` is one of the implemented physics modules (`hd`, `mhd`, `ffhd`, `srhd`),
+see below. The equations and notation below follow
+[Porth et al., "Astrophysics on GPUs: introducing AGILE 1.0"
+(submitted to RASTI, in review; arXiv:2607.19277)](https://arxiv.org/abs/2607.19277),
+Section 2.3, which is also the citable reference for AGILE 1.0.
 
-where EQUATION is one of the implemented physics modules (rho,hd,mhd),
-see below.
+| Module | Available solvers |
+| --- | --- |
+| `hd`   | `LF`, `HLL`, `HLLC` |
+| `ffhd` | `LF` |
+| `mhd`  | `LF`, `HLL` |
+| `srhd` | `LF` |
 
-## Transport Equation: rho {#eq_rho}
+## Hydrodynamics: hd {: #eq_hd }
 
-    call rho_activate()
+```fortran
+&methodlist
+   phys            = 'hd'
+/
+```
 
-![](figmovdir/eq.rho.gif)
+The hydrodynamic module solves the partial differential equations that
+govern compressible gas dynamics. The conservative variables are density,
+vectorial momentum density, hydrodynamic energy density and a
+user-selected set of `n_tr` tracers, collected in
+**U** = [ρ, **m**≡ρ**v**, e_hd, D_tr^i], obeying
 
-The transport equation describes the transport of a scalar field, here the
-density **rho** by a prescribed velocity field. This equation is used for test
-purposes.
+\begin{eqnarray}
+ \partial_t \rho + \nabla \cdot (\rho\mathbf{v}) & =  & 0  \,,\\
+  \partial_t \mathbf{m} + \nabla \cdot \left(\mathbf{v}\mathbf{m}+p\mathbf{I}\right) & = & \rho\mathbf{g} \,,\\
+  \partial_t e_{\mathrm{hd}}+\nabla\cdot\left[\mathbf{v}(e_{\mathrm{hd}}+p)\right]
+     & = &
+     \rho\mathbf{v}\cdot\mathbf{g} -n_e  n_H\Lambda(T) \,,\\
+  \partial_t D_{tr}^i+\nabla \cdot(\mathbf{v} D_{tr}^i) & = & 0 \,.
+ \end{eqnarray}
 
-The parameters rho_v in the rho_list of amrvac.par file
- define the components of the uniform velocity field.
+Here *p* is the gas pressure, **v** the velocity vector and **I** the
+identity tensor. Tracers are handled using their conservative variable
+D_tr=ρϑ_tr, such that the actual tracer value ϑ_tr obeys a pure advection
+equation. The pre-implemented sources on the right-hand-side allow the
+user to set the external gravitational acceleration **g** (see
+[Gravity](#eq_gravity) below) and select the treatment of local and
+instantaneous optically thin radiative losses (see
+[Radiative losses](#eq_radloss) below).
 
-For a linear scalar equation the Riemann solver is trivial, thus all TVD type
-methods give identical results.
+The pressure is a derived quantity, obtained from the energy closure
 
-## Scalar Nonlinear Equation: nonlinear {#eq_nonlinear}
+\begin{equation}
+    e_{\mathrm{hd}}=\frac{p}{\hat{\gamma}-1}+\frac{1}{2}\rho v^2 \,,
+\end{equation}
 
-    call nonlinear_activate()
+which introduces the equation parameter **hd_gamma** representing the
+constant ratio of specific heats γ̂ (typical value 5/3 for a mono-atomic
+gas). An ideal gas law relates *p* = 𝓡ρT, with a fixed gas constant
+𝓡 = k_B/(μ̃m_p), where k_B is the Boltzmann constant, m_p the proton mass,
+and the constant mean molecular weight μ̃ = (1+4He_a)/(2+3He_a) is set by
+the fixed Helium abundance **He_abundance** (He_a ≡ n_He/n_H).
 
-This module contains various instances of a scalar nonlinear equation, including the inviscid Burgers, inviscid nonconvex equation, as well as a possibility to handle the Korteweg-de Vries equation. It allows testing of truly nonlinear (shock steepening and formation) phenomena, in 1D to multi-D, or to test how source additions are best combined with flux prescriptions and discretizations. The equation implemented in \f$N_d\f$ dimensions is
-
-    \f$  \frac{\partial \rho}{\partial t} + \nabla \cdot \mathbf{F}(\rho,\mathbf{x},t) = -\delta^2 \sum_{i=1}^{N_d} \frac{\partial^3 \rho}{\partial x_i^3} \f$
-
-where the RHS is activated through the _mod_kdv.t_ module. The actual flux expression can be chosen (depending on the parameter `nonlinear_flux_type`) to be one of
-\f$   \mathbf{F}^{\mathrm{burgers}}  =  \frac{1}{2}{\rho^2}\mathbf{v}_0  \f$ or
-\f$  \mathbf{F}^{\mathrm{nonconvex}}  =  {\rho^3}\mathbf{v}_0 \f$
-where we introduced \f$\mathbf{v}_0=\sum_{i=1}^{N_d} \hat{\mathbf{e}}_i\f$
-
-## Hydrodynamics: hd {#eq_hd}
-
-    call hd_activate()
-
-![](figmovdir/eq.hd.gif)
-
-The Euler equations are solved for density **rho**, the momentum density
-**m=rho*v** and the total energy density **e**. The pressure is a derived
-quantity which is calculated from the conservative variables.
-
-Parameters of hydrodynamics are read in the **hd_list** of parameter file.
-There is a single equation parameter, the adiabatic index **hd_gamma**
-(typical value is 5/3). 
+Parameters of hydrodynamics are read in the **hd_list** of the parameter
+file, including the equation parameter **hd_gamma**.
 
 This equation module can be combined with physical sources for
-(local) optically thin radiative losses by set **hd_radiative_cooling=.true.**. 
-see the [radiative cooling](radiative_cooling.md) page. Schematically, it
-introduces terms as
+(local) optically thin radiative losses by setting **hd_radiative_cooling=.true.**,
+see the [radiative cooling](radiative_cooling.html) page. It can also be
+combined with the external gravity module by setting **hd_gravity=.true.**,
+see [Gravity](#eq_gravity) below.
 
-![](figmovdir/eq.radloss.gif)
+### Radiative losses {: #eq_radloss }
+When **hd_radiative_cooling**/**mhd_radiative_cooling**/**ffhd_radiative_cooling**
+is enabled, the energy equation of the corresponding module is augmented
+with the optically thin radiative loss term
 
-The HD module can also be combined with the external gravity module 
-(_src/physics/mod_gravity.t_) for uniform gravity by set **hd_gravity=.true.**
+\begin{equation}
+    -n_e n_H \Lambda(T) \,,
+\end{equation}
 
-![](figmovdir/eq.gravity.gif)
+where Λ(T) is a tabulated radiative loss function depending only on the
+local temperature T (see [Radiative cooling](radiative_cooling.html) for
+the available curves and the exact integration scheme of Townsend 2009
+used to advance this term). These losses scale with the squared density:
+ρ is converted to electron and Hydrogen number densities under the
+assumption of constant, fully ionized conditions with a fixed Helium
+abundance He_a ≡ n_He/n_H, so that charge neutrality sets
 
-and for point gravity
+\begin{equation}
+    n_e=n_H(1+2\,\mathrm{He}_a) \,,\qquad
+    \rho=n_H m_p(1+4\,\mathrm{He}_a) \,.
+\end{equation}
 
-![](figmovdir/eq.pointgrav.gif)
+### Gravity {: #eq_gravity }
+The external gravitational acceleration **g** enters the momentum and
+energy sources (ρ**g** and ρ**v**·**g** respectively) of the `hd`, `mhd`
+and `ffhd` modules alike, activated by setting **hd_gravity**/**mhd_gravity**/**ffhd_gravity**
+`= .true.` in the corresponding `_list` of the parameter file. AGILE does
+not ship a built-in gravity profile (e.g. no separate "uniform" vs "point
+mass" switches); instead, the user supplies **g** directly for the
+current cell state by implementing a `gravity_field` function in
+`mod_usr.fpp`, for example a constant vertical gravity as used in the
+`hd/RT3D` test case:
 
-Note how the gravitational constant and the non-dimensionalization is taken
-into the parameters _M_point_ and its location _x_point_.
+```fortran
+pure real(dp) function gravity_field(wCT, x, idim) result(field)
+  !$acc routine seq
+  real(dp), intent(in)       :: wCT(nw_phys)
+  real(dp), intent(in)       :: x(1:ndim)
+  integer, value, intent(in) :: idim
 
-To do adiabatic hydrodynamics (i.e. solve the hydro set without energy equation added) just add in hd_list of parameter file
+  if (idim == 1) field =  0.0_dp
+  if (idim == 2) field =  0.0_dp
+  if (idim == 3) field = -1.0_dp
+end function gravity_field
+```
 
-    hd_energy=.false.
+`idim` selects the spatial direction (1, 2 or 3) for which the
+acceleration component is requested; a spatially- or time-varying field
+(e.g. a point-mass potential) can be implemented by using `x` (and any
+module-level state the user maintains) inside this function.
 
-This special case includes the equations for pressureless dust and the Shallow Water equations, and writes generally as
+## Magnetohydrodynamics: mhd {: #eq_mhd }
 
-![](figmovdir/eq.hdadiab.gif)
+```fortran
+&methodlist
+   phys            = 'mhd'
+/
+```
 
-The system of adiabatic hydrodynamical equations are solved for the density
-**rho** and the momentum density **m=rho*v**. The pressure is a function of
-density only since an isentropic initial condition is assumed. There are two
-equation parameters, the adiabatic index **hd_gamma** (the isothermal
-case corresponds to **hd_gamma**) and the adiabatic constant
-**hd_adiab** (which should be positive or zero). It is possible to set
-**hd_adiab=0** and handle the case of pressureless dust.
+The MHD module combines mass conservation and the tracer equation above
+with the following generalizations of momentum and energy, and adds the
+induction equation for the magnetic field **B**:
 
-The system of **shallow water equations** is a special case with the following
-identifications: **rho=h** represents the height of the water column,
-**hd_gamma2** and the adiabatic coefficient is half of the gravitational
-acceleration **hd_adiab=g/2**.
+\begin{equation}
+\partial_t \mathbf{m} + \nabla \cdot \left(\mathbf{v}\mathbf{m}+(p+{\textstyle{\frac{1}{2}}}B^2)\mathbf{I}-\mathbf{B}\mathbf{B}\right)  = \rho\mathbf{g}
+\end{equation}
 
-There is a Roe-type Riemann solver implemented, in _hd/mod_hd_roe.t_. Several
-routines specific to HLLC are in _hd/mod_hd_hllc.t_.
+\begin{equation}
+  \partial_t e_{\mathrm{mhd}}+\nabla\cdot\left[\mathbf{v}(e_{\mathrm{mhd}}+p+{\textstyle{\frac{1}{2}}}B^2)-\mathbf{B}(\mathbf{v}\cdot\mathbf{B})\right]
+  = \rho\mathbf{v}\cdot\mathbf{g} -n_e  n_H\Lambda(T) + \nabla \cdot \left[ \mathbf{B} \times \eta \mathbf{J}\right]\,,
+\end{equation}
 
-## Magnetohydrodynamics: mhd {#eq_mhd}
+\begin{equation}
+\partial_t\mathbf{B}+\nabla\cdot\left[\mathbf{v}\mathbf{B}-\mathbf{B}\mathbf{v} +\psi\mathbf{I}\right] = -\nabla\times\eta \mathbf{J} \,,
+\end{equation}
 
-    call mhd_activate()
+where the total energy density closure is
 
-![](figmovdir/eq.mhd.gif)
+\begin{equation}
+    e_{\mathrm{mhd}}=\frac{p}{\hat{\gamma}-1}+\frac{1}{2}\rho v^2+\frac{1}{2}B^2 \,,
+\end{equation}
 
-This is the full system of the MHD equations, with the following conservative
-variables: density **rho**, momentum density **m=rho*v**, total energy density
-**e** and the magnetic field **B**. The magnetic field is measured in units
-for which the magnetic permeability is 1.
+**J** = ∇×**B** is the current density, and the magnetic field is
+measured in units for which the magnetic permeability is 1. For
+non-zero resistivity η, the resistive terms are added as "non-local"
+source terms using the compact stencil detailed in Porth & Xia et al.
+(2014). The GLM field ψ used to control the divergence of **B**
+numerically is described in [Divergence B source
+treatments](#eq_divB_fix) below.
 
 Parameters of magnetohydrodynamics are read in the **mhd_list** of parameter file.
 The source terms on the right hand side with **eta** in them are the resistive
 terms.
 
-There are three equation parameters: the polytropic index **mhd_gamma**
-(which must be larger or equal to 1), and the resistivity **mhd_eta**, and
-the entropy **mhd_adiab**. Ideal MHD corresponds to **mhd_eta=0**,
-positive values give a uniform resistivity, while a negative value calls the
-**specialeta** procedure to determine the resistivity as a
-function of the coordinates, of the conservative variables, and/or of the
-current density. This subroutine is to be completed by the user.
-
-There is a Roe-type Riemann solver implemented using arithmetic averaging, in
-_mhd/mod_mhd_roe.t_, while several routines specific to HLLC are in _mhd/mod_mhd_hllc.t_.
+There are two equation parameters: the polytropic index **mhd_gamma**
+(which must be larger or equal to 1), and the resistivity **mhd_eta**. 
 
 This equation module can be combined with physical sources for
-(local) optically thin [radiative losses](radiative_cooling.md) by set **mhd_radiative_cooling=.true.**. 
+(local) optically thin [radiative losses](radiative_cooling.html) by set **mhd_radiative_cooling=.true.**. 
 It can also be combined with the external gravity modules by set **mhd_gravity=.true.**.
 
-We also have implemented the magnetic field splitting strategy, where a static, 
-background magnetic field is assumed. This modifies the equations and brings in extra
-sources and flux terms.
+### Divergence B source treatments {: #eq_divB_fix }
 
-To run isothermal magnetohydrodynamics, add in mhd_list of parameter file
+To control magnetic monopole buildup numerically, AGILE uses the
+generalized Lagrangian multiplier (GLM) approach of Dedner et al. (2002),
+where ψ is an added evolved variable obeying
 
-    mhd_energy=.false.
+\begin{equation}
+    \partial_t \psi+c_{h}^{2} \nabla \cdot \mathbf{B} = -\frac{c_h^2}{c_p^2}\psi \,.
+\end{equation}
 
-![](figmovdir/eq.mhdiso.gif)
+This equation has a hyperbolic advection speed c_h and a parabolic
+factor c_p. In practice, the left-hand side is dealt with using the flux
+prescription c²_max**B**, while the right-hand side (the damping term) is
+solved exactly over the time step Δt_n through
 
-This is the system of the MHD equations without the full energy equation, and
-with the following conservative variables: density **rho**, momentum density
-**m=rho*v**, and the magnetic field **B**. The magnetic field is measured in
-units for which the magnetic permeability is 1. The density pressure relation
-is polytropic.
+\begin{equation}
+    \psi^{n+1}=\psi^n\exp\left(-\Delta t_n c_{\mathrm{max}}\alpha_{\mathrm{GLM}}/\min_{i=1,3}(\Delta x_i)\right)
+\end{equation}
+
+using second-order operator splitting. This implies availability of the
+maximal, global physical propagation speed c_max that also sets the time
+step, while
+
+\begin{equation}
+    \alpha_{\mathrm{GLM}}=\min_{i=1,3}(\Delta x_i)\,c_h/c_p^2
+\end{equation}
+
+becomes a fixed parameter set to 0.5 by default, but generally taken
+within [0,1] (Mignone, Tzeferacos & Bodo 2010).
+
+## Frozen-field hydrodynamics: ffhd {: #eq_ffhd }
+
+```fortran
+&methodlist
+   phys            = 'ffhd'
+/
+```
+
+As an intermediate towards full 3D MHD applications, the frozen-field
+hydrodynamic (FFHD) module introduced by Zhou, Li & Keppens (2024, 2025)
+solves hydrodynamics along a given *frozen* 3D magnetic topology
+**B**(**x**) that does not evolve in time. Introducing the local
+magnetic unit vector b̂ = **B**/B, this module evolves the set
+**U** = [ρ, m_∥=ρv_∥, e_hd∥, q_∥], the magnetic-field-line-projected
+variant of the hydrodynamic mass, momentum and energy equations above,
+augmented with a field-aligned heat flux q_∥:
+
+\begin{eqnarray}
+    \partial_t \rho+\nabla \cdot  \left (  \rho v_{\parallel} \mathbf{\hat{b}}\right ) &=& 0\,,\\
+    \partial_t m_{\parallel}+\nabla \cdot \left [  \left (  \rho v^2_{\parallel} +p\right ){\mathbf{\hat{b}}}\right ] &=& \rho \mathbf{g}\cdot\mathbf{\hat{b}} + p (\nabla\cdot \mathbf{\hat{b}})\,,\\
+    \partial_t e_{hd\parallel} + \nabla \cdot \left[\left((e_{hd\parallel} + p) v_{\parallel}-q_\parallel\right) \mathbf{\hat{b}}\right] &=& \rho v_{\parallel} \mathbf{g}\cdot\mathbf{\hat{b}}  -n_e  n_H\Lambda(T) + H_{\mathrm{user}}(\mathbf{x})\,,\\
+    \partial_t q_\parallel & = & -\frac{\left(q_\parallel-\kappa_\parallel\mathbf{\hat{b}}\cdot \nabla T\right)}{\tau} \,,
+\end{eqnarray}
+
+where now e_hd∥ = p/(γ̂-1) + ρv_∥²/2. This uses a hyperbolic approach to
+handle anisotropic (purely field-aligned) thermal conduction, where
+κ_∥ = κ_∥,0 T^(5/2), with κ_∥,0 the equation parameter **hypertc_kappa**.
+This prescription forces the parallel heat flux q_∥ to approach its
+target expression κ_∥ b̂·∇T within at most four CFL-limited timesteps
+(hence setting τ = max(4Δt_n, τ_reduced), where various prescriptions for
+τ_reduced are possible; Rempel 2017, Warnecke & Bingert 2020, Navarro et
+al. 2022, Zhou et al. 2025). A purely local user-defined heating
+prescription can be coded up by the user in H_user(**x**) (see
+`usr_source`/`usr_source_usr` in `mod_usr.fpp`).
+
+Note that FFHD re-uses the external gravity module from the hydro case
+(see [Gravity](#eq_gravity) above), but here only the effective gravity
+projected along the fixed field, **g**·b̂, enters. The radiative loss
+treatment (see [Radiative losses](#eq_radloss) above) is shared with all
+other physics modules, activated with **ffhd_radiative_cooling=.true.**.
+The equation parameter **ffhd_gamma** sets γ̂, analogous to **hd_gamma**.
+
+## Special relativistic hydrodynamics: srhd {: #eq_srhd }
+
+```fortran
+&methodlist
+   phys            = 'srhd'
+/
+```
+
+The special relativistic hydrodynamics module solves the following set
+of conservation laws in flat (Minkowski) spacetime
+
+\begin{eqnarray}
+    \partial_t D + \nabla\cdot (D \mathbf{v}) &=& 0 \,,\\
+    \partial_t \mathbf{m} + \nabla \cdot (\mathbf{v}\mathbf{m} + p\mathbf{I}) &=& 0 \,,\\
+    \partial_t \tau + \nabla \cdot\left(\mathbf{m} - D \mathbf{v}\right) &=& 0 \,,
+\end{eqnarray}
+
+where the conserved quantities are the density D, the momentum-density
+**m** and the rest-mass-subtracted total energy density τ:=e-D, all
+evaluated in the lab-frame. The conserved variables are
+
+\begin{equation}
+    \mathbf{U} = \left(\begin{array}{c}
+        D  \\
+        \mathbf{m} \\
+        \tau
+    \end{array}
+    \right)
+    = \left(\begin{array}{c}
+        \Gamma \rho \\
+        \Gamma^2 \rho h \mathbf{v} \\
+        \Gamma^2 \rho h - p - D
+    \end{array}
+    \right) \,,
+\end{equation}
+
+with h being the specific enthalpy of the gas and Γ the Lorentz factor
+Γ = 1/√(1-v²). The primitive variables are
+
+\begin{equation}
+    \mathbf{P} = \left(\begin{array}{c}
+        \rho  \\
+        \Gamma \mathbf{v} \\
+        p
+    \end{array}
+    \right) \,,
+\end{equation}
+
+which correspond to the fluid-frame density ρ, the spatial components of
+the four-velocity Γ**v** and the fluid-frame pressure p. Since primitive
+variables are required to evaluate the fluxes, a non-linear inversion
+**P**(**U**) is needed; AGILE uses the one introduced by Bergmans,
+Keppens, van Odyck & Achterberg (2005), which expresses the energy
+equation as a 1D root-finding problem in ξ = Γ²ρh. AGILE also saves the
+set of auxiliary variables
+
+\begin{equation}
+    \mathbf{A} = \left(\begin{array}{c}
+        \xi  \\
+        \Gamma
+    \end{array}
+    \right) \,,
+\end{equation}
+
+useful for quick conversion between **P** and **U** and to initialize an
+initial guess for the root-finder.
+
+As with all Euler-type equations, this set needs to be closed with an
+equation of state (EOS) of the form h=h(ρ,p). The two options currently
+implemented (selected via the **srhd_eos** logical parameter) are the
+*ideal gas* (**srhd_eos=.false.**, the default)
+
+\begin{equation}
+    h(\rho,p) = 1 + \frac{\hat{\gamma}}{\hat{\gamma}-1}\frac{p}{\rho} \,,
+\end{equation}
+
+and the *Synge gas* (**srhd_eos=.true.**) of the single-species
+trans-relativistic gas (Synge 1957), defined as
+
+\begin{equation}
+    h(\rho,p) = \frac{K_3(\theta^{-1})}{K_2(\theta^{-1})} \,,
+\end{equation}
+
+with the relativistic temperature θ := p/ρ and K_n the modified Bessel
+function of the second kind. As in previous work (Meliani & Sauty 2004;
+Mignone & Plewa 2005; Ryu, Chattopadhyay & Choi 2006; Porth & Olivares et
+al. 2017), AGILE uses an approximation to the previous expression that
+avoids the expensive evaluation of the Bessel functions (Mathews 1971;
+Goedbloed, Keppens & Poedts 2010). The equation parameter **srhd_gamma**
+sets γ̂ for the ideal-gas EOS (and the adiabatic index used in the Synge
+gas approximation).
 
 
-# Divergence B source treatments {#eq_divB_fix}
+# Positivity fixes {: #eq_positivity_fixes }
 
-Both the classical and the special relativistic MHD module can deal with
-solenoidal magnetic field corrections through source term treatments.
-Traditionally, these can be written as
-
-![](figmovdir/eq.divb.gif)
-
-Terms proportional to **div B** are [Powell`s fix](methods.md) for
-the numerical problems related to the divergence of the magnetic field. They
-are used only in more than 1D. We can also
-just take the term along in the induction equation, known as Janhunen`s
-approach. Another option is to use the diffusive (parabolic) approach, with
-the parameter _C_d_ of order unity (up to 2). Alternatively, there is the 
-[Dedner`s](methods.md) generalised Lagrange multiplier (GLM) method.
-
-# Positivity fixes {#eq_positivity_fixes}
-
-Another, similarly corrective, action is referred to as positivity fixing.
-This is merely an additional means to handle the supposedly rare instances
-where due to all nonlinearities of the scheme employed, the local conservative
-to primitive transformation signals a non-physical state. Our positivity fix
-approach can then be activated, and one such strategy operates as follows:
-identify all cells (within the same grid block) that represent physical states
-surrounding a faulty cell in a rectangular zone up to **small_values_daverage** cells
-away; (2) convert those cells to primitive variables; and (3) for all but the
-magnetic field components, replace the faulty cell values by the average of
-surrounding physical state cells. Finally, revert to conservative variables
-where needed. Obviously, in this form, strict conservation may be violated.
-These fix strategies are seperated off in the _mod_small_values_ modules.
-They are by default inactive, and can be controlled by the parameters
-**small_values_method** and other related parameters described in
-[par/PROBLEM](par.md).
+TODO

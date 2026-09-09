@@ -1,14 +1,10 @@
-# Auxiliary variables (nw...)
+title: Auxiliary variables (nw...)
 
-[TOC]
-
-# List of auxiliary variables {#list}
-
+# List of auxiliary variables {: #list }
 This document describes the differences and the intended use of the **nwaux,
 nwextra** parameters. These global parameters are defined in the `mod_variables.t`
 
-## nw {#nw}
-
+## nw {: #nw }
 This global parameter sets the total number of variables, determining the
 (last dimension-independent) size of the _w(ixG^T,1:nw)_ array, and is always
 
@@ -21,8 +17,7 @@ some extra _nwextra_ variables. For these latter two types of variables, one
 does not have a corresponding flux definition in _getflux, gefluxforhllc_
 subroutines, and they also have no boundary conditions imposed on them.
 
-## nwflux {#nwflux}
-
+## nwflux {: #nwflux }
 The first _1:nwflux_ variables should be the conservative variables of the
 physics module at hand, and these are the ones that are updated by means of
 fluxes across cell boundaries, and are influenced by source terms (geometric
@@ -35,8 +30,7 @@ conditions are to be imposed and existing boundary types have to be provided
 steady-state computations, the residual is based on only the temporal
 variation of these _1:nwflux_ variables.
 
-## nwaux {#nwaux}
-
+## nwaux {: #nwaux }
 When for the physics module at hand, one has _nwaux>0_, the slots in the _w_-
 array corresponding to _nwflux+1:nwflux+nwaux_ contain so-called auxiliary
 variables. They can be computed directly from instantaneous local values of
@@ -52,8 +46,7 @@ do not need to specify a boundary type for the _nwflux+1:nwflux+nwaux_
 variables.  The local auxiliaries can in fact also be used to trigger 
 refinement or coarsening. The current (Newtonian) physics modules of AMRVAC have no real use for these auxiliary variables.
 
-## nwextra {#nwextra}
-
+## nwextra {: #nwextra }
 An extra set of _nwextra_ variables can be defined in addition to the
 presently available ones in physics modules by using the function 
 var_set_extravar (from mod_variables.t) in usr_init of mod_usr.t. Like 
@@ -68,11 +61,10 @@ a timestep, local variables that depend on gradients of the flux variables
 they need to be computed/updated in the pointed _usr_process_grid_ subroutine.
 They work to facilitate the understanding of simulation processes.
 
-## nwauxio {#nwauxio}
-
+## nwauxio {: #nwauxio }
 Only for post-processing purposes on saved snapshots from the code, one may
 want to compute additional auxiliary variables for visualization. Hence, only
-at the [convert-stage](convert.md) (from .dat data file to any of the available 
+at the [convert-stage](convert.html) (from .dat data file to any of the available 
 formats in the _convert_ subroutine in src/amrvacio/convert.t file) do we 
 need to enlarge the data size from _nw_ to _nw+nwauxio_, and their calculation is to be done in
 the pointed _usr_aux_output_ subroutine, for which the default interface is given

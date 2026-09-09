@@ -9,9 +9,24 @@
 #:def phys_vars()
 
   integer, parameter :: dp = kind(0.0d0)
-  integer, parameter, public              :: nw_phys=2+2*ndim+1+${N_TRACER_}$
-  integer, parameter, public              :: nw_flux=2+2*ndim+1+${N_TRACER_}$
-  
+  integer, parameter, public              :: nw_phys=2+2*ndim+1+${N_TRACER_}$ &
+#:if defined('HYPERTC_ANISO')
+    + ndim
+#:elif defined('HYPERTC')
+    + 1
+#:else
+    + 0
+#:endif
+
+  integer, parameter, public              :: nw_flux=2+2*ndim+1+${N_TRACER_}$ &
+#:if defined('HYPERTC_ANISO')
+    + ndim
+#:elif defined('HYPERTC')
+    + 1
+#:else
+    + 0
+#:endif
+
   !> Whether an energy equation is used
   logical, public                         :: mhd_energy = .true.
   !$acc declare copyin(mhd_energy)
@@ -77,6 +92,45 @@
   double precision, public  :: RR=1d0
   !$acc declare copyin(RR)
 
+  !> Switch for hyperbolic thermal conduction
+  logical, public                         :: mhd_hyperbolic_thermal_conduction = .false.
+  !$acc declare copyin(mhd_hyperbolic_thermal_conduction)
+
+  !> Compile-time selector for anisotropic HTC
+  logical, public                         :: mhd_hyperbolic_thermal_conduction_anisotropic = .false.
+
+  !> Freeze rho/v/B and evolve only the energy equation (compile-time MHD_ENERGY_ONLY flag)
+  logical, public                         :: mhd_energy_only = .false.
+
+  !> sig_par = tc_kappa_par (constant, no T^2.5); takes precedence over tc_kappa0_par when > 0
+  double precision, public                :: tc_kappa_par = -1.0d0
+  !$acc declare copyin(tc_kappa_par)
+
+  !> sig_perp = tc_kappa_perp (constant, no T^2.5); takes precedence over the Braginskii closure when > 0
+  double precision, public                :: tc_kappa_perp = -1.0d0
+  !$acc declare copyin(tc_kappa_perp)
+
+  ! HYPERTC_ANISO implies HYPERTC (enforced in config_schema.toml)
+#:if defined('HYPERTC')
+  !> sig_par = tc_kappa0_par * Te^2.5; if <= 0 and tc_kappa_par <= 0, set from Spitzer in phys_units()
+  double precision, public                :: tc_kappa0_par = -1.0d0
+  !$acc declare copyin(tc_kappa0_par)
+
+#:if defined('HYPERTC_ANISO')
+  !> Indices of the heat-flux vector components q_(1:ndir); this is the full Cartesian heat-flux vector
+  integer, allocatable, public            :: q_(:)
+  !$acc declare create(q_)
+
+  !> Magnetisation chi prefactor: chi = htc_Cchi * B * Te^1.5 / n
+  double precision, public                :: htc_Cchi = 0.0d0
+  !$acc declare copyin(htc_Cchi)
+#:else
+  !> Index of the field-aligned heat flux scalar q_ (isotropic HTC only)
+  integer, public                         :: q_ = -1
+  !$acc declare create(q_)
+#:endif
+#:endif
+
   !> GLM-MHD parameter: ratio of the diffusive and advective time scales for div b
   !> taking values within [0, 1]
   double precision, public                :: mhd_glm_alpha = 0.5d0
@@ -121,7 +175,10 @@
 
     namelist /mhd_list/ mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity,&
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
-      mhd_resistivity
+      mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
+      mhd_hyperbolic_thermal_conduction_anisotropic, &
+      tc_kappa_par, tc_kappa_perp, &
+      mhd_energy_only
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -134,6 +191,7 @@
     !$acc&     mhd_gamma, mhd_glm_alpha, &
     !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, &
     !$acc&     He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity)
+    !$acc update device(tc_kappa_par, tc_kappa_perp)
 #endif
 
   end subroutine read_params
@@ -225,6 +283,20 @@
     unit_mass=unit_density*unit_length**3
 
     !$acc update device(unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass)
+
+#:if defined('HYPERTC')
+    if (tc_kappa0_par <= 0.0d0 .and. tc_kappa_par <= 0.0d0) &
+      tc_kappa0_par = 8.0d-7 * unit_temperature**3.5d0 &
+                    / (unit_length * unit_density * unit_velocity**3.0d0)
+    !$acc update device(tc_kappa0_par)
+    !$acc update device(tc_kappa_par)
+#:endif
+#:if defined('HYPERTC_ANISO')
+    htc_Cchi = 0.823d0 * (4.753567596681522d6 / 20.0d0) &
+             * unit_magneticfield * unit_temperature**1.5d0 / unit_numberdensity
+    !$acc update device(htc_Cchi)
+    !$acc update device(tc_kappa_perp)
+#:endif
   end subroutine phys_units
 #:enddef
   
@@ -236,7 +308,7 @@
     use mod_radiative_cooling, only: rc_fl, radiative_cooling_init_params, radiative_cooling_init
 #:endif
 
-    integer      :: idir
+    integer      :: idir, idum
 
     call read_params(par_files)
     call phys_units()
@@ -270,6 +342,16 @@
        p_ = -1
     end if
     !$acc update device(e_,p_)
+
+    ! Set index for heat flux variable(s)
+#:if defined('HYPERTC_ANISO')
+    allocate(q_(ndir))
+    q_ = var_set_qvec(ndir, need_bc=.false.)
+    !$acc update device(q_)
+#:elif defined('HYPERTC')
+    q_ = var_set_q(need_bc=.false.)
+    !$acc update device(q_)
+#:endif
 
     allocate(mag(ndir))
     mag(:) = var_set_bfield(ndir)
@@ -426,6 +508,9 @@ end subroutine addsource_local
 subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, x, dx, &
      qsourcesplit)
   !$acc routine seq
+#:if defined('HYPERTC')
+  use mod_global_parameters, only: dt, ndir, smalldouble, courantpar
+#:endif
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim1(nw_phys,3),wCTprim2(nw_phys,3),wCTprim3(nw_phys,3)
@@ -436,6 +521,16 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
   real(dp)                 :: laplb_cd2
   real(dp)                 :: Jdir1,Jdir2,Jdir3
   integer                  :: idir
+#:if defined('HYPERTC')
+    real(dp) :: Te_c, rho_c, pth_c
+    real(dp) :: gradT(3), Bmag2, Bmag, Bmag2_safe, bgradT
+    real(dp) :: bhat(3), gradT_perp(3), gradTperp_mag
+    real(dp) :: chi, sig_par, sig_perp
+    real(dp) :: q_sat, f_sat_par, f_sat_perp, tau_par, tau_perp
+    real(dp) :: cf2_tc, cmax2_tc
+    real(dp) :: Qpar_proj, Qperp_proj_k
+    integer  :: k_tc
+#:endif
 
   if (.not. qsourcesplit) then 
      !---------------------------------
@@ -488,15 +583,123 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
      wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*(Jdir1**2+Jdir2**2+Jdir3**2)
 #:endif
 
+#:if defined('HYPERTC')
+    ! ---- 1. Local thermodynamic state ----
+    Te_c  = wCTprim1(iw_e,2) / wCTprim1(iw_rho,2)
+    rho_c = wCTprim1(iw_rho,2)
+    pth_c = wCTprim1(iw_e,2)
+
+    ! ---- 2. Temperature gradient ----
+    gradT(1) = (wCTprim1(iw_e,3)/wCTprim1(iw_rho,3) - wCTprim1(iw_e,1)/wCTprim1(iw_rho,1)) / (2.d0*dx(1))
+    gradT(2) = (wCTprim2(iw_e,3)/wCTprim2(iw_rho,3) - wCTprim2(iw_e,1)/wCTprim2(iw_rho,1)) / (2.d0*dx(2))
+    gradT(3) = (wCTprim3(iw_e,3)/wCTprim3(iw_rho,3) - wCTprim3(iw_e,1)/wCTprim3(iw_rho,1)) / (2.d0*dx(3))
+
+    !---------------------------------
+    ! Anisotropic TC code here
+    !---------------------------------
+#:if defined('HYPERTC_ANISO')
+    ! ---- 3. Field direction ----
+    Bmag2 = 0.0d0
+    do k_tc = 1, ndir
+      Bmag2 = Bmag2 + wCTprim1(iw_mag(k_tc),2)**2
+    end do
+    Bmag       = sqrt(Bmag2)
+    Bmag2_safe = max(Bmag2, smalldouble**2)
+    do k_tc = 1, ndir
+      bhat(k_tc) = wCTprim1(iw_mag(k_tc),2) * Bmag / Bmag2_safe
+    end do
+
+    ! ---- 4. Decompose gradT into parallel scalar + perpendicular vector ----
+    bgradT = bhat(1)*gradT(1) + bhat(2)*gradT(2) + bhat(3)*gradT(3)
+    do k_tc = 1, ndir
+      gradT_perp(k_tc) = gradT(k_tc) - bgradT * bhat(k_tc)
+    end do
+    gradTperp_mag = sqrt(gradT_perp(1)**2 + gradT_perp(2)**2 + gradT_perp(3)**2)
+
+    ! ---- 5. Conductivities ----
+    if (tc_kappa_par > 0.0d0) then
+      sig_par = tc_kappa_par
+    else
+      sig_par = tc_kappa0_par * Te_c**2.5d0
+    end if
+    if (tc_kappa_perp > 0.0d0) then
+      sig_perp = tc_kappa_perp
+    else
+      chi      = htc_Cchi * Bmag * Te_c**1.5d0 / rho_c
+      sig_perp = sig_par / (1.0d0 + chi**2)
+    end if
+
+    ! ---- 6. Saturation and relaxation times (per channel) ----
+    cf2_tc   = (Bmag2 + mhd_gamma*pth_c) / rho_c
+    cmax2_tc = 0.0d0
+    do k_tc = 1, ndim
+      cmax2_tc = max(cmax2_tc, 0.5d0*(cf2_tc + sqrt(abs( &
+           cf2_tc**2 - 4.0d0*mhd_gamma*pth_c*wCTprim1(iw_mag(k_tc),2)**2/rho_c**2))))
+    end do
+    q_sat      = 1.5d0 * rho_c * (pth_c / rho_c)**1.5d0
+    f_sat_par  = 1.0d0 / (1.0d0 + abs(sig_par  * bgradT       ) / q_sat)
+    f_sat_perp = 1.0d0 / (1.0d0 + abs(sig_perp * gradTperp_mag) / q_sat)
+    tau_par  = max(4.d0*dt, f_sat_par *sig_par *Te_c*courantpar**2*(mhd_gamma-1.0d0) / (pth_c*cmax2_tc))
+    tau_perp = max(4.d0*dt, f_sat_perp*sig_perp*Te_c*courantpar**2*(mhd_gamma-1.0d0) / (pth_c*cmax2_tc))
+
+    ! ---- 7. Decompose current q onto current field direction ----
+    Qpar_proj = wCTprim1(q_(1),2)*bhat(1) + wCTprim1(q_(2),2)*bhat(2) + wCTprim1(q_(3),2)*bhat(3)
+
+    ! ---- 8. Relax parallel and perpendicular parts, each at its own rate ----
+    do k_tc = 1, ndir
+      Qperp_proj_k = wCTprim1(q_(k_tc),2) - Qpar_proj * bhat(k_tc)
+      wnew(q_(k_tc)) = wnew(q_(k_tc)) &
+           - qdt*(f_sat_par *sig_par *bgradT + Qpar_proj)*bhat(k_tc)/tau_par  &
+           - qdt*(f_sat_perp*sig_perp*gradT_perp(k_tc) + Qperp_proj_k)/tau_perp
+    end do
+
+    !---------------------------------
+    ! Field-aligned TC code here
+    !---------------------------------
+#:else
+    ! ---- 3. Parallel temperature gradient ----
+    Bmag2 = 0.0d0
+    bgradT = 0.0d0
+    do k_tc = 1, ndir
+      Bmag2  = Bmag2  + wCTprim1(iw_mag(k_tc),2)**2
+      bgradT = bgradT + wCTprim1(iw_mag(k_tc),2) * gradT(k_tc)
+    end do
+    Bmag       = sqrt(Bmag2)
+    Bmag2_safe = max(Bmag2, smalldouble**2)
+    bgradT     = bgradT * Bmag / Bmag2_safe
+
+    ! ---- 4. Conductivity ----
+    if (tc_kappa_par > 0.0d0) then
+      sig_par = tc_kappa_par
+    else
+      sig_par = tc_kappa0_par * Te_c**2.5d0
+    end if
+
+    ! ---- 5. Saturation and relaxation time ----
+    cf2_tc   = (Bmag2 + mhd_gamma*pth_c) / rho_c
+    cmax2_tc = 0.0d0
+    do k_tc = 1, ndim
+      cmax2_tc = max(cmax2_tc, 0.5d0*(cf2_tc + sqrt(abs( &
+           cf2_tc**2 - 4.0d0*mhd_gamma*pth_c*wCTprim1(iw_mag(k_tc),2)**2/rho_c**2))))
+    end do
+    q_sat     = 1.5d0 * rho_c * (pth_c / rho_c)**1.5d0
+    f_sat_par = 1.0d0 / (1.0d0 + abs(sig_par * bgradT) / q_sat)
+    tau_par   = max(4.d0*dt, f_sat_par*sig_par*Te_c*courantpar**2*(mhd_gamma-1.0d0) / (pth_c*cmax2_tc))
+
+    ! ---- 6. Relax scalar q_par towards saturated Spitzer target ----
+    wnew(iw_q) = wnew(iw_q) - qdt*(f_sat_par*sig_par*bgradT + wCTprim1(iw_q,2))/tau_par
+#:endif
+#:endif
+
   else
      !---------------------------------
-     ! split sources     
+     ! split sources
      !---------------------------------
 
      ! Not yet implemented
 
   end if
-  
+
 end subroutine addsource_compact
 #:enddef
 
@@ -534,13 +737,35 @@ end subroutine addsource_compact
 
 #:def get_flux()
   subroutine get_flux(u, xC, flux_dim, flux)
-    use mod_global_parameters, only:cmax_global
+    use mod_global_parameters, only: cmax_global
+#:if defined('HYPERTC')
+    use mod_global_parameters, only: smalldouble
+#:endif
     !$acc routine seq
     real(dp), intent(in)  :: u(nw_phys)
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim
     real(dp), intent(out) :: flux(nw_flux)
     real(dp)              :: ptotal
+#:if defined('HYPERTC') and not defined('HYPERTC_ANISO')
+    real(dp)              :: Bmag2_tc, Bmag_tc
+#:endif
+
+    ! Hyperbolic TC field geometry
+#:if defined('HYPERTC') and not defined('HYPERTC_ANISO')
+    Bmag2_tc = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
+    Bmag_tc  = sqrt(max(Bmag2_tc, smalldouble**2))
+#:endif
+
+#:if defined('MHD_ENERGY_ONLY')
+    flux = 0.0_dp
+#:if defined('HYPERTC_ANISO')
+    flux(iw_e) = u(iw_qvec(flux_dim))
+#:elif defined('HYPERTC')
+    flux(iw_e) = u(iw_q) * u(iw_mag(flux_dim)) / Bmag_tc
+#:endif
+    return
+#:endif
 
     ! Density flux
     flux(iw_rho)=u(iw_rho)*u(iw_mom(flux_dim))
@@ -576,6 +801,17 @@ end subroutine addsource_compact
   #:for i in range(1, N_TRACER_+1)
       flux(tracer(${i}$)) = u(tracer(${i}$)) * u(iw_mom(flux_dim))
   #:endfor
+#:endif
+
+    ! Hyperbolic TC fluxes
+#:if defined('HYPERTC_ANISO')
+    flux(iw_e)       = flux(iw_e) + u(iw_qvec(flux_dim))
+    flux(iw_qvec(1)) = 0.0_dp
+    flux(iw_qvec(2)) = 0.0_dp
+    flux(iw_qvec(3)) = 0.0_dp
+#:elif defined('HYPERTC')
+    flux(iw_e) = flux(iw_e) + u(iw_q) * u(iw_mag(flux_dim)) / Bmag_tc
+    flux(iw_q) = 0.0_dp
 #:endif
 
   end subroutine get_flux

@@ -38,6 +38,12 @@ options = ["hd", "mhd", "ffhd", "srhd"]
 flags = ["fypp", "hash"]
 default = "hd"
 
+[methodlist.flux_adaptive_diffusion]
+type = "flag"
+name = "FLUX_AD"
+flags = ["fypp", "hash"]
+default = false
+
 [boundlist]
 [boundlist.specialboundary]
 type = "flag"
@@ -136,6 +142,26 @@ name = "COOLING"
 flags = ["fypp", "hash"]
 default = false
 implies = ["components.source_local"]
+
+[mhd_list.mhd_hyperbolic_thermal_conduction]
+type = "flag"
+name = "HYPERTC"
+flags = ["fypp", "hash"]
+default = false
+implies = ["components.source_compact"]
+
+[mhd_list.mhd_hyperbolic_thermal_conduction_anisotropic]
+type = "flag"
+name = "HYPERTC_ANISO"
+flags = ["fypp", "hash"]
+default = false
+implies = ["mhd_list.mhd_hyperbolic_thermal_conduction"]
+
+[mhd_list.mhd_energy_only]
+type = "flag"
+name = "MHD_ENERGY_ONLY"
+flags = ["fypp", "hash"]
+default = false
 
 [srhd_list]
 [srhd_list.srhd_source_usr]

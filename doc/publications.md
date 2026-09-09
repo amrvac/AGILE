@@ -1,9 +1,11 @@
-# Publications related to MPI-AMRVAC
+title: Publications related to AGILE
 
-**The following publications contain relevant information, partly applicable to
-the current MPI-version MPI-AMRVAC (some, especially the older papers used
-previous variants of the code). Especially the first papers listed here are 
-specific to the current version.**
+**The main code paper is 
+'Astrophysics on GPUs: introducing AGILE 1.0', submitted to RASTI, in review [arXiv:2607.19277](https://arxiv.org/abs/2607.19277)**
+
+The following publications are about upstream MPI-AMRVAC, of which AGILE is
+a fork; they contain relevant information, partly applicable to AGILE (some,
+especially the older papers, used previous variants of the code).
 
 * `MPI-AMRVAC 3.0: Updates to an open-source simulation framework', R. Keppens, B. Popescu Braileanu, Y.Zhou, W. Ruan, C. Xia, Y. Guo, N. Claes &amp; F. Bacchini, 2023, A &amp; A **673**, A66 [doi:10.1051/0004-6361/202245359](https://doi.org/10.1051/0004-6361/202245359) **THIS IS MPI-AMRVAC 3.0**
 

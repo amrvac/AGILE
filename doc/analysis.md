@@ -1,4 +1,4 @@
-# Writing a custom analysis subroutine
+title: Writing a custom analysis subroutine
 
 # Introduction
 
@@ -6,7 +6,7 @@ Users can write a subroutine to freely derive (and print or store) quantities of
 interest from the entire grid. To activate this functionality, set the following
 in your `usr_init` routine:
 
-```{fortran}
+```fortran
 subroutine usr_init()
   ...
   usr_write_analysis => my_analysis
@@ -26,14 +26,14 @@ Similar to the other IO-mechanisms, analysis is scheduled within the savelist:
 # write_analysis subroutine
 
 The user-defined analysis subroutine takes no arguments. It operates on the
-lowest abstraction level of MPI-AMRVAC so that the user has the flexibility to
+lowest abstraction level of AGILE so that the user has the flexibility to
 loop over the the SFC and freely perform integrals over the grid-functions,
 similar to the `printlog_special`. A special file-unit is reserved for the IO:
 `unitanalysis`. This should be used for any IO performed by this routine.
 
 # Example of analysis routine
 
-```{fortran}
+```fortran
 subroutine my_analysis()
   double precision :: tmp, wmax
   integer          :: iigrid, igrid, ierrmpi

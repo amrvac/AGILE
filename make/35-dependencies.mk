@@ -15,7 +15,7 @@ endif
 # make sure that config is read first
 ifdef CONFIG_READ
 $(build_dir)/dependencies.mk: $(f90_files) $(build_dir)/f90/agile.h | $(build_dir)
-	@echo "Regenerating depencies"
+	@echo "Regenerating dependencies"
 	@fortdepend $(fortdepend_flags) -f $(f90_files) -i mpi openacc -b $(build_dir)/obj -w -o $@
 
 # Precompiling and dependency tracking is not needed if we're cleaning.

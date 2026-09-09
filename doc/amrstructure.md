@@ -1,16 +1,16 @@
-# Adaptive Mesh Refinement
+title: Adaptive Mesh Refinement
 
 ## Introduction
 
-This document briefly describes the AMR-related features in MPI-AMRVAC. The
-different options can be set in the meshlist part (see @ref par.md) of the
+This document briefly describes the AMR-related features in AGILE. The
+different options can be set in the meshlist part (see [Setting parameters](par.html)) of the
 **amrvac.par** file. For a more extensive description, you can read the article
 'Parallel, grid-adaptive approaches for relativistic hydro and
 magnetohydrodynamics', R. Keppens, Z. Meliani, A.J. van Marle, P. Delmont, A.
 Vlasis, &amp; B. van der Holst, 2011, JCP.*
 [doi:10.1016/j.jcp.2011.01.020](http://dx.doi.org/10.1016/j.jcp.2011.01.020).
 
-MPI-AMRVAC uses a standard block-based, octree AMR scheme, where we have
+AGILE uses a standard block-based, octree AMR scheme, where we have
 blocks of user-controlled dimension (set by the block_nx1, block_nx2, block_nx3) 
 in a hierarchically nested manner. To simplify the parallelization, we gave up
 flexibility to allow different sized refinement ratios between grid levels,
