@@ -139,7 +139,6 @@ end subroutine finite_volume_local
        igrid_beg = (ibatch-1) * max_batch + 1
        igrid_end = min(ibatch * max_batch, igridstail_active)
 
-!!!!     !$acc parallel loop gang private(uprim, inv_dr, dr, n, ix1, ix2, ix3, fC1, fC2, fC3) default(present)
        !$acc parallel loop gang private(uprim, inv_dr, dr, n, ix1, ix2, ix3, fC1, fC2, fC3, &
        !$acc& neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, &
        !$acc& neighbor_type_3p) default(present)
@@ -187,17 +186,7 @@ end subroutine finite_volume_local
                    bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
                         n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(1)
 
-                   !!!TODO JESSE FIRST SET ALL PFLUX TO ZERO???
-                   !!NO NOT CORRECT
-                   !!pflux(1,1,n)%flux = 0.0d0 
-                   !!pflux(2,1,n)%flux = 0.0d0 
-                   !!pflux(1,2,n)%flux = 0.0d0 
-                   !!pflux(2,2,n)%flux = 0.0d0 
-                   !!pflux(1,3,n)%flux = 0.0d0 
-                   !!pflux(2,3,n)%flux = 0.0d0 
-
                    ! Store fluxes for flux fixing in direction 1
-                   !select case (neighbor_type(-1,0,0,n))
                    select case (neighbor_type_1m)
                    case (neighbor_fine)
                        if (ix1.eq.ixOmin1) pflux(1,1)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux,n) &
@@ -206,7 +195,6 @@ end subroutine finite_volume_local
                        if (ix1.eq.ixOmin1) fC1(1,ix2,ix3,1:nw_flux) = - qdt * inv_dr(1) * f(:,1)
                    end select
 
-                   !select case (neighbor_type(1,0,0,n))
                    select case (neighbor_type_1p)
                    case (neighbor_fine)
                        if (ix1.eq.ixOmax1) pflux(2,1)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux,n) =  &
@@ -225,7 +213,6 @@ end subroutine finite_volume_local
                         n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(2)
 
                    ! Store fluxes for flux fixing in direction 2
-                   !select case (neighbor_type(0,-1,0,n))
                    select case (neighbor_type_2m)
                    case (neighbor_fine)
                        if (ix2.eq.ixOmin2) pflux(1,2)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux,n) &
@@ -234,7 +221,6 @@ end subroutine finite_volume_local
                        if (ix2.eq.ixOmin2) fC2(1,ix1,ix3,1:nw_flux) = - qdt * inv_dr(2) * f(:,1)
                    end select
 
-                   !select case (neighbor_type(0,1,0,n))
                    select case (neighbor_type_2p)
                    case (neighbor_fine)
                        if (ix2.eq.ixOmax2) pflux(2,2)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux,n) &
@@ -253,7 +239,6 @@ end subroutine finite_volume_local
                         n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(3)
 
                    ! Store fluxes for flux fixing in direction 3               
-                   !select case (neighbor_type(0,0,-1,n))
                    select case (neighbor_type_3m)
                    case (neighbor_fine)
                        if (ix3.eq.ixOmin3) pflux(1,3)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux,n) &
@@ -262,7 +247,6 @@ end subroutine finite_volume_local
                        if (ix3.eq.ixOmin3) fC3(1,ix1,ix2,1:nw_flux) = - qdt * inv_dr(3) * f(:,1)
                    end select
 
-                   !select case (neighbor_type(0,0,1,n))
                    select case (neighbor_type_3p)
                    case (neighbor_fine)
                        if (ix3.eq.ixOmax3) pflux(2,3)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux,n) &
@@ -324,7 +308,7 @@ end subroutine finite_volume_local
 
           ! Reduce fluxes to be stored for the coarse neighbor case
           ! Direction 1
-          select case (neighbor_type(-1,0,0,n))
+          select case (neighbor_type_1m)
               case (neighbor_coarse)
                   !$acc loop vector collapse(ndim-1) 
                   do ix3=1,nxCo3 
@@ -338,7 +322,7 @@ end subroutine finite_volume_local
                   end do
           end select
 
-          select case (neighbor_type(1,0,0,n))
+          select case (neighbor_type_1p)
               case (neighbor_coarse)
                   !$acc loop vector collapse(ndim-1)
                   do ix3=1,nxCo3 
@@ -353,7 +337,7 @@ end subroutine finite_volume_local
           end select
 
           ! Direction 2
-          select case (neighbor_type(0,-1,0,n))
+          select case (neighbor_type_2m)
               case (neighbor_coarse)
                   !$acc loop vector collapse(ndim-1) 
                   do ix3=1,nxCo3 
@@ -367,7 +351,7 @@ end subroutine finite_volume_local
                   end do
           end select
 
-          select case (neighbor_type(0,1,0,n))
+          select case (neighbor_type_2p)
               case (neighbor_coarse)
                   !$acc loop vector collapse(ndim-1)
                   do ix3=1,nxCo3 
@@ -382,7 +366,7 @@ end subroutine finite_volume_local
           end select
           
           ! Direction 3
-          select case (neighbor_type(0,0,-1,n))
+          select case (neighbor_type_3m)
               case (neighbor_coarse)
                   !$acc loop vector collapse(ndim-1) 
                   do ix2=1,nxCo2 
@@ -396,7 +380,7 @@ end subroutine finite_volume_local
                   end do
           end select
 
-          select case (neighbor_type(0,0,1,n))
+          select case (neighbor_type_3p)
               case (neighbor_coarse)
                   !$acc loop vector collapse(ndim-1)
                   do ix2=1,nxCo2 
