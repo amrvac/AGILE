@@ -1,4 +1,6 @@
 doc/html/*
+doc/ford/html/
+doc/ford/src/
 *.dat
 *.vtu
 *.vti

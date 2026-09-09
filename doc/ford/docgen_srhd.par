@@ -1,0 +1,17 @@
+&methodlist
+  phys = 'srhd'
+  flux_adaptive_diffusion = T
+/
+
+&boundlist
+  specialboundary = T
+/
+
+&meshlist
+  refine_usr = T
+/
+
+&srhd_list
+  srhd_source_usr = T
+  srhd_n_tracer = 1
+/

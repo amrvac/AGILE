@@ -9,6 +9,9 @@ module mod_finite_volume
   use mod_variables
   use mod_physics_vars
   use mod_global_parameters, only: ndim
+#:if defined('FLUX_AD')
+  use mod_global_parameters, only: flux_ad_min, flux_ad_scale
+#:endif
   use mod_physicaldata
   implicit none
 
@@ -300,8 +303,9 @@ end subroutine finite_volume_local
                    call addsource_compact(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp1,tmp2,tmp3, &
                         qt, wnew, xloc, dr, .false. )
-                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)           
-#:endif                
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = wnew(1:nw_flux)
+#:endif
+
                 end do
              end do
           end do
@@ -411,7 +415,7 @@ end subroutine finite_volume_local
   !> Returns uL(:,iface), uR(:,iface) for iface=1 (between cells 2-3) and iface=2 (between 3-4).
   pure subroutine muscl_reconstruct_prim(u, typelim, uL, uR)
     !$acc routine seq
-    use mod_limiter, only: limiter_minmod, limiter_vanleer
+    use mod_limiter, only: limiter_minmod, limiter_vanleer, limiter_mcbeta, limiter_koren
     real(dp), intent(in)  :: u(nw_phys,5)
     integer,  intent(in)  :: typelim
     real(dp), intent(out) :: uL(nw_phys,2), uR(nw_phys,2)
@@ -431,7 +435,19 @@ end subroutine finite_volume_local
         sig(iw,1) = vanleer(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
         sig(iw,2) = vanleer(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
         sig(iw,3) = vanleer(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
+     end do
+    case (limiter_mcbeta)
+      do iw=1,nw_phys
+        sig(iw,1) = mcbeta(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
+        sig(iw,2) = mcbeta(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+        sig(iw,3) = mcbeta(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
       end do
+     case (limiter_koren)
+      do iw=1,nw_phys
+        sig(iw,1) = koren(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
+        sig(iw,2) = koren(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+        sig(iw,3) = koren(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
+     end do
     case default  ! Fallback: Godunov (piecewise constant)
       do iw=1,nw_phys
         sig(iw,1)=0._dp
@@ -451,12 +467,16 @@ end subroutine finite_volume_local
 
 
   !> One-face LLF/Rusanov numerical flux from primitive L/R states.
-  subroutine riemann_llf_prim(uL, uR, xC, flux_dim, F)
+  !> phi(nw_flux) is the adaptive-diffusion reduction factor; only present when FLUX_AD is defined.
+  subroutine riemann_llf_prim(uL, uR, xC, flux_dim, F#{if defined('FLUX_AD')}#, phi#{endif}#)
     !$acc routine seq
     real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
     real(dp), intent(in)    :: xC(ndim)
     integer,  intent(in)    :: flux_dim
     real(dp), intent(out)   :: F(nw_flux)
+#:if defined('FLUX_AD')
+    real(dp), intent(in)    :: phi(nw_flux)
+#:endif
 
     real(dp) :: flux_l(nw_flux), flux_r(nw_flux)
     real(dp) :: wL, wR, wmax
@@ -471,7 +491,7 @@ end subroutine finite_volume_local
     call to_conservative(uL)
     call to_conservative(uR)
 
-    F = 0.5_dp * ((flux_l + flux_r) - wmax * (uR(1:nw_flux) - uL(1:nw_flux)))
+    F = 0.5_dp * ((flux_l + flux_r) - wmax * (uR(1:nw_flux) - uL(1:nw_flux))#{if defined('FLUX_AD')}# * phi#{endif}#)
   end subroutine riemann_llf_prim
 
 
@@ -631,6 +651,7 @@ end subroutine finite_volume_local
 
   !> MUSCL (primitive-variable) reconstruction with slope limiter; LLF/Rusanov numerical flux at faces.
   !> Robust and diffusive; uses local max wavespeed for upwinding.
+  !> Adaptive diffusion (Rempel et al. 2009) is compiled in only when FLUX_AD is defined.
   subroutine reconflux_muscl_llf_prim(u, xlocC, flux_dim, flux, typelim)
     !$acc routine seq
     real(dp), intent(in)  :: u(nw_phys, 5)
@@ -640,14 +661,45 @@ end subroutine finite_volume_local
 
     real(dp) :: uL(nw_phys,2), uR(nw_phys,2)
     integer  :: iface
+#:if defined('FLUX_AD')
+    real(dp) :: phi(nw_flux,2)
+    real(dp) :: delta_rc, delta_ct, phi_v
+    integer  :: iw
+#:endif
+#:if defined('MHD_ENERGY_ONLY')
+    real(dp) :: Fe
+#:endif
 
     call muscl_reconstruct_prim(u, typelim, uL, uR)
 
-    do iface=1,2
-      call riemann_llf_prim(uL(:,iface), uR(:,iface), xlocC(:,iface), flux_dim, flux(:,iface))
+#:if defined('FLUX_AD')
+    ! Rempel et al. (2009): reduce dissipation where reconstruction and cell-centre agree in sign
+    phi = 1.0_dp
+    do iface = 1, 2
+      do iw = 1, nw_flux
+        delta_rc = uR(iw,iface) - uL(iw,iface)
+        delta_ct = u(iw, iface+2) - u(iw, iface+1)
+        if (delta_rc * delta_ct > 1.0e-18_dp) then
+          phi_v = flux_ad_scale * delta_rc**2 / (delta_ct**2 + 1.0e-18_dp)
+          phi(iw,iface) = max(flux_ad_min, min(phi_v, 1.0_dp))
+        end if
+      end do
+    end do
+#:endif
+
+    do iface = 1, 2
+      call riemann_llf_prim(uL(:,iface), uR(:,iface), xlocC(:,iface), flux_dim, flux(:,iface)#{if defined('FLUX_AD')}#, phi(:,iface)#{endif}#)
     end do
 
-  end subroutine reconflux_muscl_llf_prim  
+#:if defined('MHD_ENERGY_ONLY')
+    do iface = 1, 2
+      Fe = flux(iw_e, iface)
+      flux(:, iface) = 0.0_dp
+      flux(iw_e, iface) = Fe
+    end do
+#:endif
+
+  end subroutine reconflux_muscl_llf_prim
 
 
   !> MUSCL (primitive-variable) reconstruction with slope limiter; HLLC approximate Riemann flux at faces.
@@ -676,9 +728,9 @@ end subroutine finite_volume_local
 
     ab = a * b
     if (ab > 0) then
-       phi = 2 * ab / (a + b)
+       phi = 2.0_dp * ab / (a + b)
     else
-       phi = 0
+       phi = 0.0_dp
     end if
   end function vanleer
 
@@ -694,5 +746,54 @@ end subroutine finite_volume_local
        minmod = b
     end if
   end function minmod
+
+  !  scavenged from afivo, thanks Jannis :-) !
+  !> Modified implementation of Koren limiter, to avoid division and the min/max
+  !> functions, which can be problematic / expensive. In most literature, you
+  !> have r = a / b (ratio of gradients). Then the limiter phi(r) is multiplied
+  !> with b. With this implementation, you get phi(r) * b
+  pure real(dp) function koren(a, b)
+    !$acc routine seq
+    real(dp), intent(in) :: a  !< Density gradient (numerator)
+    real(dp), intent(in) :: b  !< Density gradient (denominator)
+    real(dp), parameter  :: third = 1/3.0_dp
+    real(dp)             :: aa, ab
+
+    aa = a * a
+    ab = a * b
+
+    if (ab <= 0) then
+       ! a and b have different sign or one of them is zero, so r is either 0,
+       ! inf or negative (special case a == b == 0 is ignored)
+       koren = 0
+    else if (aa <= 0.25_dp * ab) then
+       ! 0 < a/b <= 1/4, limiter has value 2*a/b
+       koren = 2*a
+    else if (aa <= 2.5_dp * ab) then
+       ! 1/4 < a/b <= 2.5, limiter has value (1+2*a/b)/3
+       koren = third * (b + 2*a)
+    else
+       ! (1+2*a/b)/6 >= 1, limiter has value 2
+       koren = 2*b
+    end if
+    
+  end function koren
+  
+  !> Monotonised central-difference limiter with tunable beta (AMRVAC's
+  !> mcbeta; beta=2 recovers the classic MC limiter, van Leer 1979)
+  pure real(dp) function mcbeta(a, b) result(phi)
+  !$acc routine seq
+  real(dp), intent(in) :: a, b
+  real(dp), parameter  :: c_mcbeta = 1.4_dp
+  real(dp)             :: ab
+
+  ab = a * b
+  if (ab > 0) then
+    phi = sign(1.0_dp, a + b) * min(c_mcbeta*abs(a), c_mcbeta*abs(b), abs(a+b)*0.5_dp)
+  else
+    phi = 0.0_dp
+  end if
+
+  end function mcbeta
 
 end module mod_finite_volume

@@ -1,13 +1,10 @@
-# Code style guide
+title: Code style guide
 
 
-[TOC]
-
-# Introduction {#style-intro}
-
-Below we present some guidelines for new code contributed to MPI-AMRVAC. The
+# Introduction {: #style-intro }
+Below we present some guidelines for new code contributed to AGILE. The
 goal of these guidelines is to make it easier to understand, modify and maintain
-MPI-AMRVAC. Although some of the guidelines are simply a matter of preference
+AGILE. Although some of the guidelines are simply a matter of preference
 and convention, sticking to these preferences and conventions is still valuable.
 The guide below has been inspired by a number of other Fortran style guides:
 [1](http://www.fortran90.org/src/best-practices.html)
@@ -15,8 +12,7 @@ The guide below has been inspired by a number of other Fortran style guides:
 [3](http://research.metoffice.gov.uk/research/nwp/numerical/fortran90/f90_standards.html)
 [4](https://github.com/Fortran-FOSS-Programmers/Best_Practices)
 
-# Standards and language features {#style-standard}
-
+# Standards and language features {: #style-standard }
 Code should conform to a reasonably modern Fortran standard (e.g., Fortran 90,
 95, 2003). Only make use of the latest language features if you really need
 them, since this can cause problems for users with different compilers.
@@ -34,14 +30,13 @@ statement functions | define a real function
 `integer*N :: x` | `integer(kind) :: x`
 `character*N :: x` | `character(len=N) :: x`
 
-# Naming conventions {#style-naming}
-
+# Naming conventions {: #style-naming }
 **Use self-explanatory names when possible**. Only variables that are locally
 defined and have a simple meaning, such as loop indices, can have short names
 such as `i` or `ix`. The farther away the definition of a variable is, the more
 important it becomes that is has a self-explanatory name.
 
-Here are some examples, inspired by looking at the current version of MPI-AMRVAC:
+Here are some examples, inspired by looking at the current version of AGILE:
 
 Description | Too short | Better
 ---|---|---
@@ -58,30 +53,28 @@ A list of further naming guidelines:
 * Don't use Fortran keywords as names
 * Avoid ambiguous names
 
-# Code style conventions {#style-conventions}
-
+# Code style conventions {: #style-conventions }
 * Use `>=`, `<=`, `/=` etc. instead of `.gt.`, `.lt.`, `.ne.`
 * Include spaces around operators to improve readability: 
-  ```{fortran}
+  ```fortran
       i = 5
       i = 5 + j
       i = 5/(a + b) + c
   ```
 * Include spaces after commas to visually separate arguments:
-  ```{fortran}
+  ```fortran
       call my_routine(a, b, c)
   ```
 * Don't use semicolons to put multiple statements on one line
-  ```{fortran}
+  ```fortran
       i = 1; j = i + 1 ! Bad
   ```
 * Always use `::` in variable declarations
-  ```{fortran}
+  ```fortran
       integer :: i
   ```
 
-# Comments {#style-comments}
-
+# Comments {: #style-comments }
 Write comments such that a reasonably experienced programmer can understand your
 code as quickly as possible. In practice, this could mean writing the following
 comments:
@@ -95,15 +88,14 @@ When in doubt, you should probably add a comment: it will help the reader to
 confirm his/her understanding. Do not write comments around trivial statements,
 such as `i = i + 1`.
 
-The [documentation](documentation.md) page explains how to write Doxygen
-comments, which show up in the documentation of MPI-AMRVAC.
+The [documentation](documentation.html) page explains how to write documentation
+comments, which show up in the generated FORD documentation.
 
-# Modules and programs {#style-mod}
-
+# Modules and programs {: #style-mod }
 A source file should contain either a module or a program. Try to use modules in
 the following way:
 
-```{fortran}
+```fortran
     module mod_name
 
       ! Selectively import when needed in the whole module
@@ -129,10 +121,9 @@ where things come from. However, when you need a lot of functionality from
 another module, it makes more sense to simply include everything with `use
 module`.
 
-# Functions and subroutines {#style-proc}
-
+# Functions and subroutines {: #style-proc }
 All functions and subroutines should at least have a brief comment describing
-their functionality, as stated in @ref style-comments.
+their functionality, as stated in [Comments](#style-comments).
 
 ## Side-effects
 
@@ -160,35 +151,33 @@ If that requires a lot of arguments, perhaps the functions and subroutines can
 be split in smaller pieces. Sometimes it can also help to define types with the
 relevant information. There should not be more than about 4 or 5 arguments.
 
-# Global and module variables {#style-global}
-
+# Global and module variables {: #style-global }
 Don't use global variables. Instead place variables inside modules, and include
 them where needed. In cases where this is not possible, gather the global
 variables in a module and give them a recognizable prefix such as `GLOBAL_`.
 
 To ensure that variables defined in a module are not accidentally changed, you can use the Fortran 2003 `protected` attribute:
 
-```{fortran}
+```fortran
     integer, protected :: my_age
 ```
 
 Such variables can only be changed from inside the defining module.
 
-# Numbers {#style-num}
-
+# Numbers {: #style-num }
 ## Floating point
 
 The usage of `double precision` is deprecated. Instead use the kind-parameter
 `dp` to declare double precision numbers:
 
-```{fortran}
+```fortran
     real(dp) :: x         ! good
     double precision :: x ! deprecated
 ```
 
 
 Write floating point constants using the `_dp` suffix:
-```{fortran}
+```fortran
     x = x * 1.1_dp ! good
     x = x * 1.1    ! bad: single precision constant
 ```
@@ -214,7 +203,7 @@ integer:
 
 Use named constants instead of *magic numbers*:
 
-```{fortran}
+```fortran
     real(dp), parameter :: pi = 3.14_dp
 
     x = sin(pi * x)      ! good
@@ -223,18 +212,17 @@ Use named constants instead of *magic numbers*:
 
 However, don't use named constants for simple numbers such as `0`, or `0.5`:
 
-```{fortran}
+```fortran
     x = 1.0_dp/pi         ! good
     x = one/pi            ! bad: what is one?
 ```
 
-# Arrays {#style-array}
-
+# Arrays {: #style-array }
 ## Correct order for loops
 
 Always loop over arrays in the *correct* order, meaning that the loop indices are ordered from right to left (opposite to loops in e.g., C or C++):
 
-```{fortran}
+```fortran
     do j = 1, N
        do i = 1, N
           array(i, j) = 1
@@ -246,7 +234,7 @@ Because Fortran stores arrays in column-major order, the loop then follows the
 'natural' memory order of the array. For the same reason, it pays off to think
 about the ordering of your arrays, for example:
 
-```{fortran}
+```fortran
     array(:, i, j) = 1 ! Fast
     array(i, j, :) = 1 ! Slower
 ```
@@ -267,7 +255,7 @@ for `ifort` you have to enable this behavior).
 
 Use **assumed-shape** arrays when performance is not critical, for example:
 
-```{fortran}
+```fortran
     subroutine square(values, squares)
        integer, intent(in) :: values(:)
        integer, intent(out) :: squares(:)
@@ -278,7 +266,7 @@ Use **assumed-shape** arrays when performance is not critical, for example:
 The advantage of assumed-shape arrays is that they allow for run-time bounds
 checking. When performance is critical, you can use explicit-shape arrays:
 
-```{fortran}
+```fortran
     subroutine square(values, squares, n_values)
        integer, intent(in) :: n_values
        integer, intent(in) :: values(n_values)
@@ -296,13 +284,12 @@ by Intel for more information about the performance differences.
 
 In new code, use the `[...]` syntax to define array constants:
 
-```{fortran}
+```fortran
     x = [1, 2, 3]   ! Fortran 2003 and later
     x = (/1, 2, 3/) ! Old style
 ```
 
-# Indentation and whitespace {#style-indent}
-
+# Indentation and whitespace {: #style-indent }
 Indent with spaces, using the following indentations:
 
 Construct | number of spaces
@@ -315,8 +302,7 @@ Include empty lines to visually separate blocks of code. Include a newline
 between functions and subroutines, after and before `do` loops, around `if`
 blocks, after the variable declarations, etc.
 
-# Warnings and runtime checks {#style-warning}
-
+# Warnings and runtime checks {: #style-warning }
 Enable all normal warnings during compilation, ideally using different
 compilers. Fix all warnings, except those that are incorrect, and those for
 which the fix does more harm than good.

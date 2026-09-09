@@ -1,0 +1,69 @@
+
+ &filelist
+   base_filename = 'output/rc'
+   saveprim      = T
+   autoconvert   = T
+   convert_type  = 'vtuBCCmpi'
+   nwauxio       = 2
+ /
+
+ &savelist
+   itsave(1,1)   = 0
+   itsave(1,2)   = 0
+   ditsave_log   = 200
+   dtsave_dat      = 100.0d0
+   dtsave_custom   = 20.0d0
+ /
+
+ &stoplist
+   time_max = 400.0d0
+ /
+
+ &methodlist
+   time_stepper             = 'threestep'
+   flux_scheme              = 20*'tvdlf'
+   limiter                  = 20*'mcbeta'
+   phys                     = 'mhd'
+   flux_adaptive_diffusion  = .true.
+   flux_ad_min              = 0.2d0
+   flux_ad_scale            = 0.5d0
+ /
+
+ &boundlist
+   typeboundary_min1 = 8*'periodic'
+   typeboundary_max1 = 8*'periodic'
+   typeboundary_min2 = 8*'periodic'
+   typeboundary_max2 = 8*'periodic'
+   typeboundary_min3 = 8*'periodic'
+   typeboundary_max3 = 8*'periodic'
+ /
+
+ &meshlist
+   max_blocks       = 100
+   refine_max_level = 1
+   block_nx1        = 20
+   block_nx2        = 20
+   block_nx3        = 4
+   domain_nx1       = 200
+   domain_nx2       = 200
+   domain_nx3       = 4
+   xprobmin1        = -1.0d0
+   xprobmax1        =  1.0d0
+   xprobmin2        = -1.0d0
+   xprobmax2        =  1.0d0
+   xprobmin3        = -0.02d0
+   xprobmax3        =  0.02d0
+ /
+
+ &paramlist
+   slowsteps   = 10
+   courantpar  = 0.7d0
+   typecourant = 'maxsum'
+ /
+
+ &mhd_list
+   mhd_gamma                         = 1.6666667d0
+   mhd_hyperbolic_thermal_conduction = .true.
+   tc_kappa_par                      = 0.01d0
+   mhd_energy_only                   = .true.
+ /

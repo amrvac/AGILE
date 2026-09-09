@@ -1,22 +1,19 @@
-# Setting parameters
+title: Setting parameters
 
-[TOC]
-
-# Introduction {#par_intro}
-
-This document describes the usage of a `.par` parameter (input) file for MPI-AMRVAC.
-For a list of command line options, see @ref commandline.md.
+# Introduction {: #par_intro }
+This document describes the usage of a `.par` parameter (input) file for AGILE.
+For a list of command line options, see [Command line parameters](commandline.html).
 
 Parameters are grouped in namelists according to their functionalities. The namelists
 have physics-independent class and physics-dependent class. The physics-independent class includes:
 
-* @ref par_filelist Name and type of files to save (or read)
-* @ref par_savelist When to save data
-* @ref par_stoplist When to stop the simulation
-* @ref par_methodlist Which numerical methods to use (e.g., flux scheme, time stepper, time integrator, limiter)
-* @ref par_boundlist Boundary conditions
-* @ref par_meshlist Mesh-related settings (e.g. domain size, refinement)
-* @ref par_paramlist Time-step parameters
+* [Filelist](#par_filelist) Name and type of files to save (or read)
+* [Savelist](#par_savelist) When to save data
+* [Stoplist](#par_stoplist) When to stop the simulation
+* [Methodlist](#par_methodlist) Which numerical methods to use (e.g., flux scheme, time stepper, time integrator, limiter)
+* [Boundlist](#par_boundlist) Boundary conditions
+* [meshlist](#par_meshlist) Mesh-related settings (e.g. domain size, refinement)
+* [Paramlist](#par_paramlist) Time-step parameters
 
 The default parameter values in these namelists are set in
 `src/amrvacio/mod_input_output.t`, look at the subroutine `read_par_files` for
@@ -24,10 +21,10 @@ details.
 
 The physics-dependent namelists include:
 
-* @ref par_rholist (see also `mod_rho_phys`)
-* @ref par_nonlinearlist (see also `mod_nonlinear_phys`)
-* @ref par_hdlist (see also `mod_hd_phys`)
-* @ref par_mhdlist (see also `mod_mhd_phys`)
+* [rho list](#par_rholist) (see also `mod_rho_phys`)
+* [nonlinear list](#par_nonlinearlist) (see also `mod_nonlinear_phys`)
+* [HD list](#par_hdlist) (see also `mod_hd_phys`)
+* [MHD list](#par_mhdlist) (see also `mod_mhd_phys`)
 
 Further namelist are used to control optional modules. Most of these lists are
 not documented here, but the parameters are described in the corresponding
@@ -70,10 +67,8 @@ parameters different from default need to be set. Names that should be replaced
 are in capital letters. The `...` indicates optional extra elements for arrays,
 or extra words in strings.
 
-# Physics-independent Namelists {#par_pidnamelists}
-
-## Filelist {#par_filelist}
-
+# Physics-independent Namelists {: #par_pidnamelists }
+## Filelist {: #par_filelist }
      &filelist
        <variable definitions, see below>
      /
@@ -93,7 +88,7 @@ convert_type | string | vtuBCCmpi | Which format to use when converting, options
 slice_type | string | vtu | Which format to use when slicing, options are: csv, dat, vtu, vtuCC
 collapse_type | string | vti | Which format to use when slicing, options are: csv, vti
 autoconvert | logical | F | If true, already convert to output format during the run
-sliceascii | logical | F | If true, enable ASCII output of @ref slices.md
+sliceascii | logical | F | If true, enable ASCII output of [Slice output](slices.html)
 saveprim | logical | F | If true, convert from conservative to primitive variables in output
 nwauxio | integer | 0 | Number of auxiliary variables that are only included in the output
 w_convert_factor | double(1:nw) | 1.0 | Conversion factors for w variables
@@ -127,7 +122,7 @@ variables beyond _nwflux_.
 
 ### Further info on output and postprocessing
 
-The code can be used to postprocess the MPI-AMRVAC .dat files (which are the
+The code can be used to postprocess the AGILE .dat files (which are the
 only ones to be used for restarts) to some convenient data files for later
 visualisation purposes. Such conversion of a single .dat file at a time is to be
 done with the same executable (or at least one compiled on a possibly different
@@ -182,7 +177,7 @@ It is even possible to temporarily add additionally computed auxiliary
 variables that are instantaneously computable from the data in the
 `base_filenamexxxx.dat` file to the converted snapshot. You should then
 provide the number of such extra variables in `nwauxio` (see also
-[this page](mpiamrvac_nw.md)), and a corresponding
+[this page](mpiamrvac_nw.html)), and a corresponding
 definition for how to compute them from the available _nw_ variables in the associated
 subroutine _usr_special_convert_ whose default interface is provided in the
 _mod_usr_methods.t_ module. You can there compute variables that are not
@@ -202,7 +197,7 @@ The corresponding values for conservative entries are computed in _convert.t_ wh
 _saveprim=F_.  See for details of their use the _convert.t_ module.
 
 Note that different formats for postprocess data conversion can be added in
-the `convert.t` subroutine. See [convert](convert.md) for details.
+the `convert.t` subroutine. See [convert](convert.html) for details.
 
 The _VTK_-based formats allow for saving only a part of the _nw_ variables, by
 setting the logical array `w_write`. The same is true for selecting levels by
@@ -230,12 +225,11 @@ The convert types `EIvtiCCmpi`, `ESvtiCCmpi`, `SIvtiCCmpi`, `EIvtuCCmpi`,
 `ESvtuCCmpi` and `SIvtuCCmpi` are added for synthesize EUV images, EUV spectra
 and SXR images, where EI represents EUV image, ES represents EUV spectra and
 SI represents SXR image. The corresponding parameters , e.g. line of sight direction, 
-for synthesizing emissions should be provided in the @ref par_emissionlist when the 
+for synthesizing emissions should be provided in the [Synthetic EUV/SXR/whitelight emission](#par_emissionlist) when the 
 convert types are activited. 
 
 
-## Savelist {#par_savelist}
-
+## Savelist {: #par_savelist }
 Example:
 
     &savelist
@@ -255,10 +249,10 @@ name | type | default | description
 `itsave(SAVEINDEX,FILEINDEX)` | integer | biginteger | Save on these time steps
 `tsave(SAVEINDEX,FILEINDEX)` | double | `bigdouble` | Save on these times
 `nslices` | integer | 0 | Number of slices
-`slicedir(INTEGER)` | integer | - | Slice direction, see @ref slices.md
-`slicecoord(INTEGER)` | double | - | Slice coordinate, see @ref slices.md
-`collapse(INTEGER)` | logical | F | See @ref collapsed.md
-`collapseLevel` | integer | 1 | See @ref collapsed.md
+`slicedir(INTEGER)` | integer | - | Slice direction, see [Slice output](slices.html)
+`slicecoord(INTEGER)` | double | - | Slice coordinate, see [Slice output](slices.html)
+`collapse(INTEGER)` | logical | F | See [Looking at line-integrated quantities](collapsed.html)
+`collapseLevel` | integer | 1 | See [Looking at line-integrated quantities](collapsed.html)
 
 Here FILEINDEX has the following meaning:
 
@@ -266,9 +260,9 @@ index | meaning
 ---|---
 1 | Log output
 2 | Normal output
-3 | Slice output, see @ref slices.md
-4 | Collapsed output, see @ref collapsed.md
-5 | Call user custom analysis subroutine, see @ref analysis.md
+3 | Slice output, see [Slice output](slices.html)
+4 | Collapsed output, see [Looking at line-integrated quantities](collapsed.html)
+5 | Call user custom analysis subroutine, see [Writing a custom analysis subroutine](analysis.html)
 
 One may want to save snapshots
 more frequently at the beginning of the simulation. E.g. `tsave(1,2)=0.1
@@ -279,8 +273,7 @@ If no save condition is given for a file you get a warning, but the final
 output is always saved after the stop condition has been fulfilled. If
 `itsave(1,2)=0` is set, the initial state is saved before advancing.
 
-## Stoplist {#par_stoplist}
-
+## Stoplist {: #par_stoplist }
     &stoplist
     	it_max =INTEGER
     	time_max =DOUBLE
@@ -323,8 +316,7 @@ in that file will be used unless you reset them to their initial values by
 setting `reset_time=T`. If you want only to reset the iteration count 
 without changing time, set `reset_it=T`.
 
-## Methodlist {#par_methodlist}
-
+## Methodlist {: #par_methodlist }
     &methodlist
 
     time_stepper='twostep' | 'onestep' | 'threestep' | 'fourstep' | 'fivestep'
@@ -369,8 +361,7 @@ without changing time, set `reset_it=T`.
     typecurl = 'central' | 'Gaussbased' | 'Stokesbased'
     /
 
-### time_stepper, time_integrator, flux_scheme {#par_time_integrator}
-
+### time_stepper, time_integrator, flux_scheme {: #par_time_integrator }
 The `time_stepper` variable determines the time integration procedure. The
 default procedure is a second order predictor-corrector type 'twostep' scheme
 (suitable for TVDLF, TVD-MUSCL schemes), and a simple 'onestep' algorithm for
@@ -388,11 +379,10 @@ and one sets
 `time_integrator='rk4'`. It can be used with _dimsplit=.true._.
  These higher order time integration methods can be
 most useful in conjunction with higher order spatial discretizations.
-See also [discretization](discretization.md) and
-[time_discretization](time_discretization.md).
+See also [discretization](discretization.html).
 
 The array `flux_scheme` defines a scheme to calculate the flux at cell interfaces using the chosen
-[method](methods.md) (like hll based approximate Riemann solver) per activated grid level
+method (like hll based approximate Riemann solver) per activated grid level
 (and on each level, all variables use the same discretization). In total,
 _nlevelshi_ methods must be specified, by default _nlevelshi=20_ and these are
 then all set by _flux_scheme=20*'tvdlf'_. Different discretizations can be mixed
@@ -404,15 +394,13 @@ all, and 'source' merely adds sources. These latter two values must be used
 with care, obviously, and are only useful for testing source terms or to save
 computations when fluxes are known to be zero.
 
-### Limiter type {#par_typelimiter}
-
+### Limiter type {: #par_typelimiter }
 For the TVDLF and TVD-MUSCL methods different limiter functions can be defined
 for the limited linear reconstructions from cell-center to cell-edge
 variables, and for the TVD method, for the characteristic variables.
 The default limiter is the most diffusive `limiter=nlevelshi*'minmod'`
 limiter (minmod for all levels), but one can also use
-`limiter=nlevelshi*'woodward'`, or use different limiters per level. Click
-[Slope limiters](limiter.md) to see detailed description of all available limiters.
+`limiter=nlevelshi*'woodward'`, or use different limiters per level.
 
 The `gradient_limiter` is the selection of a limiter to be used in computing
 gradients (or divergence of vector) when the typegrad=limited (or
@@ -436,8 +424,7 @@ or typediv is limited, and gradient_limiter is ppm) in geometry.t. If _flatcd=T_
 _flatsh=T_ to flattern oscillations at contact discontuinities or shocks, it needs
 1 more ghost cell, e.g., nghostcells=4.
 
-### Typeentropy, entropycoef {#par_typeentropy}
-
+### Typeentropy, entropycoef {: #par_typeentropy }
 For Riemann solver based methods, such as TVD and TVD-MUSCL (but not TVDLF),
 an entropyfix may be applied to avoid unphysical solutions. The fix is applied
 to the characteristic variables. The default entropy fix is `'nul'`, i.e. no entropy
@@ -450,8 +437,7 @@ more robust. For Yee entropyfix the minimum characteristic speed (normalized
 by dt/dx) can be set for each characteristic wave using the `entropycoef`
 array.
 
-### Different TVD variants {#par_tvdvariants}
-
+### Different TVD variants {: #par_tvdvariants }
 Both `tvd` and `tvdlf` have a few variants, these can be set in the
 strings `typetvd` and `typeboundspeed`, with defaults 'roe' and 'Einfeldt',
 respectively. The default `typetvd='roe'` is the fastest of the four upwind
@@ -482,14 +468,13 @@ TVDLF is then used in a user-controlled region around a point where there is a
 sign change in flux, whose width is set by `nxdiffusehllc` (an integer which
 is 0 by default).
 
-### Dimensional splitting {#par_dimsplit}
-
+### Dimensional splitting {: #par_dimsplit }
 Special sources, if any, can be added in a split or unsplit way according to the
 logical variables `source_split_usr` The default value is false meaning these sources are added
 in an unsplit way by default. The split sources are added according to
 `typesourcesplit`. The meaning of the different options for
 `typesourcesplit` is described in
-[discretization](@ref disc-splitting). Under default
+[discretization](discretization.html#disc-splitting). Under default
 settings, we use unsplit sources only, and if one reverts to split sources,
 `typesourcesplit='sfs'`.
 
@@ -497,11 +482,9 @@ In multidimensional calculations dimensional splitting can be used by setting
 `dimsplit=T`, with an alternating order of the sweeps
 `typedimsplit='xyyx'` by default. It is best to use
 `dimsplit=F`, the default value, but the TVD method needs a dimensionally
-split strategy. The limitations on using dimensionally unsplit methods are
-described in [methods](methods.md).
+split strategy.
 
-### Positivity fixes {#par_positivityfix}
-
+### Positivity fixes {: #par_positivityfix }
 Negative pressure or density caused by the numerical approximations can make the
 code crash. For HD and MHD modules this can be monitored
 or even cured by the handle_small_values subroutines in each substep of iteration. 
@@ -536,7 +519,7 @@ for the conservative variables in their standard order. As an example: if the us
 the pressure and density but not the momentum in a 2D MHD simulation, then small_values_fix_iw has to 
 be set to T, F, F, T, T, T. 
 
-### Special process {#par_process}
+### Special process {: #par_process }
 User controlled special process can be added to 
 each iteration. Subroutine usr_process_grid can be registered in 
 mod_usr.t to process for each grid. Subroutine usr_process_global can be registered
@@ -552,8 +535,7 @@ _geometry.t_ module. Similarly, a switch for the divergence of a vector is the
 `typediv` switch. When the 'limited' variant is used, one must set the 
 corresponding gradient_limiter array to select a limiter (per level).
 
-## Boundlist {#par_boundlist}
-
+## Boundlist {: #par_boundlist }
     &boundlist
      nghostcells= INTEGER
      typeboundary_min^D= 'cont'|'symm'|'asymm'|'periodic'|'special'|'noinflow'
@@ -577,7 +559,7 @@ _boundary_conditions.t_. Since the pre-defined boundary conditions are applied
 to the conserved variables, it does not guarantee the continuity of the fluxes
 (i.e. the terms associated to the velocity within the divergences in the
 fundamental equations under their conservative form, see
-[equations.md](equations.md)) and can prevent the fluid
+[equations.md](equations.html)) and can prevent the fluid
 from reaching a steady state. For instance, a conserved total specific intern
 energy (i.e. intern plus kinetic energy) _e_ does not result, in general, in a
 conserved flux of the variable carried by the velocity field i.e. _e+P_, where
@@ -691,8 +673,7 @@ reconstructions in the filling of ghost cells for internal boundaries that
 exist due to the AMR hierarchy. If `ghost_copy=T`, a first order 'copy' is 
 used 'unlimit'. To retain second order accuracy, the default set is needed.
 
-## meshlist {#par_meshlist}
-
+## meshlist {: #par_meshlist }
     &meshlist
      refine_max_level= INTEGER
      domain_nx1= INTEGER
@@ -729,8 +710,7 @@ used 'unlimit'. To retain second order accuracy, the default set is needed.
      nstretchedblocks_baselevel= INTEGER
     /
 
-### refine_max_level, max_blocks, domain_nx^D, block_nx^D, xprobmin^D, xprobmax^D {#par_refine_max_level}
-
+### refine_max_level, max_blocks, domain_nx^D, block_nx^D, xprobmin^D, xprobmax^D {: #par_refine_max_level }
 `refine_max_level` indicates the maximum number of grid levels that can be used 
 during the simulation, including the base grid level. It is an integer value 
 which is maximally equal to the parameter _nlevelshi_ and minimally equal to 1. 
@@ -758,8 +738,7 @@ blocks on level 1 in a dimension, which does not have any pole or periodic bound
 must be larger than 1 for a rectanuglar mesh with more than one level because of 
 the limitation from ghost-cell exchange at physical boundaries.
 
-### refine_criterion, nbufferx^D, amr_wavefilter {#par_errest}
-
+### refine_criterion, nbufferx^D, amr_wavefilter {: #par_errest }
 The code offers various choices for the error estimator used in automatically
 detecting regions that need refinement.
 
@@ -786,8 +765,7 @@ It can never be greater than the block size. For Lohner scheme, the buffer
 can actually be turned off completely by setting `nbufferx^D=0` which is 
 default value.
 
-### w_refine_weight, logflag, refine_threshold, derefine_ratio {#par_flags}
-
+### w_refine_weight, logflag, refine_threshold, derefine_ratio {: #par_flags }
 In all error estimators mentioned above (except the refine_criterion=1 case), the
 comparison or evaluation is done only with a user-selected (sub)set of the
 conserved variables. The _nw_ variables (which may include auxiliary
@@ -816,15 +794,13 @@ modify refine_threshold depending on location of interest. For example, increase
 refine_threshold near quiet boundaries to use coarser blocks there or decrease it
 to use finer blocks in focused regions.
 
-### iprob {#par_iprob}
-
+### iprob {: #par_iprob }
 As a possible integer switch for selecting multiple problem setups in the same
 executable code, the integer switch `iprob` is provided. It is meant to be
 used only in the user-written subroutines, for switching between e.g. multiple
 initial conditions for the same executable.
 
-### prolongprimitive, coarsenprimitive {#par_prolongprim}
-
+### prolongprimitive, coarsenprimitive {: #par_prolongprim }
 It is possible to enforce the code to use primitive variables when coarsening
 grid information (coarsen), or filling new finer level grids
 (prolongation). They are then used instead of the conservative variables,
@@ -841,8 +817,7 @@ optimal for all times.The parameter `ditregrid` is introduced to reconstruct
 the whole AMR grids once every ditregrid iteration(s) instead of regridding
 once in every iteration by default.
 
-### stretch_dim, stretch_uncentered, qstretch_baselevel, nstretchedblocks_baselevel {#par_stretched}
-
+### stretch_dim, stretch_uncentered, qstretch_baselevel, nstretchedblocks_baselevel {: #par_stretched }
 We allow stretching of the grid, in combination with any coordinate system 
 (cartesian/polar/cylindrical/spherical) you choose. You activate grid stretching 
 by setting `stretch_dim(1:ndim)`, for example for the second dimension:
@@ -869,8 +844,7 @@ face is not between stretched cell-centers. However, this is not yet taken into
 account in the reconstruction and symm/asymm boundary conditions, which may lead
 to issues, which can sometimes be avoided by setting `stretch_uncentered` to false.
 
-## Paramlist {#par_paramlist}
-
+## Paramlist {: #par_paramlist }
     &paramlist
       dtpar= DOUBLE
       courantpar= DOUBLE
@@ -879,8 +853,7 @@ to issues, which can sometimes be avoided by setting `stretch_uncentered` to fal
       slowsteps= INTEGER
     /
 
-### dtpar, courantpar, typecourant, dtdiffpar, dtTCpar, slowsteps {#par_dt}
-
+### dtpar, courantpar, typecourant, dtdiffpar, dtTCpar, slowsteps {: #par_dt }
 If `dtpar` is positive, it sets the timestep `dt`, otherwise
 `courantpar` is used to limit the time step based on the Courant condition.
 The default is `dtpar=-1.` and `courantpar=0.8`.
@@ -903,24 +876,20 @@ formula, where `step=1..slowsteps-1`. This reduction can help to avoid
 problems resulting from numerically unfavourable initial conditions, e.g. very
 sharp discontinuities. It is normally inactive with a default value -1.
 
-# Physics-dependent Namelists {#par_pdpnamelists}
-
-## rho list {#par_rholist}
-
+# Physics-dependent Namelists {: #par_pdpnamelists }
+## rho list {: #par_rholist }
     &rho_list
       rho_v= ndim doubles for advection velocity
     /
 
 
-## nonlinear list {#par_nonlinearlist}
-
+## nonlinear list {: #par_nonlinearlist }
     &nonlinear_list
       nonlinear_flux_type= INTEGER
       kdv_source_term= F | T
     /
 
-## HD list {#par_hdlist}
-
+## HD list {: #par_hdlist }
     &hd_list
       hd_energy= T | F
       hd_n_tracer= INTEGER
@@ -936,8 +905,7 @@ sharp discontinuities. It is normally inactive with a default value -1.
       SI_unit= F | T
     /
 
-## MHD list {#par_mhdlist}
-
+## MHD list {: #par_mhdlist }
     &mhd_list
      mhd_energy= T | F
      mhd_n_tracer= INTEGER
@@ -983,8 +951,7 @@ sharp discontinuities. It is normally inactive with a default value -1.
      SI_unit= F | T
     /
 
-### Magnetic field divergence fixes {#par_divbfix}
-
+### Magnetic field divergence fixes {: #par_divbfix }
 The upwind constrained transport methods  **typedivbfix='ct'** by Gardiner and Stone in _Journal of 
 Computational Physics, 205, 509-539 (2005)_ **type_ct='uct_contact'** (default),
 or by Del Zanna, L., Zanotti, O., Bucciantini, N., & Londrillo, P. in _Astronomy & 
@@ -1031,8 +998,7 @@ _Computer Physics Communications 245, 1068, (2019)_ can be chosen as 'multigrid'
 remove div B part of B. If `clean_initial_divb` is set to T, the projection scheme is 
 used to remove div B once after initial condition in unstretched Cartesian CT-MHD cases.
 
-### Magnetic field splitting strategy {#par_MFS}
-
+### Magnetic field splitting strategy {: #par_MFS }
 For MHD, we implemented the possibility to use a splitting strategy following
 Tanaka, where a time-invariant background magnetic field is handled
 exactly, so that one solves for perturbed magnetic field components instead.
@@ -1051,8 +1017,7 @@ _usr_set_J0_ subroutine to significantly increase accuracy. Choose
 `B0field_forcefree=T` when your background magnetic field is forcefree for better
 efficiency and accuracy.
 
-### The transition region adaptive conduction (TRAC) method {#par_TRAC}
-
+### The transition region adaptive conduction (TRAC) method {: #par_TRAC }
 For solar atmosphere, simulations can sometimes suffer from the huge temperature gradient in the transition region.
 If the resolution is not enough (typically 1 km), the upward evaporation might be underestimated.
 The TRAC method could be used to correct the evaporation through artificially broadening the transition region.
@@ -1075,8 +1040,7 @@ Note that when setting 'mhd_trac_type >=3', the direction of your gravity should
 Unlike Johnston TRAC method, this TRAC method has the advantage that all the calculation is done locally within the block.
 Thus, it could be used in either 1D (M)HD or multi-D MHD simulations, and is much faster than other multi-D methods.
 
-### Solve internal or hydrodynamic energy to avoid negative pressure{#par_AIE}
-
+### Solve internal or hydrodynamic energy to avoid negative pressure {: #par_AIE }
 In extremely low beta plasma, internal energy or gas pressure easily goes to
 negative values when solving total energy equation, because numerical error of magnetic
  energy is comparable to the internal energy due to its extremely small fraction in the 
@@ -1089,8 +1053,7 @@ In the second method, We solve hydrodynamic energy, i.e., internal and kinetic e
 total energy with an additional source term of Lorentz force work, by setting `mhd_hydrodynamic_e=T`,
 which has better conservation than solving internal energy.
 
-### Solve semirelativistic MHD to tackle extreme Alfven speed{#par_semirelati}
-
+### Solve semirelativistic MHD to tackle extreme Alfven speed {: #par_semirelati }
 The Alfven speed in nonrelativistic MHD, defined as B/sqrt(mu rho), can be extremely large, even unphysically larger
 than speed of light in strong magnetic field and low density regions. Semirelativistic MHD equations
 (Gombosi et al. 2002 JCP 177, 176) as the nonrelativistic hydrodynamic limit of the relativistic MHD 
@@ -1109,11 +1072,10 @@ are not yet fully compatible with semirelativistic MHD. Note that when using sem
 definitions of momentum and total energy are different from MHD, so call 'mhd_to_primitive' to get velocity
 and gas pressure from momentum and total energy instead of using the classic relations.
 
-## Synthetic EUV/SXR/whitelight emission {#par_emissionlist}
-
+## Synthetic EUV/SXR/whitelight emission {: #par_emissionlist }
 User can synthesize EUV images, EUV spectra, SXR images and whitelight images using 3D .dat files inside amrvac. 
 These can be finished easily by adding some parameters into .par file. The images/spectra will 
-be output to .vtu/.vti files when the convert_type in @ref par_filelist is set to  'EIvtiCCmpi', 
+be output to .vtu/.vti files when the convert_type in [Filelist](#par_filelist) is set to  'EIvtiCCmpi', 
 'ESvtiCCmpi',  'SIvtiCCmpi' ... Thehe size of a pixel is the same as that in relevant observation 
 data (such as SDO and RHESSI). The point spread function (PSF, instrument effect) has been 
 included for 'instrument' resolution. 

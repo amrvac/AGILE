@@ -1,16 +1,16 @@
-# Radiative cooling in MPI-AMRVAC 
+title: Radiative cooling in AGILE
 
-The webpage describes how users can add radiative cooling to their setup in MPI-AMRVAC
+The webpage describes how users can add radiative cooling to their setup in AGILE
 
 # Physics
 
 The implemented radiative cooling is optically thin and describes locally the energy loss by radiation. 
 The source is
-\f[  
+\[  
 Q = -n_i n_e \Lambda(T)  
-\f] 
-where \f$ n_i \f$ and \f$ n_e \f$ are the ion- and electron number densities. 
-\f$ \Lambda(T) \f$ is the cooling funtion or curve and represents the efficiency.
+\] 
+where \( n_i \) and \( n_e \) are the ion- and electron number densities. 
+\( \Lambda(T) \) is the cooling funtion or curve and represents the efficiency.
 This cooling curve can be a tabulated set of points obtained by detailed calculations (see e.g. Colgan et. al. 2008). 
 These tables can be interpolated to high temperature resolution.
 Alternatively, some cooling curves are described as piecewise power laws (see e.g. Hildner 1974). 
@@ -51,7 +51,7 @@ ncool | integer | 4000 | The number of point that will be used in interpolating 
 cfrac | double precision | 0.1 | The fraction of E/L that sets upper time limit in explicit cooling functions.
 Tfix | logical | F |  If true, a temperature limit (tlow) is enforced as minimum temperature throughout the grid. Not physical, but can help overcome negative pressure issues in radiative cooling instabilities. It is strongly recommended to use this. <br>(It should be noted that other source terms, such as usr_source set by the user in the mod_usr.t file, can still modify the internal energy and hence the temperature.)
 tlow | double precision | lowest temperature of cooling curve | Used as lower temperature limit if Tfix=.true., should be set in dimensionless units
-rc_split | logical | F | If true, the radiative cooling source term will be evaluated separately from the fluxes. This can ensure fixing of the temperature, if used in combination with Tfix and a splitting scheme ending on the splitted sources terms and no user-defined source terms are split. See [Discretization](@ref discretization.md) for more information on source splitting.
+rc_split | logical | F | If true, the radiative cooling source term will be evaluated separately from the fluxes. This can ensure fixing of the temperature, if used in combination with Tfix and a splitting scheme ending on the splitted sources terms and no user-defined source terms are split. See [Discretization](discretization.html) for more information on source splitting.
 
 
 
@@ -103,7 +103,7 @@ If a piecewise power law was set as cooling curve, the pre-coded data is used to
 The constants of integration of the temporal evolution function, used in the exact method, are also determined. 
 
 In order to allow scaling of the relevant variables, the module has to know the unit_temperature, unit_numberdensity, unit_time, and unit_pressure. 
-So the user has to provide three independent units in [mod_usr.t](@ref amrvacusr.md).
+So the user has to provide three independent units in `mod_usr`.
 Note that cooling curves are defined in cgs units, so the scaling has to go from cgs
 to dimensionless.
 
@@ -144,7 +144,7 @@ Piecewise power laws  | 'Hildner'  | Hildner 1974
 
 With the exception of the SPEX table (which is rather more complicated), 
 all interpolatable tables have been extended to 1.e9 K, 
-by assuming pure Bremsstrahlung at high temperatures (\f$ \Lambda \sim \sqrt{T} \f$). 
+by assuming pure Bremsstrahlung at high temperatures (\( \Lambda \sim \sqrt{T} \)). 
 This has been done to allow the different numerical cooling methods to extend to higher temperatures.
 
 All coolingcurves are implemented in cgs units. However, if you use SI units with the parameter *si_unit*, the radiative cooling will be scaled to take it into account. The piecewise power laws have a pre-coded temperature range of 1.e3 to 1.e10 K, for practical reasons.
@@ -204,7 +204,7 @@ Note that for interpolated cooling tables, the exact integration method is only 
 larger temperatures the cooling is calculated explicitly. This is
 acceptable since most cooling tables have 1.e8K as a maximum value. At higher 
 temperatures, Bremsstrahlung dominates the cooling. Since this is a simple
- \f$ \Lambda \sim \sqrt{T} \f$ relationship, the explicit value is
+ \( \Lambda \sim \sqrt{T} \) relationship, the explicit value is
 usually correct. For the piecewise power laws, the cooling is also calculated explicitly but with its actual value instead of Bremsstrahlung. 
 In any case, areas with such a high temperature tend to have
 low density, rendering the radiative cooling negligible.

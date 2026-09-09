@@ -7,3 +7,8 @@ dependencies = [
     "fortdepend>=2.3.2",
     "fypp>=3.2",
 ]
+
+[project.optional-dependencies]
+docs = [
+    "ford>=7.0",
+]
