@@ -69,6 +69,9 @@ module mod_fix_conserve
      integer :: ic1,ic2,ic3, inc1,inc2,inc3, ipe_neighbor
      integer :: recvsize, sendsize
      integer :: recvsize_cc, sendsize_cc
+     ! MPI tag out of bounds safeguard
+     integer(kind=MPI_ADDRESS_KIND) :: tag_ub
+     logical                        :: tag_ub_flag
 
      ! JESSENEW
      nwflux_fc = nwfluxin
@@ -192,6 +195,14 @@ module mod_fix_conserve
 
      ! Offset table, sized by the tag space.  Allocated once, max_blocks is fixed.
      if (.not.allocated(ibuf_offset)) then
+       ! recvflux tags each chunk with 4**3*(igrid-1)+inc1+4*inc2+16*inc3, so
+       ! the largest tag is 64*max_blocks.  The MPI standard only guarantees
+       ! MPI_TAG_UB >= 32767, which that exceeds once max_blocks > 512; Open
+       ! MPI and MPICH both give ~2**31 so one should be safe in general.
+       call MPI_COMM_GET_ATTR(MPI_COMM_WORLD, MPI_TAG_UB, tag_ub, tag_ub_flag,&
+          ierrmpi)
+       if (tag_ub_flag .and. 4**3*max_blocks > tag_ub) call mpistop(&
+          "fix_conserve: 64*max_blocks exceeds MPI_TAG_UB; reduce max_blocks")
        allocate(ibuf_offset(4**3*max_blocks))
        ibuf_offset = -1
        !$acc enter data copyin(ibuf_offset)
@@ -274,6 +285,7 @@ module mod_fix_conserve
 
    subroutine recvflux(idimmin,idimmax)
      use mod_global_parameters
+     use mod_comm_lib, only: mpistop
 
      integer, intent(in) :: idimmin,idimmax
 
@@ -324,6 +336,9 @@ module mod_fix_conserve
            end do
          end do
        end do
+       ! check for recvbuffer out of bounds errors
+       if (irecv /= nrecv) call mpistop(&
+          "recvflux: posted receives do not match nrecv from init_comm")
        !$acc update device(ibuf_offset)
      end if
 
