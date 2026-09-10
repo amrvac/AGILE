@@ -9,14 +9,6 @@ module mod_fix_conserve
   implicit none
   private
 
-!!  type fluxalloc
-!!     double precision, dimension(:,:,:,:), allocatable :: flux
-!!     !!double precision, dimension(:,:,:,:), pointer:: flux => null()
-!!     !!double precision, dimension(:,:,:,:), pointer:: edge => null()
-!!  end type fluxalloc
-!!  !> store flux to fix conservation
-!!  type(fluxalloc), dimension(:,:,:), allocatable, public :: pflux
-
   type fluxalloc
      double precision, dimension(:,:,:,:,:), allocatable :: flux
      !!double precision, dimension(:,:,:,:), pointer:: flux => null()
@@ -31,8 +23,19 @@ module mod_fix_conserve
   integer, dimension(:,:), allocatable :: fc_recvstat, fc_sendstat
   integer, dimension(3), save        :: isize
   
-  !JESSENEW added for fluxfixing
+  !JESSENEW added for fluxfixing, it is now a striped implementation
+  !where next to a tag one also a specific communication so that an
+  !unique key is created from the combination of both. It is set up to
+  !autotune based on the available MPI tag limit. When one ends up below
+  !the tag limit, only a single communicator is used. When above, then a
+  !minimal number of communicators is used to satisfy the MPI limits. It
+  !is important to keep in mind that there will likely also be a
+  !system-dependent communicator limit, but in the outlined way one will
+  !likely have sufficient keys.
   integer, allocatable, save         :: ibuf_offset(:)
+  integer, parameter                 :: n_fc_comm_cap = 256
+  integer, save                      :: n_fc_comm = 1
+  integer, allocatable, save         :: icomm_fc(:)
   integer, save                      :: nwflux_fc
   integer, dimension(3,3), save      :: nxCo_fc
   !$acc declare create(isize, nxCo_fc, nwflux_fc)
@@ -72,6 +75,7 @@ module mod_fix_conserve
      ! MPI tag out of bounds safeguard
      integer(kind=MPI_ADDRESS_KIND) :: tag_ub
      logical                        :: tag_ub_flag
+     integer                        :: i_fc_comm
 
      ! JESSENEW
      nwflux_fc = nwfluxin
@@ -201,8 +205,21 @@ module mod_fix_conserve
        ! MPI and MPICH both give ~2**31 so one should be safe in general.
        call MPI_COMM_GET_ATTR(MPI_COMM_WORLD, MPI_TAG_UB, tag_ub, tag_ub_flag,&
           ierrmpi)
-       if (tag_ub_flag .and. 4**3*max_blocks > tag_ub) call mpistop(&
-          "fix_conserve: 64*max_blocks exceeds MPI_TAG_UB; reduce max_blocks")
+       ! If the attribute is somehow absent, assume the guaranteed minimum.
+       if (.not.tag_ub_flag) tag_ub = 32767_MPI_ADDRESS_KIND
+       ! ceiling divide, done in ADDRESS_KIND so 64*max_blocks cannot overflow
+       n_fc_comm = int((int(4**3,kind=MPI_ADDRESS_KIND)*max_blocks + tag_ub &
+                        - 1_MPI_ADDRESS_KIND) / tag_ub)
+       n_fc_comm = max(1, n_fc_comm)
+       if (n_fc_comm > n_fc_comm_cap) call mpistop(&
+          "fix_conserve: MPI_TAG_UB too small for this max_blocks even with &
+          &striping; reduce max_blocks or aggregate flux messages per rank")
+       ! Collective, and reached by every rank on the first call.  max_blocks
+       ! and MPI_TAG_UB are identical everywhere, so n_fc_comm is too.
+       allocate(icomm_fc(n_fc_comm))
+       do i_fc_comm = 1, n_fc_comm
+         call MPI_COMM_DUP(icomm, icomm_fc(i_fc_comm), ierrmpi)
+       end do
        allocate(ibuf_offset(4**3*max_blocks))
        ibuf_offset = -1
        !$acc enter data copyin(ibuf_offset)
@@ -291,6 +308,7 @@ module mod_fix_conserve
 
      integer :: iigrid, igrid, idims, iside, i1,i2,i3, nxCo1,nxCo2,nxCo3
      integer :: ic1,ic2,ic3, inc1,inc2,inc3, ipe_neighbor
+     integer :: ikey, i_fc_comm
      integer :: pi1,pi2,pi3,mi1,mi2,mi3,ph1,ph2,ph3,mh1,mh2,mh3,idir
 
      if (nrecv>0) then
@@ -316,15 +334,19 @@ module mod_fix_conserve
                ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
                if (ipe_neighbor/=mype) then
                  irecv=irecv+1
-                 itag=4**3*(igrid-1)+inc1*4**(1-1)+inc2*4**(2-1)+inc3*4**(3-1)
-                 ! itag is also the key fix_conserve will look this chunk up by
-                 ibuf_offset(itag+1)=ibuf
+                 ! full index -> the key fix_conserve looks this chunk up by
+                 ikey=4**3*(igrid-1)+inc1*4**(1-1)+inc2*4**(2-1)+inc3*4**(3-1)
+                 ibuf_offset(ikey+1)=ibuf
+                 ! striped index -> communicator + tag for MPI matching
+                 i_fc_comm=mod(igrid-1,n_fc_comm)+1
+                 itag=4**3*((igrid-1)/n_fc_comm)+inc1*4**(1-1)+inc2*4**(2-1)+&
+                    inc3*4**(3-1)
 #ifndef NOGPUDIRECT
                  !$acc host_data use_device(recvbuffer)
 #endif
                  call mpi_irecv_wrapper(recvbuffer(ibuf),isize(idims),&
-                     MPI_DOUBLE_PRECISION,ipe_neighbor,itag, icomm,&
-                    fc_recvreq(irecv),ierrmpi)
+                     MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
+                    icomm_fc(i_fc_comm),fc_recvreq(irecv),ierrmpi)
 #ifndef NOGPUDIRECT
                  !$acc end host_data
 #endif
@@ -438,6 +460,7 @@ module mod_fix_conserve
      integer :: idims, iside, i1,i2,i3, ic1,ic2,ic3, inc1,inc2,inc3, ix1,ix2,&
         ix3, ixCo1,ixCo2,ixCo3, nxCo1,nxCo2,nxCo3, iw
      integer :: ineighbor, ipe_neighbor, igrid, iigrid, ibuf_send_next
+     integer :: i_fc_comm
      integer :: idir, ibuf_cc_send_next, pi1,pi2,pi3, ph1,ph2,ph3, mi1,mi2,mi3,&
          mh1,mh2,mh3
 
@@ -469,8 +492,9 @@ module mod_fix_conserve
                  ic2=1+modulo(node(pig2_,igrid)-1,2)
                  ic3=1+modulo(node(pig3_,igrid)-1,2);
                  inc1=-2*i1+ic1;inc2=ic2;inc3=ic3;
-                 itag=4**3*(ineighbor-1)+inc1*4**(1-1)+inc2*4**(2-1)+&
-                    inc3*4**(3-1)
+                 i_fc_comm=mod(ineighbor-1,n_fc_comm)+1
+                 itag=4**3*((ineighbor-1)/n_fc_comm)+inc1*4**(1-1)+&
+                    inc2*4**(2-1)+inc3*4**(3-1)
                  isend=isend+1
 
                  if(stagger_grid) then
@@ -503,13 +527,12 @@ module mod_fix_conserve
                    !$acc host_data use_device(sendbuffer)
 #endif
                    call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(1),&
-                       MPI_DOUBLE_PRECISION,ipe_neighbor,itag, icomm,&
-                      fc_sendreq(isend),ierrmpi)
+                       MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
+                      icomm_fc(i_fc_comm),fc_sendreq(isend),ierrmpi)
 #ifndef NOGPUDIRECT
                    !$acc end host_data
 #endif
                    ibuf_send=ibuf_send+isize(1)
-
                  end if
                end if
 
@@ -596,8 +619,9 @@ module mod_fix_conserve
                  ic2=1+modulo(node(pig2_,igrid)-1,2)
                  ic3=1+modulo(node(pig3_,igrid)-1,2);
                  inc1=ic1;inc2=-2*i2+ic2;inc3=ic3;
-                 itag=4**3*(ineighbor-1)+inc1*4**(1-1)+inc2*4**(2-1)+&
-                    inc3*4**(3-1)
+                 i_fc_comm=mod(ineighbor-1,n_fc_comm)+1
+                 itag=4**3*((ineighbor-1)/n_fc_comm)+inc1*4**(1-1)+&
+                    inc2*4**(2-1)+inc3*4**(3-1)
                  isend=isend+1
 
                  if(stagger_grid) then
@@ -630,8 +654,8 @@ module mod_fix_conserve
                    !$acc host_data use_device(sendbuffer)
 #endif
                    call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(2),&
-                       MPI_DOUBLE_PRECISION,ipe_neighbor,itag, icomm,&
-                      fc_sendreq(isend),ierrmpi)
+                       MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
+                      icomm_fc(i_fc_comm),fc_sendreq(isend),ierrmpi)
 #ifndef NOGPUDIRECT
                    !$acc end host_data
 #endif
@@ -722,8 +746,9 @@ module mod_fix_conserve
                  ic2=1+modulo(node(pig2_,igrid)-1,2)
                  ic3=1+modulo(node(pig3_,igrid)-1,2);
                  inc1=ic1;inc2=ic2;inc3=-2*i3+ic3;
-                 itag=4**3*(ineighbor-1)+inc1*4**(1-1)+inc2*4**(2-1)+&
-                    inc3*4**(3-1)
+                 i_fc_comm=mod(ineighbor-1,n_fc_comm)+1
+                 itag=4**3*((ineighbor-1)/n_fc_comm)+inc1*4**(1-1)+&
+                    inc2*4**(2-1)+inc3*4**(3-1)
                  isend=isend+1
 
                  if(stagger_grid) then
@@ -756,8 +781,8 @@ module mod_fix_conserve
                    !$acc host_data use_device(sendbuffer)
 #endif
                    call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(3),&
-                       MPI_DOUBLE_PRECISION,ipe_neighbor,itag, icomm,&
-                      fc_sendreq(isend),ierrmpi)
+                       MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
+                      icomm_fc(i_fc_comm),fc_sendreq(isend),ierrmpi)
 #ifndef NOGPUDIRECT
                    !$acc end host_data
 #endif
