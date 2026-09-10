@@ -23,15 +23,18 @@ module mod_fix_conserve
   integer, dimension(:,:), allocatable :: fc_recvstat, fc_sendstat
   integer, dimension(3), save        :: isize
   
-  !JESSENEW added for fluxfixing, it is now a striped implementation
-  !where next to a tag one also a specific communication so that an
-  !unique key is created from the combination of both. It is set up to
-  !autotune based on the available MPI tag limit. When one ends up below
-  !the tag limit, only a single communicator is used. When above, then a
-  !minimal number of communicators is used to satisfy the MPI limits. It
-  !is important to keep in mind that there will likely also be a
-  !system-dependent communicator limit, but in the outlined way one will
-  !likely have sufficient keys.
+  !JESSENEW added for fluxfixing: the flux exchange is now "striped",
+  !but not neccesarily in the traditional way, where alongside the tag
+  !a specific communicator is chosen, so that the two together identify
+  !a message uniquely (MPI matches on communicator, source and tag). 
+  !MPI_TAG_UB is one implementation-wide value and cannot be raised,
+  !but each communicator carries its own copy of the range, so N
+  !communicators give N times the distinguishable messages per peer.
+  !The number is automatically tuned from MPI_TAG_UB and max_blocks: a single
+  !communicator when the tags already fit, the minimum needed when they do
+  !not. Communicator ids are finite too, hence n_fc_comm_cap and its
+  !mpistop. Note ibuf_offset keeps its own unstriped key; tags repeat
+  !across communicators, so a tag is not a valid lookup index.
   integer, allocatable, save         :: ibuf_offset(:)
   integer, parameter                 :: n_fc_comm_cap = 256
   integer, save                      :: n_fc_comm = 1
