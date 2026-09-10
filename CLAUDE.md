@@ -634,7 +634,12 @@ Current limits of the curvilinear (spherical and cylindrical) support:
     `init_comm_fix_conserve`, `recvflux`, `sendflux` and `fix_conserve` all
     `cycle` on a non-zero `neighbor_pole`, consistently, so no buffer is sized,
     sent or applied there. Upstream does the same. Level jumps elsewhere in a
-    pole case are refluxed normally.
+    pole case are refluxed normally, and that is enough for conservation in
+    the configurations tested: a closed cylindrical domain reaching the axis,
+    with the refinement of `tests/hd/cylindrical_pole/uflow_amr.par`, drifts
+    in mass by `3.0e-5` with the correction off and by `1.4e-14` with it on.
+    That measures the configuration, not the general case — a level jump lying
+    *across* an axis face would keep its mismatch.
 
 Validated by eight test directories, one per (physics, geometry) pair, which
 is as few as the compile-time parameters allow: `phys` and `geometry` are both
@@ -663,6 +668,23 @@ mechanism `tests/hd/cloud_crushing` uses):
   run rather than settling after the first regrid, which is what puts the
   curvilinear prolongation, coarsening and ghost-cell prolongation paths under
   test.
+- `blast_amr_fixgrid.par` — `tests/hd/spherical` only, and **the curvilinear
+  refluxing test**. Two changes from `blast_amr.par` give it teeth that no
+  other log in the tree has. The domain is *closed* (reflecting in `r` and
+  `theta`, `asymm` in `phi`), so the `mean(rho)` and `mean(e)` the regression
+  log reports are conserved quantities and any mismatch between a coarse face
+  flux and the four fine ones it faces shows up directly as mass or energy
+  appearing from nowhere. And `itfixgrid = 0` freezes the mesh after the
+  initial refinement, so the shell expands *through* the level jumps.
+  That second point is the one that matters: with a live grid the refined
+  region is buffered and every jump sits in still-uniform gas, where the
+  coarse and fine fluxes agree exactly and refluxing has nothing to correct —
+  `blast_amr.par`'s log does not move by a single digit whether the correction
+  is applied or not, which is exactly how a broken reflux would slip through.
+  Measured with the correction disabled in `src/mod_advance.fpp`, mass drifts
+  by `7.3e-4` over this run; with it on, by `4.2e-15`. **A change to the
+  refluxing path should be checked against this case, not against
+  `blast_amr.par`.**
 
 `agile.par` in each directory is the build reference: `make/config_reader.py`
 takes the compile-time parameters from *that file alone*, so it has to declare
