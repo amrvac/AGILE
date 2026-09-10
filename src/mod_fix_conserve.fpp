@@ -42,13 +42,27 @@ module mod_fix_conserve
   !it entirely: pack every chunk bound for a given destination rank into one
   !contiguous run of sendbuffer and post a single Isend per neighbour rank,
   !and the tag space collapses to the rank count, well inside any MPI_TAG_UB.
-  !The same restructuring is what the send side wants for other reasons -
-  !sendflux currently interleaves one device kernel launch per message with
-  !the MPI calls, where packing every message in one kernel, updating the
-  !host copy of sendbuffer once (as the receive side already does with
-  !recvbuffer after its MPI_WAITALL), and only then posting the sends would
-  !cost one launch and one transfer per exchange instead of per message.
+  !sendflux is already staged that way - it walks the tree once to record where
+  !each message goes, packs them with one kernel per (iside, idims) group, and
+  !posts every send after a single host transfer - so the remaining step is to
+  !make the destination, rather than the pflux slot, the thing a group is keyed
+  !on. What stops that today is that two chunks bound for the same rank need
+  !not be adjacent in sendbuffer, and a single Isend needs one contiguous run.
   integer, allocatable, save         :: ibuf_offset(:)
+  !
+  !Per-message bookkeeping filled by sendflux's first pass, so that the packing
+  !and the posting can each be done in bulk afterwards rather than one kernel
+  !launch and one host transfer per message. snd_igrid and snd_ibuf are read by
+  !the pack kernels and are therefore device-resident; snd_size, snd_pe,
+  !snd_tag and snd_comm are host-only MPI bookkeeping. snd_group lists the
+  !messages that read one (iside, idims) slot of pflux, which is what lets a
+  !single kernel serve them all: the slot is then loop-invariant, and a
+  !derived-type component with an allocatable array cannot be selected by a
+  !device-side index.
+  integer, allocatable, save         :: snd_igrid(:), snd_ibuf(:), snd_size(:)
+  integer, allocatable, save         :: snd_pe(:), snd_tag(:), snd_comm(:)
+  integer, allocatable, save         :: snd_group(:,:,:)
+  integer, save                      :: snd_ngroup(2,3)
   integer, parameter                 :: n_fc_comm_cap = 256
   integer, save                      :: n_fc_comm = 1
   integer, allocatable, save         :: icomm_fc(:)
@@ -251,6 +265,21 @@ module mod_fix_conserve
      else
        allocate(sendbuffer(sendsize))
        !$acc enter data create(sendbuffer)
+     end if
+
+     ! Sized by nsend, so it is reallocated exactly when sendbuffer is.
+     if (allocated(snd_ibuf)) then
+       if (size(snd_ibuf) /= max(nsend,1)) then
+         !$acc exit data delete(snd_igrid, snd_ibuf, snd_group)
+         deallocate(snd_igrid, snd_ibuf, snd_size, snd_pe, snd_tag, snd_comm,&
+            snd_group)
+       end if
+     end if
+     if (.not.allocated(snd_ibuf)) then
+       allocate(snd_igrid(max(nsend,1)), snd_ibuf(max(nsend,1)),&
+          snd_size(max(nsend,1)), snd_pe(max(nsend,1)), snd_tag(max(nsend,1)),&
+          snd_comm(max(nsend,1)), snd_group(max(nsend,1),2,3))
+       !$acc enter data create(snd_igrid, snd_ibuf, snd_group)
      end if
 
      if (allocated(fc_recvreq)) then
@@ -479,10 +508,12 @@ module mod_fix_conserve
      integer :: i_fc_comm
      integer :: idir, ibuf_cc_send_next, pi1,pi2,pi3, ph1,ph2,ph3, mi1,mi2,mi3,&
          mh1,mh2,mh3
+     integer :: k, ng, imsg
 
      fc_sendreq = MPI_REQUEST_NULL
      isend      = 0
      ibuf_send  = 1
+     snd_ngroup = 0
      if(stagger_grid) then
        cc_sendreq=MPI_REQUEST_NULL
        isend_cc=0
@@ -527,32 +558,17 @@ module mod_fix_conserve
                  !!  ibuf_send=ibuf_send_next
                  else
 
-                   !$acc parallel loop collapse(3) default(present)
-                   do iw=1,nwflux_fc
-                     do ix3=1,nxCo_fc(3,1)
-                       do ix2=1,nxCo_fc(2,1)
-                         sendbuffer(ibuf_send+(ix2-1)+(ix3-1)*nxCo_fc(2,1) &
-                            +(iw-1)*nxCo_fc(2,1)*nxCo_fc(3,1)) = &
-                            pflux(iside,1)%flux(1,ix2,ix3,iw,igrid)
-                       end do
-                     end do
-                   end do
-#ifdef NOGPUDIRECT
-                   ! Only the chunk just packed, not the whole buffer: the
-                   ! whole-buffer form is O(nsend*sendsize) of traffic, and it
-                   ! rewrites host memory that earlier, already-posted Isends
-                   ! are still reading, which MPI does not allow even when the
-                   ! bytes written happen to be identical.
-                   !$acc update host(sendbuffer(ibuf_send:ibuf_send+isize(1)-1))
-#else
-                   !$acc host_data use_device(sendbuffer)
-#endif
-                   call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(1),&
-                       MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
-                      icomm_fc(i_fc_comm),fc_sendreq(isend),ierrmpi)
-#ifndef NOGPUDIRECT
-                   !$acc end host_data
-#endif
+                   ! Record where this message's chunk sits in sendbuffer
+                   ! and who it is for. The packing and the posting are done in
+                   ! bulk after the tree walk, below.
+                   snd_igrid(isend) = igrid
+                   snd_ibuf(isend)  = ibuf_send
+                   snd_size(isend)  = isize(1)
+                   snd_pe(isend)    = ipe_neighbor
+                   snd_tag(isend)   = itag
+                   snd_comm(isend)  = i_fc_comm
+                   snd_ngroup(iside,1) = snd_ngroup(iside,1) + 1
+                   snd_group(snd_ngroup(iside,1),iside,1) = isend
                    ibuf_send=ibuf_send+isize(1)
                  end if
                end if
@@ -659,32 +675,17 @@ module mod_fix_conserve
                  !!  ibuf_send=ibuf_send_next
                  else
 
-                   !$acc parallel loop collapse(3) default(present)
-                   do iw=1,nwflux_fc
-                     do ix3=1,nxCo_fc(3,2)
-                       do ix1=1,nxCo_fc(1,2)
-                         sendbuffer(ibuf_send+(ix1-1)+(ix3-1)*nxCo_fc(1,2) &
-                            +(iw-1)*nxCo_fc(1,2)*nxCo_fc(3,2)) = &
-                            pflux(iside,2)%flux(ix1,1,ix3,iw,igrid)
-                       end do
-                     end do
-                   end do
-#ifdef NOGPUDIRECT
-                   ! Only the chunk just packed, not the whole buffer: the
-                   ! whole-buffer form is O(nsend*sendsize) of traffic, and it
-                   ! rewrites host memory that earlier, already-posted Isends
-                   ! are still reading, which MPI does not allow even when the
-                   ! bytes written happen to be identical.
-                   !$acc update host(sendbuffer(ibuf_send:ibuf_send+isize(2)-1))
-#else
-                   !$acc host_data use_device(sendbuffer)
-#endif
-                   call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(2),&
-                       MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
-                      icomm_fc(i_fc_comm),fc_sendreq(isend),ierrmpi)
-#ifndef NOGPUDIRECT
-                   !$acc end host_data
-#endif
+                   ! Record where this message's chunk sits in sendbuffer
+                   ! and who it is for. The packing and the posting are done in
+                   ! bulk after the tree walk, below.
+                   snd_igrid(isend) = igrid
+                   snd_ibuf(isend)  = ibuf_send
+                   snd_size(isend)  = isize(2)
+                   snd_pe(isend)    = ipe_neighbor
+                   snd_tag(isend)   = itag
+                   snd_comm(isend)  = i_fc_comm
+                   snd_ngroup(iside,2) = snd_ngroup(iside,2) + 1
+                   snd_group(snd_ngroup(iside,2),iside,2) = isend
                    ibuf_send=ibuf_send+isize(2)
                  end if
                end if
@@ -791,32 +792,17 @@ module mod_fix_conserve
                  !!  ibuf_send=ibuf_send_next
                  else
 
-                   !$acc parallel loop collapse(3) default(present)
-                   do iw=1,nwflux_fc
-                     do ix2=1,nxCo_fc(2,3)
-                       do ix1=1,nxCo_fc(1,3)
-                         sendbuffer(ibuf_send+(ix1-1)+(ix2-1)*nxCo_fc(1,3) &
-                            +(iw-1)*nxCo_fc(1,3)*nxCo_fc(2,3)) = &
-                            pflux(iside,3)%flux(ix1,ix2,1,iw,igrid)
-                       end do
-                     end do
-                   end do
-#ifdef NOGPUDIRECT
-                   ! Only the chunk just packed, not the whole buffer: the
-                   ! whole-buffer form is O(nsend*sendsize) of traffic, and it
-                   ! rewrites host memory that earlier, already-posted Isends
-                   ! are still reading, which MPI does not allow even when the
-                   ! bytes written happen to be identical.
-                   !$acc update host(sendbuffer(ibuf_send:ibuf_send+isize(3)-1))
-#else
-                   !$acc host_data use_device(sendbuffer)
-#endif
-                   call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(3),&
-                       MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
-                      icomm_fc(i_fc_comm),fc_sendreq(isend),ierrmpi)
-#ifndef NOGPUDIRECT
-                   !$acc end host_data
-#endif
+                   ! Record where this message's chunk sits in sendbuffer
+                   ! and who it is for. The packing and the posting are done in
+                   ! bulk after the tree walk, below.
+                   snd_igrid(isend) = igrid
+                   snd_ibuf(isend)  = ibuf_send
+                   snd_size(isend)  = isize(3)
+                   snd_pe(isend)    = ipe_neighbor
+                   snd_tag(isend)   = itag
+                   snd_comm(isend)  = i_fc_comm
+                   snd_ngroup(iside,3) = snd_ngroup(iside,3) + 1
+                   snd_group(snd_ngroup(iside,3),iside,3) = isend
                    ibuf_send=ibuf_send+isize(3)
                  end if
                end if
@@ -891,6 +877,89 @@ module mod_fix_conserve
          end select
        end do
      end do
+
+     ! Pack every message, one kernel per (iside, idims) group rather than one
+     ! per message. Grouping is what makes that possible: pflux's slot is then
+     ! loop-invariant, and a derived-type component holding an allocatable
+     ! array cannot be selected by a device-side index.
+     !$acc update device(snd_igrid, snd_ibuf, snd_group)
+
+     do idims = idimmin,idimmax
+       do iside = 1,2
+         ng = snd_ngroup(iside,idims)
+         if (ng == 0) cycle
+         select case (idims)
+         case (1)
+           !$acc parallel loop gang private(imsg) default(present)
+           do k = 1,ng
+             imsg = snd_group(k,iside,1)
+             !$acc loop vector collapse(3)
+             do iw=1,nwflux_fc
+               do ix3=1,nxCo_fc(3,1)
+                 do ix2=1,nxCo_fc(2,1)
+                   sendbuffer(snd_ibuf(imsg)+(ix2-1)+(ix3-1)*nxCo_fc(2,1) &
+                      +(iw-1)*nxCo_fc(2,1)*nxCo_fc(3,1)) = &
+                      pflux(iside,1)%flux(1,ix2,ix3,iw,snd_igrid(imsg))
+                 end do
+               end do
+             end do
+           end do
+         case (2)
+           !$acc parallel loop gang private(imsg) default(present)
+           do k = 1,ng
+             imsg = snd_group(k,iside,2)
+             !$acc loop vector collapse(3)
+             do iw=1,nwflux_fc
+               do ix3=1,nxCo_fc(3,2)
+                 do ix1=1,nxCo_fc(1,2)
+                   sendbuffer(snd_ibuf(imsg)+(ix1-1)+(ix3-1)*nxCo_fc(1,2) &
+                      +(iw-1)*nxCo_fc(1,2)*nxCo_fc(3,2)) = &
+                      pflux(iside,2)%flux(ix1,1,ix3,iw,snd_igrid(imsg))
+                 end do
+               end do
+             end do
+           end do
+         case (3)
+           !$acc parallel loop gang private(imsg) default(present)
+           do k = 1,ng
+             imsg = snd_group(k,iside,3)
+             !$acc loop vector collapse(3)
+             do iw=1,nwflux_fc
+               do ix2=1,nxCo_fc(2,3)
+                 do ix1=1,nxCo_fc(1,3)
+                   sendbuffer(snd_ibuf(imsg)+(ix1-1)+(ix2-1)*nxCo_fc(1,3) &
+                      +(iw-1)*nxCo_fc(1,3)*nxCo_fc(2,3)) = &
+                      pflux(iside,3)%flux(ix1,ix2,1,iw,snd_igrid(imsg))
+                 end do
+               end do
+             end do
+           end do
+         end select
+       end do
+     end do
+
+     ! One transfer for the whole buffer, then post every send. This mirrors
+     ! the shape the receive side already has: recvflux posts all of its
+     ! receives and fix_conserve does a single update device after its
+     ! MPI_WAITALL. Doing it per message instead cost O(nsend*sendsize) of
+     ! traffic and rewrote host memory that earlier, already-posted Isends were
+     ! still reading, which MPI does not allow however identical the bytes are.
+#ifdef NOGPUDIRECT
+     if (isend > 0) then
+       !$acc update host(sendbuffer)
+     end if
+#else
+     !$acc host_data use_device(sendbuffer)
+#endif
+     do k = 1,isend
+       call mpi_isend_wrapper(sendbuffer(snd_ibuf(k)),snd_size(k),&
+          MPI_DOUBLE_PRECISION,snd_pe(k),snd_tag(k),icomm_fc(snd_comm(k)),&
+          fc_sendreq(k),ierrmpi)
+     end do
+#ifndef NOGPUDIRECT
+     !$acc end host_data
+#endif
+
    end subroutine sendflux
 
    !> Correct the coarse cells abutting a refinement boundary: take out the
