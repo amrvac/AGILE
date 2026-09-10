@@ -513,8 +513,9 @@ covers the log, the snapshot, the slices, the collapsed views and
 `autoconvert`; standalone `convert` mode bypasses `saveamrfile`, so
 `src/agile.fpp` syncs before `generate_plotfile` too. Individual output
 readers (`get_volume_average`, `calc_grid`, ...) therefore do not sync
-themselves. `fix_conserve` is the one non-output metric reader, and calls it
-itself.
+themselves, and nothing outside output needs the metrics on the host at all:
+`fix_conserve`, the one non-output routine that divides by `dvolume`, is a
+device kernel and reads `bgeo` there like the rest of the AMR machinery.
 
 `sync_positions_host` is called wherever host code reads `ps(igrid)%x`:
 `initial_condition` (per block, in `initlevelone`'s loop, in
@@ -563,7 +564,9 @@ Current limits of the curvilinear (spherical and cylindrical) support:
   cell off the polar axis, since the exact volume average of `cot(theta)` over
   a cell is `cot(theta_midpoint)`. `x` is consequently unused by every
   `addsource_geometry` in the tree; the argument is kept for physics that may
-  want it. SRHD's primitive `mom(:)` slot holds the spatial
+  want it. The well-balancing is exact only where the update's own flux
+  divergence stands; refluxing overwrites it at a coarse-fine interface, see
+  the refluxing bullet below. SRHD's primitive `mom(:)` slot holds the spatial
   four-velocity `u^i = lfac*v^i` rather than `v^i` itself (see
   `to_primitive`/`to_conservative` and `src/srhd/mod_con2prim.fpp`'s
   `xi = tau + D + p`, `v^2 = S^2/xi^2`), so the curvature terms use the
@@ -596,10 +599,42 @@ Current limits of the curvilinear (spherical and cylindrical) support:
   exchanged through `getbc` at all — `fill_nwextra_device` re-derives it
   analytically in every ghost cell, the axis ghosts included (see "The frozen
   field" below).
-- AMR across curvilinear levels is untested here; prolongation in
-  `src/amr/mod_refine.fpp` has the `slab_uniform` branch that uses `dvolume`,
-  but `fix_conserve` is commented out in `src/mod_advance.fpp` for all
-  geometries.
+- Refluxing across refinement boundaries (`src/mod_fix_conserve.fpp`) works in
+  all three coordinate systems. **What a face stores in `pflux` differs by
+  geometry, and the two conventions live in the same buffer**, selected by
+  fypp rather than by the run-time `slab_uniform` — the two are equivalent
+  (`slab_uniform` is true exactly when `coordinate == Cartesian`), but
+  `bgeo%dvolume` and `bgeo%surfaceC` are not even allocated in a Cartesian
+  build, so the branch has to disappear at compile time:
+
+      Cartesian     store  qdt*f/dx        apply  * CoFiratio = 1/2**ndim
+      curvilinear   store  qdt*f*A         apply  / dvolume of the *coarse* cell
+
+  The curvilinear form is *extensive*, which is what makes the fine side work
+  without a volume ratio: the four fine face areas sum to the coarse face's
+  area exactly for the metrics `fill_geometry_device` builds, so the plain sum
+  of four `qdt*f*A_fine` the finite-volume kernel already computes is the
+  coarse face's flux, and the coarse cell divides it by its own volume. This
+  is upstream MPI-AMRVAC's scheme (`mod_fix_conserve.t`, `mod_finite_volume.t`);
+  the areas are the same `bgeo%surfaceC` entries the flux-divergence update
+  reads a few lines above the stores.
+
+  Two consequences worth knowing:
+
+  - **Refluxing breaks the exact well-balancing at a coarse-fine interface.**
+    The curvature source terms cancel the pressure part of the flux divergence
+    *the update actually used* (see the `addsource_geometry` bullet above);
+    `fix_conserve` then replaces the coarse face's contribution with the sum of
+    the fine ones, and that cancellation no longer holds for that one face. The
+    error is second-order and smooth, not a discrete jump, and upstream has the
+    same property — but it is why a uniform-flow AMR case such as
+    `tests/hd/spherical_pole/uflow_amr.par` no longer stays exactly uniform,
+    and why its reference log moved when refluxing was switched on.
+  - **A level jump across a polar axis is not refluxed.**
+    `init_comm_fix_conserve`, `recvflux`, `sendflux` and `fix_conserve` all
+    `cycle` on a non-zero `neighbor_pole`, consistently, so no buffer is sized,
+    sent or applied there. Upstream does the same. Level jumps elsewhere in a
+    pole case are refluxed normally.
 
 Validated by eight test directories, one per (physics, geometry) pair, which
 is as few as the compile-time parameters allow: `phys` and `geometry` are both

@@ -35,6 +35,19 @@ module mod_fix_conserve
   !not. Communicator ids are finite too, hence n_fc_comm_cap and its
   !mpistop. Note ibuf_offset keeps its own unstriped key; tags repeat
   !across communicators, so a tag is not a valid lookup index.
+  !
+  !All of that striping exists only because there is one message per
+  !(block, face, child), so the message count - and with it the tag space -
+  !grows with max_blocks. Aggregating the exchange would remove the need for
+  !it entirely: pack every chunk bound for a given destination rank into one
+  !contiguous run of sendbuffer and post a single Isend per neighbour rank,
+  !and the tag space collapses to the rank count, well inside any MPI_TAG_UB.
+  !The same restructuring is what the send side wants for other reasons -
+  !sendflux currently interleaves one device kernel launch per message with
+  !the MPI calls, where packing every message in one kernel, updating the
+  !host copy of sendbuffer once (as the receive side already does with
+  !recvbuffer after its MPI_WAITALL), and only then posting the sends would
+  !cost one launch and one transfer per exchange instead of per message.
   integer, allocatable, save         :: ibuf_offset(:)
   integer, parameter                 :: n_fc_comm_cap = 256
   integer, save                      :: n_fc_comm = 1
@@ -525,7 +538,12 @@ module mod_fix_conserve
                      end do
                    end do
 #ifdef NOGPUDIRECT
-                   !$acc update host(sendbuffer)
+                   ! Only the chunk just packed, not the whole buffer: the
+                   ! whole-buffer form is O(nsend*sendsize) of traffic, and it
+                   ! rewrites host memory that earlier, already-posted Isends
+                   ! are still reading, which MPI does not allow even when the
+                   ! bytes written happen to be identical.
+                   !$acc update host(sendbuffer(ibuf_send:ibuf_send+isize(1)-1))
 #else
                    !$acc host_data use_device(sendbuffer)
 #endif
@@ -652,7 +670,12 @@ module mod_fix_conserve
                      end do
                    end do
 #ifdef NOGPUDIRECT
-                   !$acc update host(sendbuffer)
+                   ! Only the chunk just packed, not the whole buffer: the
+                   ! whole-buffer form is O(nsend*sendsize) of traffic, and it
+                   ! rewrites host memory that earlier, already-posted Isends
+                   ! are still reading, which MPI does not allow even when the
+                   ! bytes written happen to be identical.
+                   !$acc update host(sendbuffer(ibuf_send:ibuf_send+isize(2)-1))
 #else
                    !$acc host_data use_device(sendbuffer)
 #endif
@@ -779,7 +802,12 @@ module mod_fix_conserve
                      end do
                    end do
 #ifdef NOGPUDIRECT
-                   !$acc update host(sendbuffer)
+                   ! Only the chunk just packed, not the whole buffer: the
+                   ! whole-buffer form is O(nsend*sendsize) of traffic, and it
+                   ! rewrites host memory that earlier, already-posted Isends
+                   ! are still reading, which MPI does not allow even when the
+                   ! bytes written happen to be identical.
+                   !$acc update host(sendbuffer(ibuf_send:ibuf_send+isize(3)-1))
 #else
                    !$acc host_data use_device(sendbuffer)
 #endif
@@ -910,7 +938,15 @@ module mod_fix_conserve
      nxCo3=(ixMhi3-ixMlo3+1)/2
 
      ! for all grids: perform flux update at Coarse-Fine interfaces
-     !$acc parallel loop gang private(i1,i2,i3,ic1,ic2,ic3,ix1,ix2,ix3) default(present)
+     ! Everything assigned per gang is named here rather than left to the
+     ! implicit firstprivate OpenACC gives an unlisted scalar in a parallel
+     ! region: the rule does cover them, but a half-populated list is
+     ! indistinguishable from an oversight.
+     !$acc parallel loop gang default(present) &
+     !$acc& private(igrid, idims, iside, i1,i2,i3, ix, ic1,ic2,ic3, &
+     !$acc&         inc1,inc2,inc3, ineighbor, ipe_neighbor, iotherside, &
+     !$acc&         ixmin1,ixmin2,ixmin3, ixmax1,ixmax2,ixmax3, &
+     !$acc&         ix1,ix2,ix3, iw)
      do iigrid=1,igridstail
        igrid=igrids(iigrid)
 
@@ -957,24 +993,28 @@ module mod_fix_conserve
 
              ! remove coarse flux
 #:if GEOM == 'Cartesian'
-                !$acc loop collapse(ndim-1) vector
+                !$acc loop vector collapse(3)
                 do ix3=ixMlo3,ixMhi3
                   do ix2=ixMlo2,ixMhi2 
-                    psb(igrid)%w(ix,ix2,ix3,nw0:nw1) = &
-                      psb(igrid)%w(ix,ix2,ix3,nw0:nw1) - &
-                      pflux(iside,1)%flux(1,ix2-nghostcells,ix3-nghostcells,&
-                                          1:nwfluxin,igrid)
+                    do iw=1,nwfluxin
+                      psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) = &
+                        psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) - &
+                        pflux(iside,1)%flux(1,ix2-nghostcells,ix3-nghostcells,&
+                                            iw,igrid)
+                    end do
                   end do
                 end do
 #:else
-                !$acc loop collapse(ndim-1) vector
+                !$acc loop vector collapse(3)
                 do ix3=ixMlo3,ixMhi3
                   do ix2=ixMlo2,ixMhi2
-                    psb(igrid)%w(ix,ix2,ix3,nw0:nw1) = &
-                      psb(igrid)%w(ix,ix2,ix3,nw0:nw1) - &
-                      pflux(iside,1)%flux(1,ix2-nghostcells,ix3-nghostcells,&
-                                          1:nwfluxin,igrid) &
-                      / bgeo%dvolume(ix,ix2,ix3,igrid)
+                    do iw=1,nwfluxin
+                      psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) = &
+                        psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) - &
+                        pflux(iside,1)%flux(1,ix2-nghostcells,ix3-nghostcells,&
+                                            iw,igrid) &
+                        / bgeo%dvolume(ix,ix2,ix3,igrid)
+                    end do
                   end do
                 end do
 #:endif
@@ -999,25 +1039,29 @@ module mod_fix_conserve
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
 #:if GEOM == 'Cartesian'
-                     !$acc loop collapse(ndim-1) vector
+                     !$acc loop vector collapse(3)
                      do ix3=1,nxCo3 
                         do ix2=1,nxCo2 
-                           psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0:nw1) = &
-                            psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0:nw1) + &
-                            pflux(iotherside,1)%flux(1,ix2,ix3,1:nwfluxin,&
-                              ineighbor) * CoFiratio
+                          do iw=1,nwfluxin
+                             psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
+                              psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                              pflux(iotherside,1)%flux(1,ix2,ix3,iw,&
+                                ineighbor) * CoFiratio
+                          end do
                         end do
                      end do
 #:else
                      ! Direction 1, so loop runs over directions 2 and 3
-                     !$acc loop collapse(ndim-1) vector
+                     !$acc loop vector collapse(3)
                      do ix3=1,nxCo3
                         do ix2=1,nxCo2
-                           psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0:nw1) = &
-                            psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0:nw1) + &
-                            pflux(iotherside,1)%flux(1,ix2,ix3,1:nwfluxin,&
-                              ineighbor) &
-                            / bgeo%dvolume(ix,ixmin2+ix2-1,ixmin3+ix3-1,igrid)
+                          do iw=1,nwfluxin
+                             psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
+                              psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                              pflux(iotherside,1)%flux(1,ix2,ix3,iw,&
+                                ineighbor) &
+                              / bgeo%dvolume(ix,ixmin2+ix2-1,ixmin3+ix3-1,igrid)
+                          end do
                         end do
                      end do
 #:endif
@@ -1053,6 +1097,10 @@ module mod_fix_conserve
                !  end if
                else
 #:if GEOM == 'Cartesian'
+                   ! Two transverse indices plus the variable index: every iteration
+                   ! lands in a distinct cell of a distinct variable, and the buffer
+                   ! offset is a pure function of the three, so all three collapse.
+                   !$acc loop vector collapse(3)
                    do ix3=1,nxCo_fc(3,1)
                      do ix2=1,nxCo_fc(2,1)
                        do iw=1,nwfluxin
@@ -1064,6 +1112,10 @@ module mod_fix_conserve
                      end do
                    end do
 #:else
+                   ! Two transverse indices plus the variable index: every iteration
+                   ! lands in a distinct cell of a distinct variable, and the buffer
+                   ! offset is a pure function of the three, so all three collapse.
+                   !$acc loop vector collapse(3)
                    do ix3=1,nxCo_fc(3,1)
                      do ix2=1,nxCo_fc(2,1)
                        do iw=1,nwfluxin
@@ -1122,24 +1174,28 @@ module mod_fix_conserve
 
              ! remove coarse flux
 #:if GEOM == 'Cartesian'
-                !$acc loop collapse(ndim-1) vector
+                !$acc loop vector collapse(3)
                 do ix3=ixMlo3,ixMhi3
                   do ix1=ixMlo1,ixMhi1 
-                    psb(igrid)%w(ix1,ix,ix3,nw0:nw1) = &
-                     psb(igrid)%w(ix1,ix,ix3,nw0:nw1) - &
-                     pflux(iside,2)%flux(ix1-nghostcells,1,ix3-nghostcells,&
-                                  1:nwfluxin,igrid)
+                    do iw=1,nwfluxin
+                      psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) = &
+                       psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) - &
+                       pflux(iside,2)%flux(ix1-nghostcells,1,ix3-nghostcells,&
+                                    iw,igrid)
+                    end do
                   end do
                 end do
 #:else
-                !$acc loop collapse(ndim-1) vector
+                !$acc loop vector collapse(3)
                 do ix3=ixMlo3,ixMhi3
                   do ix1=ixMlo1,ixMhi1
-                    psb(igrid)%w(ix1,ix,ix3,nw0:nw1) = &
-                     psb(igrid)%w(ix1,ix,ix3,nw0:nw1) - &
-                     pflux(iside,2)%flux(ix1-nghostcells,1,ix3-nghostcells,&
-                                  1:nwfluxin,igrid) &
-                     / bgeo%dvolume(ix1,ix,ix3,igrid)
+                    do iw=1,nwfluxin
+                      psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) = &
+                       psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) - &
+                       pflux(iside,2)%flux(ix1-nghostcells,1,ix3-nghostcells,&
+                                    iw,igrid) &
+                       / bgeo%dvolume(ix1,ix,ix3,igrid)
+                    end do
                   end do
                 end do
 #:endif
@@ -1165,24 +1221,28 @@ module mod_fix_conserve
                  iotherside=3-iside
 
 #:if GEOM == 'Cartesian'
-                   !$acc loop collapse(ndim-1) vector
+                   !$acc loop vector collapse(3)
                    do ix3=1,nxCo3 
                      do ix1=1,nxCo1 
-                       psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0:nw1) = &
-                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0:nw1) + &
-                         pflux(iotherside,2)%flux(ix1,1,ix3,&
-                            1:nwfluxin,ineighbor) * CoFiratio
+                       do iw=1,nwfluxin
+                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
+                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                           pflux(iotherside,2)%flux(ix1,1,ix3,&
+                              iw,ineighbor) * CoFiratio
+                       end do
                      end do
                    end do
 #:else
-                   !$acc loop collapse(ndim-1) vector
+                   !$acc loop vector collapse(3)
                    do ix3=1,nxCo3
                      do ix1=1,nxCo1
-                       psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0:nw1) = &
-                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0:nw1) + &
-                         pflux(iotherside,2)%flux(ix1,1,ix3,&
-                            1:nwfluxin,ineighbor) &
-                         / bgeo%dvolume(ixmin1+ix1-1,ix,ixmin3+ix3-1,igrid)
+                       do iw=1,nwfluxin
+                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
+                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                           pflux(iotherside,2)%flux(ix1,1,ix3,&
+                              iw,ineighbor) &
+                           / bgeo%dvolume(ixmin1+ix1-1,ix,ixmin3+ix3-1,igrid)
+                       end do
                      end do
                    end do
 #:endif
@@ -1218,6 +1278,10 @@ module mod_fix_conserve
                !  end if
                else
 #:if GEOM == 'Cartesian'
+                   ! Two transverse indices plus the variable index: every iteration
+                   ! lands in a distinct cell of a distinct variable, and the buffer
+                   ! offset is a pure function of the three, so all three collapse.
+                   !$acc loop vector collapse(3)
                    do ix3=1,nxCo_fc(3,2)
                      do ix1=1,nxCo_fc(1,2)
                        do iw=1,nwfluxin
@@ -1229,6 +1293,10 @@ module mod_fix_conserve
                      end do
                    end do
 #:else
+                   ! Two transverse indices plus the variable index: every iteration
+                   ! lands in a distinct cell of a distinct variable, and the buffer
+                   ! offset is a pure function of the three, so all three collapse.
+                   !$acc loop vector collapse(3)
                    do ix3=1,nxCo_fc(3,2)
                      do ix1=1,nxCo_fc(1,2)
                        do iw=1,nwfluxin
@@ -1287,24 +1355,28 @@ module mod_fix_conserve
 
              ! remove coarse flux
 #:if GEOM == 'Cartesian'
-               !$acc loop collapse(ndim-1) vector
+               !$acc loop vector collapse(3)
                do ix2=ixMlo2,ixMhi2
                  do ix1=ixMlo1,ixMhi1 
-                   psb(igrid)%w(ix1,ix2,ix,nw0:nw1) = &
-                     psb(igrid)%w(ix1,ix2,ix,nw0:nw1) - &
-                     pflux(iside,3)%flux(ix1-nghostcells,ix2-nghostcells,&
-                        1,1:nwfluxin,igrid)
+                   do iw=1,nwfluxin
+                     psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) = &
+                       psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) - &
+                       pflux(iside,3)%flux(ix1-nghostcells,ix2-nghostcells,&
+                          1,iw,igrid)
+                   end do
                  end do
                end do
 #:else
-               !$acc loop collapse(ndim-1) vector
+               !$acc loop vector collapse(3)
                do ix2=ixMlo2,ixMhi2
                  do ix1=ixMlo1,ixMhi1
-                   psb(igrid)%w(ix1,ix2,ix,nw0:nw1) = &
-                     psb(igrid)%w(ix1,ix2,ix,nw0:nw1) - &
-                     pflux(iside,3)%flux(ix1-nghostcells,ix2-nghostcells,&
-                        1,1:nwfluxin,igrid) &
-                     / bgeo%dvolume(ix1,ix2,ix,igrid)
+                   do iw=1,nwfluxin
+                     psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) = &
+                       psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) - &
+                       pflux(iside,3)%flux(ix1-nghostcells,ix2-nghostcells,&
+                          1,iw,igrid) &
+                       / bgeo%dvolume(ix1,ix2,ix,igrid)
+                   end do
                  end do
                end do
 #:endif
@@ -1328,24 +1400,28 @@ module mod_fix_conserve
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
 #:if GEOM == 'Cartesian'
-                   !$acc loop collapse(ndim-1) vector
+                   !$acc loop vector collapse(3)
                    do ix2=1,nxCo2 
                      do ix1=1,nxCo1 
-                       psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0:nw1) = &
-                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0:nw1) + &
-                         pflux(iotherside,3)%flux(ix1,ix2,1,1:nwfluxin,&
-                            ineighbor)* CoFiratio
+                       do iw=1,nwfluxin
+                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
+                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                           pflux(iotherside,3)%flux(ix1,ix2,1,iw,&
+                              ineighbor)* CoFiratio
+                       end do
                      end do
                    end do
 #:else
-                   !$acc loop collapse(ndim-1) vector
+                   !$acc loop vector collapse(3)
                    do ix2=1,nxCo2
                      do ix1=1,nxCo1
-                       psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0:nw1) = &
-                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0:nw1) + &
-                         pflux(iotherside,3)%flux(ix1,ix2,1,1:nwfluxin,&
-                            ineighbor) &
-                         / bgeo%dvolume(ixmin1+ix1-1,ixmin2+ix2-1,ix,igrid)
+                       do iw=1,nwfluxin
+                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
+                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                           pflux(iotherside,3)%flux(ix1,ix2,1,iw,&
+                              ineighbor) &
+                           / bgeo%dvolume(ixmin1+ix1-1,ixmin2+ix2-1,ix,igrid)
+                       end do
                      end do
                    end do
 #:endif
@@ -1381,6 +1457,10 @@ module mod_fix_conserve
                !  end if
                else
 #:if GEOM == 'Cartesian'
+                   ! Two transverse indices plus the variable index: every iteration
+                   ! lands in a distinct cell of a distinct variable, and the buffer
+                   ! offset is a pure function of the three, so all three collapse.
+                   !$acc loop vector collapse(3)
                    do ix2=1,nxCo_fc(2,3)
                      do ix1=1,nxCo_fc(1,3)
                        do iw=1,nwfluxin
@@ -1392,6 +1472,10 @@ module mod_fix_conserve
                      end do
                    end do
 #:else
+                   ! Two transverse indices plus the variable index: every iteration
+                   ! lands in a distinct cell of a distinct variable, and the buffer
+                   ! offset is a pure function of the three, so all three collapse.
+                   !$acc loop vector collapse(3)
                    do ix2=1,nxCo_fc(2,3)
                      do ix1=1,nxCo_fc(1,3)
                        do iw=1,nwfluxin
