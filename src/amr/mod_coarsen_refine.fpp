@@ -150,7 +150,7 @@ contains
        ic2   = rcv_info_cf(3,ibuff)
        ic3   = rcv_info_cf(4,ibuff)
        !$acc loop collapse(4) vector
-       do iw = 1, nw
+       do iw = 1, nwgc  ! analytic extras past nwgc are set in alloc_node
           do ix3 = 1, block_nx3/2
              do ix2 = 1, block_nx2/2
                 do ix1 = 1, block_nx1/2
@@ -442,6 +442,7 @@ contains
     ! New passive cell, coarsen from initial condition:
     if (.not. active) then
        if (ipe == mype) then
+          ! initial_condition fetches this block's positions back itself
           call initial_condition(igrid)
           do ic3=1,2
              do ic2=1,2
@@ -479,7 +480,7 @@ contains
                    call coarsen_grid(ps(igridFi),ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,&
                         ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid),&
                         ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixComin1,ixComin2,&
-                        ixComin3,ixComax1,ixComax2,ixComax3)
+                        ixComin3,ixComax1,ixComax2,ixComax3,bgeo,igridFi,bgeo,igrid)
                    ! remove solution space of child
                    !call dealloc_node(igridFi)
                 else
@@ -492,7 +493,8 @@ contains
                    call coarsen_grid(ps(igridFi),ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,&
                         ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,psc(igridFi),&
                         ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3,&
-                        ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3)
+                        ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3,&
+                        bgeo,igridFi,bgeoc,igridFi)
 
                    !itag=ipeFi*max_blocks+igridFi
                    itag=ipeFi+igridFi
@@ -502,7 +504,7 @@ contains
                       call mpistop('coarsen_grid_siblings: max_buff too small in send')
                    end if
                    !$acc parallel loop gang
-                   do iw = 1, nw
+                   do iw = 1, nwgc  ! see above
                       !$acc loop collapse(3) vector
                       do ix3 = 1, block_nx3/2
                          do ix2 = 1, block_nx2/2

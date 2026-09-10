@@ -18,10 +18,10 @@ contains
   subroutine initlevelone
     use mod_global_parameters
     use mod_ghostcells_update
-    use mod_functions_connectivity, only: build_connectivity, getigrids 
+    use mod_functions_connectivity, only: build_connectivity, getigrids
     use mod_functions_forest, only: init_forest_root
     use mod_amr_solution_node, only: alloc_node
- 
+
     integer :: iigrid, igrid
     integer :: itimelevel
   
@@ -38,14 +38,14 @@ contains
 
        call alloc_node(igrid)
 
-       ! in case gradient routine used in initial condition, ensure geometry known
+       ! initial_condition fetches this block's positions back itself
        call initial_condition(igrid)
 
     end do
 
     ! update ghost cells
     call getbc(global_time,0.d0,ps,iwstart,nwgc)
-    
+
   end subroutine initlevelone
 
   !> fill in initial condition
@@ -53,9 +53,18 @@ contains
     ! Need only to set the mesh values (can leave ghost cells untouched)
     use mod_usr_methods, only: usr_init_one_grid
     use mod_global_parameters
+    use mod_geometry, only: sync_positions_host
     use mod_comm_lib, only: mpistop
 
     integer, intent(in) :: igrid
+
+    ! usr_init_one_grid below reads ps(igrid)%x on the host, while alloc_node
+    ! built this block's geometry on the device and left it there.  The fetch
+    ! belongs here rather than at each call site: every caller needs it, and a
+    ! call site can be forgotten - refine_grids once was, so blocks created by
+    ! refinement were initialised at whatever coordinates the previous occupant
+    ! of that igrid slot had left in the host array.
+    call sync_positions_host(igrid)
 
     ! in case gradient routine used in initial condition, ensure geometry known
     block=>ps(igrid)
@@ -68,18 +77,25 @@ contains
          call usr_init_one_grid(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,&
               ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,ps(igrid)%x)
       end if
-      
-      !$acc update device(bg(1)%w(:,:,:,:,igrid))
+
+      ! only the machinery-carried variables (1:nwgc); any analytic extras past
+      ! nwgc are device-resident from alloc_node and must not be clobbered by
+      ! this host-to-device push
+      !$acc update device(bg(1)%w(:,:,:,1:nwgc,igrid))
     end subroutine initial_condition
 
     !> modify initial condition
     subroutine modify_IC
       use mod_usr_methods, only: usr_init_one_grid
       use mod_global_parameters
+      use mod_geometry, only: sync_positions_host
       use mod_comm_lib, only: mpistop
 
       integer :: iigrid, igrid
-  
+
+    ! usr_init_one_grid reads ps(igrid)%x on the host
+    call sync_positions_host()
+
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        block=>ps(igrid)
        dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
@@ -92,9 +108,11 @@ contains
              ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,&
              ps(igrid)%x)
        end if
-       !$acc update device(bg(1)%w(:,:,:,:,igrid))
+       ! 1:nwgc only - analytic extras past nwgc stay as read_snapshot and
+       ! alloc_node left them (see initial_condition)
+       !$acc update device(bg(1)%w(:,:,:,1:nwgc,igrid))
     end do
-  
+
   end subroutine modify_IC
   
   

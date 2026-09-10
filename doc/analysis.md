@@ -41,7 +41,7 @@ subroutine my_analysis()
   tmp = 0
   do iigrid = 1, igridstail
     igrid = igrids(iigrid)
-    tmp = max(tmp, maxval(pw(igrid)%w(ixM^T, rho_)))
+    tmp = max(tmp, maxval(pw(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ixMlo3:ixMhi3, rho_)))
   end do
 
   call MPI_ALLREDUCE(tmp, wmax, 1, MPI_DOUBLE_PRECISION, &

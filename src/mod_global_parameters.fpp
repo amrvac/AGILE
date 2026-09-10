@@ -58,6 +58,21 @@ module mod_global_parameters
      xprobmax3
  !$acc declare create(xprobmin1,xprobmin2,xprobmin3,xprobmax1,xprobmax2,xprobmax3)
 
+  !> Offset of the logarithmic radial map, r0 in s = ln(1 + r/r0).
+  !>
+  !> Only meaningful in a LOG_RADIUS build. Zero - the default - selects the
+  !> plain map s = ln(r), which cannot reach r = 0. A positive value moves the
+  !> singularity of the map to r = -r0, so the mesh is uniform (with width
+  !> r0*ds) for r << r0 and logarithmic for r >> r0, and r = 0 becomes an
+  !> ordinary face of the grid at s = 0.
+  double precision :: log_r0 = 0.0d0
+
+  !> The same map written as r = log_ra*exp(s) + log_rb, which is what device
+  !> code evaluates where s >= 0 is guaranteed. log_ra = 1, log_rb = 0 for
+  !> log_r0 = 0, so a plain logarithmic build gets bit-for-bit exp(s).
+  double precision :: log_ra = 1.0d0, log_rb = 0.0d0
+  !$acc declare create(log_r0, log_ra, log_rb)
+
   !> Indices for cylindrical coordinates FOR TESTS, negative value when not used:
   integer :: r_ = -1
   integer :: phi_ = -1
@@ -118,33 +133,44 @@ module mod_global_parameters
   integer :: ixGshi1,ixGshi2,ixGshi3
   !$acc declare create(ixGshi1,ixGshi2,ixGshi3)
 
+  !> Index range over which the cell metrics (dvolume, ds) are known.  This is
+  !> the ghosted block range ixG, plus one extra layer on either side when the
+  !> number of ghost cells is odd (or the grid is staggered), because ghost
+  !> cell prolongation then needs volumes and dx-intervals one cell beyond it.
+  integer :: ixGextmin1,ixGextmin2,ixGextmin3,ixGextmax1,ixGextmax2,ixGextmax3
+
   !> Number of ghost cells surrounding a grid
   integer :: nghostcells = 2
   !$acc declare copyin(nghostcells)
 
+  ! --- Vestigial general-grid-stretching state -------------------------------
+  ! Upstream MPI-AMRVAC's qstretch/dxfirst stretched-grid machinery has been
+  ! removed: this fork builds every cell metric analytically on the device
+  ! from the block corner and a constant spacing, which general stretch_dim
+  ! stretching cannot express. The one supported non-uniform radius,
+  ! geometry='logSpherical'/'logCylindrical', is still a uniform mesh in the
+  ! logical coordinate xi = ln(r + log_r0) and needs none of this.
+  !
+  ! The variables below are kept only because a handful of code paths this
+  ! fork does not exercise (mod_slice's get_igslice, mod_particle_base's
+  ! particle-index lookup, mod_thermal_emission's line-of-sight sub-grids)
+  ! still branch on them. They are pinned to the unstretched state here and
+  ! there is no longer any way to change them: stretch_dim and friends are no
+  ! longer read from &meshlist.
   integer, parameter :: stretch_none = 0 !< No stretching
-  integer, parameter :: stretch_uni  = 1 !< Unidirectional stretching from a side
-  integer, parameter :: stretch_symm = 2 !< Symmetric stretching around the center
+  integer, parameter :: stretch_uni  = 1 !< Unidirectional stretching (unused)
+  integer, parameter :: stretch_symm = 2 !< Symmetric stretching (unused)
 
-  !> If true, adjust mod_geometry routines to account for grid stretching (but
-  !> the flux computation will not)
-  logical :: stretch_uncentered
-  !> True if a dimension is stretched
-  logical :: stretched_dim(ndim)
-  !> What kind of stretching is used per dimension
-  integer :: stretch_type(ndim)
-  !> stretch factor between cells at AMR level 1, per dimension
-  double precision ::  qstretch_baselevel(ndim)
-  !> (even) number of (symmetrically) stretched
-  !> blocks at AMR level 1, per dimension
-  integer ::  nstretchedblocks_baselevel(ndim)
-  !> (even) number of (symmetrically) stretched blocks per level and dimension
-  integer, allocatable ::  nstretchedblocks(:,:)
-  !> physical extent of stretched border in symmetric stretching
-  double precision :: xstretch1,xstretch2,xstretch3
-  !> Stretching factors and first cell size for each AMR level and dimension
-  double precision, allocatable :: qstretch(:,:), dxfirst(:,:),  dxfirst_1mq(:,&
-     :), dxmid(:,:)
+  logical :: stretch_uncentered = .false.
+  logical :: stretched_dim(ndim) = .false.
+  integer :: stretch_type(ndim) = stretch_none
+  double precision :: qstretch_baselevel(ndim) = 1.0d0
+  integer :: nstretchedblocks_baselevel(ndim) = 0
+  integer, allocatable :: nstretchedblocks(:,:)
+  double precision :: xstretch1 = 0.0d0, xstretch2 = 0.0d0, xstretch3 = 0.0d0
+  double precision, allocatable :: qstretch(:,:), dxfirst(:,:), dxfirst_1mq(:,:),&
+     dxmid(:,:)
+  ! --------------------------------------------------------------------------
 
   !> grid hierarchy info (level and grid indices)
   integer, parameter :: nodehi=3+1
@@ -335,6 +361,13 @@ module mod_global_parameters
   
   !> type of physics to build
   character(len=std_len) :: phys
+
+  !> coordinate system to build for: 'Cartesian', 'spherical', 'cylindrical',
+  !> or the logarithmic-radius variants 'logSpherical'/'logCylindrical' (which
+  !> emit GEOM='spherical'/'cylindrical' plus the LOG_RADIUS flag).
+  !> Read from &meshlist and turned into the GEOM fypp define by the config
+  !> system; must be consistent with the set_coordinate_system call in mod_usr.
+  character(len=std_len) :: geometry='Cartesian'
   
   ! Physics factors
 
@@ -733,6 +766,14 @@ module mod_global_parameters
   !> Indicates whether there is a pole at a boundary
   logical :: poleB(2,ndim)
   !$acc declare create(poleB)
+
+  !> True where the parameter file asked for typeboundary='pole' on a face.
+  !> Kept separately from poleB because the two are decided independently and
+  !> at different times - read_par_files expands the 'pole' string into
+  !> symm/asymm entries and loses it, while set_pole derives poleB from the
+  !> domain bounds much later - and check_pole_setup has to be able to tell
+  !> the user when they disagree.
+  logical :: poleB_requested(2,ndim) = .false.
 
   !> True for dimensions with aperiodic boundaries
   logical :: aperiodB(ndim)

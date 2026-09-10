@@ -168,7 +168,7 @@ contains
 #:if defined('REFINE_USR')
     call usr_refine_grid(igrid,level,ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2, &
          ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,qt, &
-         bg(1)%w(:,:,:,:, igrid), ps(igrid)%x, &
+         bg(1)%w(:,:,:,:, igrid), bgeo%x(:,:,:,:, igrid), &
          my_refine,my_coarsen)
 #:endif
 

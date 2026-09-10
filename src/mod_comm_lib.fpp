@@ -232,6 +232,7 @@ contains
     use mod_global_parameters
 
     character(len=*), intent(in) :: message !< The error message
+    !> Exit status handed to MPI_ABORT
     integer                      :: ierrcode
 
     write(*, *) "ERROR for processor", mype, ":"
@@ -241,6 +242,9 @@ contains
     STOP
 #else
     write(*, *) trim(message)
+    ! Must be set: a job scheduler or CI run keys off the exit status, and
+    ! an undefined ierrcode returns a junk one.
+    ierrcode = 1
     call MPI_ABORT(icomm, ierrcode, ierrmpi)
 #endif
 
