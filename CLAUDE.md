@@ -630,6 +630,21 @@ Current limits of the curvilinear (spherical and cylindrical) support:
     same property — but it is why a uniform-flow AMR case such as
     `tests/hd/spherical_pole/uflow_amr.par` no longer stays exactly uniform,
     and why its reference log moved when refluxing was switched on.
+  - **The exchange is aggregated per destination rank.** Every chunk bound for
+    one peer occupies a contiguous run of `sendbuffer` and travels in a single
+    `Isend`, so the message count is the number of neighbouring ranks rather
+    than the number of (block, face, child) triples — measured on four ranks in
+    `tests/hd/spherical`, 25 outgoing chunks become 2 messages and 42 incoming
+    ones become 3. Both ranks order a peer's run by the key `ibuf_offset` is
+    indexed by, `4**3*(igrid-1) + inc1 + 4*inc2 + 16*inc3`, which the sender
+    derives from the receiving block's index and the receiver from its own
+    `igrid`; sorting by it makes the two layouts agree with no handshake, and
+    the key also fixes each chunk's size, since `inc_d` lies in `{1,2}` exactly
+    when `i_d` is zero. That is what lets the tag drop the block index
+    entirely, which in turn retired an earlier workaround that striped tags
+    across duplicated communicators to stay under `MPI_TAG_UB`. The one thing
+    aggregation gives up is MPI's own mismatch detection, so `fix_conserve`
+    checks each arrival's `MPI_GET_COUNT` against the run length it laid out.
   - **A level jump across a polar axis is not refluxed.**
     `init_comm_fix_conserve`, `recvflux`, `sendflux` and `fix_conserve` all
     `cycle` on a non-zero `neighbor_pole`, consistently, so no buffer is sized,

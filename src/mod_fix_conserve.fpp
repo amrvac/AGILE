@@ -23,49 +23,53 @@ module mod_fix_conserve
   integer, dimension(:,:), allocatable :: fc_recvstat, fc_sendstat
   integer, dimension(3), save        :: isize
   
-  !JESSENEW added for fluxfixing: the flux exchange is now "striped",
-  !but not neccesarily in the traditional way, where alongside the tag
-  !a specific communicator is chosen, so that the two together identify
-  !a message uniquely (MPI matches on communicator, source and tag). 
-  !MPI_TAG_UB is one implementation-wide value and cannot be raised,
-  !but each communicator carries its own copy of the range, so N
-  !communicators give N times the distinguishable messages per peer.
-  !The number is automatically tuned from MPI_TAG_UB and max_blocks: a single
-  !communicator when the tags already fit, the minimum needed when they do
-  !not. Communicator ids are finite too, hence n_fc_comm_cap and its
-  !mpistop. Note ibuf_offset keeps its own unstriped key; tags repeat
-  !across communicators, so a tag is not a valid lookup index.
+  !The flux exchange is aggregated per destination rank: every chunk bound for
+  !one peer occupies a single contiguous run of sendbuffer and travels in one
+  !Isend, so the message count is the number of neighbouring ranks rather than
+  !the number of (block, face, child) triples. That is what keeps the tag space
+  !trivially inside MPI_TAG_UB - the tag no longer encodes a block index at all
+  !- and it replaces the earlier scheme of striping tags across several
+  !duplicated communicators to widen the range.
   !
-  !All of that striping exists only because there is one message per
-  !(block, face, child), so the message count - and with it the tag space -
-  !grows with max_blocks. Aggregating the exchange would remove the need for
-  !it entirely: pack every chunk bound for a given destination rank into one
-  !contiguous run of sendbuffer and post a single Isend per neighbour rank,
-  !and the tag space collapses to the rank count, well inside any MPI_TAG_UB.
-  !sendflux is already staged that way - it walks the tree once to record where
-  !each message goes, packs them with one kernel per (iside, idims) group, and
-  !posts every send after a single host transfer - so the remaining step is to
-  !make the destination, rather than the pflux slot, the thing a group is keyed
-  !on. What stops that today is that two chunks bound for the same rank need
-  !not be adjacent in sendbuffer, and a single Isend needs one contiguous run.
+  !It works because both ranks can order a peer's run identically without
+  !talking to each other. The ordering key is the one ibuf_offset is already
+  !indexed by,
+  !
+  !    ikey = 4**3*(ineighbor-1) + inc1 + 4*inc2 + 16*inc3
+  !
+  !which the sender builds from the receiving block's index on *its* rank and
+  !the receiver from its own igrid, both arriving at the same number. Sorting
+  !each run by it makes the two layouts agree element for element. The key also
+  !fixes the chunk's size: inc_d lies in {1,2} exactly when i_d is zero, so the
+  !one direction with inc_d in {0,3} is idims, and the size is isize(idims).
+  !
+  !ibuf_offset therefore keeps its meaning - key -> offset in recvbuffer, read
+  !by fix_conserve - and only its values change: a chunk now sits at its peer's
+  !run start plus the sizes of all lower-keyed chunks from that peer.
   integer, allocatable, save         :: ibuf_offset(:)
   !
-  !Per-message bookkeeping filled by sendflux's first pass, so that the packing
-  !and the posting can each be done in bulk afterwards rather than one kernel
-  !launch and one host transfer per message. snd_igrid and snd_ibuf are read by
-  !the pack kernels and are therefore device-resident; snd_size, snd_pe,
-  !snd_tag and snd_comm are host-only MPI bookkeeping. snd_group lists the
-  !messages that read one (iside, idims) slot of pflux, which is what lets a
-  !single kernel serve them all: the slot is then loop-invariant, and a
-  !derived-type component with an allocatable array cannot be selected by a
-  !device-side index.
-  integer, allocatable, save         :: snd_igrid(:), snd_ibuf(:), snd_size(:)
-  integer, allocatable, save         :: snd_pe(:), snd_tag(:), snd_comm(:)
+  !The peers themselves, ascending, with the extent of each one's run. Host
+  !only: these drive the MPI calls and nothing else.
+  integer, save                      :: n_send_pe, n_recv_pe
+  integer, allocatable, save         :: send_pe(:), send_pe_off(:), send_pe_len(:)
+  integer, allocatable, save         :: recv_pe(:), recv_pe_off(:), recv_pe_len(:)
+  !
+  !Per outgoing chunk, all built by build_message_layout. snd_igrid and
+  !snd_ibuf are read by the pack kernels and are therefore device-resident;
+  !snd_key, snd_dest and snd_dims are the host-side working set the layout is
+  !derived from. snd_group lists the chunks that read one (iside, idims) slot
+  !of pflux, which is what lets a single kernel serve them all: the slot is
+  !then loop-invariant, and a derived-type component holding an allocatable
+  !array cannot be selected by a device-side index.
+  integer, allocatable, save         :: snd_igrid(:), snd_ibuf(:)
+  integer, allocatable, save         :: snd_key(:), snd_dest(:), snd_dims(:)
   integer, allocatable, save         :: snd_group(:,:,:)
   integer, save                      :: snd_ngroup(2,3)
-  integer, parameter                 :: n_fc_comm_cap = 256
-  integer, save                      :: n_fc_comm = 1
-  integer, allocatable, save         :: icomm_fc(:)
+  !
+  !The same working set for the incoming chunks, from which ibuf_offset and the
+  !recv_pe_* runs are built.
+  integer, allocatable, save         :: rcv_key(:), rcv_src(:), rcv_dims(:)
+  integer, allocatable, save         :: rcv_off(:)
   integer, save                      :: nwflux_fc
   integer, dimension(3,3), save      :: nxCo_fc
   !$acc declare create(isize, nxCo_fc, nwflux_fc)
@@ -103,9 +107,6 @@ module mod_fix_conserve
      integer :: recvsize, sendsize
      integer :: recvsize_cc, sendsize_cc
      ! MPI tag out of bounds safeguard
-     integer(kind=MPI_ADDRESS_KIND) :: tag_ub
-     logical                        :: tag_ub_flag
-     integer                        :: i_fc_comm
 
      ! JESSENEW
      nwflux_fc = nwfluxin
@@ -227,29 +228,9 @@ module mod_fix_conserve
        !$acc enter data create(recvbuffer)
      end if
 
-     ! Offset table, sized by the tag space.  Allocated once, max_blocks is fixed.
+     ! Key -> offset table for the incoming chunks, read by fix_conserve.
+     ! Allocated once: max_blocks is fixed, and so therefore is the key range.
      if (.not.allocated(ibuf_offset)) then
-       ! recvflux tags each chunk with 4**3*(igrid-1)+inc1+4*inc2+16*inc3, so
-       ! the largest tag is 64*max_blocks.  The MPI standard only guarantees
-       ! MPI_TAG_UB >= 32767, which that exceeds once max_blocks > 512; Open
-       ! MPI and MPICH both give ~2**31 so one should be safe in general.
-       call MPI_COMM_GET_ATTR(MPI_COMM_WORLD, MPI_TAG_UB, tag_ub, tag_ub_flag,&
-          ierrmpi)
-       ! If the attribute is somehow absent, assume the guaranteed minimum.
-       if (.not.tag_ub_flag) tag_ub = 32767_MPI_ADDRESS_KIND
-       ! ceiling divide, done in ADDRESS_KIND so 64*max_blocks cannot overflow
-       n_fc_comm = int((int(4**3,kind=MPI_ADDRESS_KIND)*max_blocks + tag_ub &
-                        - 1_MPI_ADDRESS_KIND) / tag_ub)
-       n_fc_comm = max(1, n_fc_comm)
-       if (n_fc_comm > n_fc_comm_cap) call mpistop(&
-          "fix_conserve: MPI_TAG_UB too small for this max_blocks even with &
-          &striping; reduce max_blocks or aggregate flux messages per rank")
-       ! Collective, and reached by every rank on the first call.  max_blocks
-       ! and MPI_TAG_UB are identical everywhere, so n_fc_comm is too.
-       allocate(icomm_fc(n_fc_comm))
-       do i_fc_comm = 1, n_fc_comm
-         call MPI_COMM_DUP(icomm, icomm_fc(i_fc_comm), ierrmpi)
-       end do
        allocate(ibuf_offset(4**3*max_blocks))
        ibuf_offset = -1
        !$acc enter data copyin(ibuf_offset)
@@ -267,19 +248,33 @@ module mod_fix_conserve
        !$acc enter data create(sendbuffer)
      end if
 
-     ! Sized by nsend, so it is reallocated exactly when sendbuffer is.
+     ! Per-chunk working set, sized by nsend / nrecv, so each is reallocated
+     ! exactly when its buffer is. npe bounds the peer lists trivially.
      if (allocated(snd_ibuf)) then
        if (size(snd_ibuf) /= max(nsend,1)) then
          !$acc exit data delete(snd_igrid, snd_ibuf, snd_group)
-         deallocate(snd_igrid, snd_ibuf, snd_size, snd_pe, snd_tag, snd_comm,&
-            snd_group)
+         deallocate(snd_igrid, snd_ibuf, snd_key, snd_dest, snd_dims, snd_group)
        end if
      end if
      if (.not.allocated(snd_ibuf)) then
        allocate(snd_igrid(max(nsend,1)), snd_ibuf(max(nsend,1)),&
-          snd_size(max(nsend,1)), snd_pe(max(nsend,1)), snd_tag(max(nsend,1)),&
-          snd_comm(max(nsend,1)), snd_group(max(nsend,1),2,3))
+          snd_key(max(nsend,1)), snd_dest(max(nsend,1)),&
+          snd_dims(max(nsend,1)), snd_group(max(nsend,1),2,3))
        !$acc enter data create(snd_igrid, snd_ibuf, snd_group)
+     end if
+
+     if (allocated(rcv_key)) then
+       if (size(rcv_key) /= max(nrecv,1)) deallocate(rcv_key, rcv_src,&
+          rcv_dims, rcv_off)
+     end if
+     if (.not.allocated(rcv_key)) then
+       allocate(rcv_key(max(nrecv,1)), rcv_src(max(nrecv,1)),&
+          rcv_dims(max(nrecv,1)), rcv_off(max(nrecv,1)))
+     end if
+
+     if (.not.allocated(send_pe)) then
+       allocate(send_pe(npe), send_pe_off(npe), send_pe_len(npe))
+       allocate(recv_pe(npe), recv_pe_off(npe), recv_pe_len(npe))
      end if
 
      if (allocated(fc_recvreq)) then
@@ -343,7 +338,159 @@ module mod_fix_conserve
 
      !$acc update device(isize, nxCo_fc, nwflux_fc)
 
+
+     call build_message_layout(idimmin,idimmax)
+
    end subroutine init_comm_fix_conserve
+
+   !> Enumerate every chunk this rank sends and receives, and lay each peer's
+   !> chunks out as one contiguous run of the exchange buffer.  Fills snd_igrid
+   !> / snd_ibuf / snd_group for the pack kernels, ibuf_offset for
+   !> fix_conserve, and the send_pe_* / recv_pe_* runs for the MPI calls.
+   subroutine build_message_layout(idimmin,idimmax)
+     use mod_global_parameters
+     use mod_comm_lib, only: mpistop
+
+     integer, intent(in) :: idimmin,idimmax
+
+     integer :: iigrid, igrid, idims, iside, i1,i2,i3, ic1,ic2,ic3
+     integer :: inc1,inc2,inc3, ineighbor, ipe_neighbor, n, m, k
+
+     ! Outgoing: this rank's fine blocks that face a coarse neighbour
+     ! elsewhere.  The key is built from the *receiver's* block index, which is
+     ! what neighbor() holds, so it matches the key the receiver derives from
+     ! its own igrid below.
+     n = 0
+     snd_ngroup = 0
+     do iigrid=1,igridstail; igrid=igrids(iigrid);
+       do idims=idimmin,idimmax
+         do iside=1,2
+           i1=kr(1,idims)*(2*iside-3);i2=kr(2,idims)*(2*iside-3)
+           i3=kr(3,idims)*(2*iside-3);
+           if (neighbor_pole(i1,i2,i3,igrid)/=0) cycle
+           if (neighbor_type(i1,i2,i3,igrid)/=neighbor_coarse) cycle
+           ineighbor   =neighbor(1,i1,i2,i3,igrid)
+           ipe_neighbor=neighbor(2,i1,i2,i3,igrid)
+           if (ipe_neighbor==mype) cycle
+           ic1=1+modulo(node(pig1_,igrid)-1,2)
+           ic2=1+modulo(node(pig2_,igrid)-1,2)
+           ic3=1+modulo(node(pig3_,igrid)-1,2);
+           inc1=-2*i1+ic1;inc2=-2*i2+ic2;inc3=-2*i3+ic3;
+           n = n + 1
+           if (n > nsend) call mpistop(&
+              "build_message_layout: more sends than nsend_fc counted")
+           snd_igrid(n) = igrid
+           snd_dest(n)  = ipe_neighbor
+           snd_dims(n)  = idims
+           snd_key(n)   = 4**3*(ineighbor-1)+inc1+4*inc2+16*inc3
+           snd_ngroup(iside,idims) = snd_ngroup(iside,idims) + 1
+           snd_group(snd_ngroup(iside,idims),iside,idims) = n
+         end do
+       end do
+     end do
+     if (n /= nsend) call mpistop(&
+        "build_message_layout: fewer sends than nsend_fc counted")
+
+     call layout_runs(n, snd_dest, snd_key, snd_dims, snd_ibuf, n_send_pe,&
+        send_pe, send_pe_off, send_pe_len)
+     !$acc update device(snd_igrid, snd_ibuf, snd_group)
+
+     ! Incoming: this rank's coarse blocks that face fine children elsewhere.
+     m = 0
+     do iigrid=1,igridstail; igrid=igrids(iigrid);
+       do idims=idimmin,idimmax
+         do iside=1,2
+           i1=kr(1,idims)*(2*iside-3);i2=kr(2,idims)*(2*iside-3)
+           i3=kr(3,idims)*(2*iside-3);
+           if (neighbor_pole(i1,i2,i3,igrid)/=0) cycle
+           if (neighbor_type(i1,i2,i3,igrid)/=neighbor_fine) cycle
+           do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
+             inc3=2*i3+ic3
+           do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
+             inc2=2*i2+ic2
+           do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
+             inc1=2*i1+ic1
+             ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
+             if (ipe_neighbor==mype) cycle
+             m = m + 1
+             if (m > nrecv) call mpistop(&
+                "build_message_layout: more receives than nrecv_fc counted")
+             rcv_src(m)  = ipe_neighbor
+             rcv_dims(m) = idims
+             rcv_key(m)  = 4**3*(igrid-1)+inc1+4*inc2+16*inc3
+           end do
+           end do
+           end do
+         end do
+       end do
+     end do
+     if (m /= nrecv) call mpistop(&
+        "build_message_layout: fewer receives than nrecv_fc counted")
+
+     call layout_runs(m, rcv_src, rcv_key, rcv_dims, rcv_off, n_recv_pe,&
+        recv_pe, recv_pe_off, recv_pe_len)
+
+     ! Scatter into the key -> offset table fix_conserve reads.  Entries for
+     ! keys not in this exchange keep whatever they held; nothing reads them.
+     do k = 1, m
+       ibuf_offset(rcv_key(k)+1) = rcv_off(k)
+     end do
+     !$acc update device(ibuf_offset)
+
+   end subroutine build_message_layout
+
+   !> Give every peer one contiguous run of the exchange buffer, with the
+   !> chunks inside a run ordered by the key.  Both ranks compute the same key
+   !> for the same chunk, so sorting by it makes the sender's run and the
+   !> receiver's run agree element for element without any handshake.
+   subroutine layout_runs(n, pe_of, key_of, dims_of, off_of, npeer, peer,&
+      peer_off, peer_len)
+     use mod_global_parameters
+     ! the merge-sort ranking vendored with octree-mg, which sorts its own
+     ! per-rank ghost-cell buffers by an index array in exactly this way
+     use m_octree_mg_3d, only: mrgrnk
+
+     integer, intent(in)  :: n, pe_of(:), key_of(:), dims_of(:)
+     integer, intent(out) :: off_of(:), npeer, peer(:), peer_off(:), peer_len(:)
+
+     integer :: k, p, j
+     integer :: nper(0:npe-1), cursor(0:npe-1)
+     integer, allocatable :: perm(:)
+
+     npeer = 0
+     if (n == 0) return
+
+     ! how long each peer's run is, in buffer elements
+     nper = 0
+     do k = 1, n
+       nper(pe_of(k)) = nper(pe_of(k)) + isize(dims_of(k))
+     end do
+
+     ! peers ascending, each run following the previous one
+     j = 1
+     do p = 0, npe-1
+       if (nper(p) == 0) cycle
+       npeer           = npeer + 1
+       peer(npeer)     = p
+       peer_off(npeer) = j
+       peer_len(npeer) = nper(p)
+       cursor(p)       = j
+       j               = j + nper(p)
+     end do
+
+     ! walk the chunks in ascending key order and hand each one the next slot
+     ! in its peer's run, so the two ranks fill a run identically
+     allocate(perm(n))
+     call mrgrnk(key_of(1:n), perm)
+     do k = 1, n
+       j         = perm(k)
+       p         = pe_of(j)
+       off_of(j) = cursor(p)
+       cursor(p) = cursor(p) + isize(dims_of(j))
+     end do
+     deallocate(perm)
+
+   end subroutine layout_runs
 
    subroutine recvflux(idimmin,idimmax)
      use mod_global_parameters
@@ -353,60 +500,28 @@ module mod_fix_conserve
 
      integer :: iigrid, igrid, idims, iside, i1,i2,i3, nxCo1,nxCo2,nxCo3
      integer :: ic1,ic2,ic3, inc1,inc2,inc3, ipe_neighbor
-     integer :: ikey, i_fc_comm
      integer :: pi1,pi2,pi3,mi1,mi2,mi3,ph1,ph2,ph3,mh1,mh2,mh3,idir
 
-     if (nrecv>0) then
+     ! One receive per peer.  build_message_layout has already decided where
+     ! each peer's run starts and how long it is, and filled ibuf_offset so
+     ! fix_conserve can find an individual chunk inside it.  The tag no longer
+     ! identifies a chunk - (communicator, source) plus one tag per exchange is
+     ! enough now that a peer sends exactly one message - so it only has to
+     ! separate two exchanges with different dimension ranges.
+     if (n_recv_pe>0) then
        fc_recvreq=MPI_REQUEST_NULL
-       ibuf=1
-       irecv=0
-
-       do iigrid=1,igridstail; igrid=igrids(iigrid);
-         do idims= idimmin,idimmax
-           do iside=1,2
-             i1=kr(1,idims)*(2*iside-3);i2=kr(2,idims)*(2*iside-3)
-             i3=kr(3,idims)*(2*iside-3);
-
-             if (neighbor_pole(i1,i2,i3,igrid)/=0) cycle
-
-             if (neighbor_type(i1,i2,i3,igrid)/=4) cycle
-             do ic3=1+int((1-i3)/2),2-int((1+i3)/2)
-               inc3=2*i3+ic3
-             do ic2=1+int((1-i2)/2),2-int((1+i2)/2)
-               inc2=2*i2+ic2
-             do ic1=1+int((1-i1)/2),2-int((1+i1)/2)
-               inc1=2*i1+ic1
-               ipe_neighbor=neighbor_child(2,inc1,inc2,inc3,igrid)
-               if (ipe_neighbor/=mype) then
-                 irecv=irecv+1
-                 ! full index -> the key fix_conserve looks this chunk up by
-                 ikey=4**3*(igrid-1)+inc1*4**(1-1)+inc2*4**(2-1)+inc3*4**(3-1)
-                 ibuf_offset(ikey+1)=ibuf
-                 ! striped index -> communicator + tag for MPI matching
-                 i_fc_comm=mod(igrid-1,n_fc_comm)+1
-                 itag=4**3*((igrid-1)/n_fc_comm)+inc1*4**(1-1)+inc2*4**(2-1)+&
-                    inc3*4**(3-1)
+       itag=idimmin+4*idimmax
 #ifndef NOGPUDIRECT
-                 !$acc host_data use_device(recvbuffer)
+       !$acc host_data use_device(recvbuffer)
 #endif
-                 call mpi_irecv_wrapper(recvbuffer(ibuf),isize(idims),&
-                     MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
-                    icomm_fc(i_fc_comm),fc_recvreq(irecv),ierrmpi)
-#ifndef NOGPUDIRECT
-                 !$acc end host_data
-#endif
-                 ibuf=ibuf+isize(idims)
-               end if
-             end do
-             end do
-             end do
-           end do
-         end do
+       do irecv=1,n_recv_pe
+         call mpi_irecv_wrapper(recvbuffer(recv_pe_off(irecv)),&
+            recv_pe_len(irecv),MPI_DOUBLE_PRECISION,recv_pe(irecv),itag,icomm,&
+            fc_recvreq(irecv),ierrmpi)
        end do
-       ! check for recvbuffer out of bounds errors
-       if (irecv /= nrecv) call mpistop(&
-          "recvflux: posted receives do not match nrecv from init_comm")
-       !$acc update device(ibuf_offset)
+#ifndef NOGPUDIRECT
+       !$acc end host_data
+#endif
      end if
 
      if(stagger_grid) then
@@ -497,393 +612,22 @@ module mod_fix_conserve
 
    end subroutine recvflux
 
+   !> Pack the outgoing flux chunks and post one message per peer.  Where each
+   !> chunk goes was decided by build_message_layout; nothing here walks the
+   !> tree.
    subroutine sendflux(idimmin,idimmax)
      use mod_global_parameters
 
      integer, intent(in) :: idimmin,idimmax
 
-     integer :: idims, iside, i1,i2,i3, ic1,ic2,ic3, inc1,inc2,inc3, ix1,ix2,&
-        ix3, ixCo1,ixCo2,ixCo3, nxCo1,nxCo2,nxCo3, iw
-     integer :: ineighbor, ipe_neighbor, igrid, iigrid, ibuf_send_next
-     integer :: i_fc_comm
-     integer :: idir, ibuf_cc_send_next, pi1,pi2,pi3, ph1,ph2,ph3, mi1,mi2,mi3,&
-         mh1,mh2,mh3
+     integer :: idims, iside, ix1,ix2,ix3, iw
      integer :: k, ng, imsg
 
      fc_sendreq = MPI_REQUEST_NULL
-     isend      = 0
-     ibuf_send  = 1
-     snd_ngroup = 0
-     if(stagger_grid) then
-       cc_sendreq=MPI_REQUEST_NULL
-       isend_cc=0
-       ibuf_cc_send=1
-     end if
 
-     do iigrid=1,igridstail; igrid=igrids(iigrid);
-       do idims = idimmin,idimmax
-         select case (idims)
-        case (1)
-           do iside=1,2
-             i1=kr(1,1)*(2*iside-3);i2=kr(2,1)*(2*iside-3)
-             i3=kr(3,1)*(2*iside-3);
-
-             if (neighbor_pole(i1,i2,i3,igrid)/=0) cycle
-
-             if (neighbor_type(i1,i2,i3,igrid)==neighbor_coarse) then
-               ! send flux to coarser neighbor
-               ineighbor=neighbor(1,i1,i2,i3,igrid)
-               ipe_neighbor=neighbor(2,i1,i2,i3,igrid)
-               if (ipe_neighbor/=mype) then
-                 ic1=1+modulo(node(pig1_,igrid)-1,2)
-                 ic2=1+modulo(node(pig2_,igrid)-1,2)
-                 ic3=1+modulo(node(pig3_,igrid)-1,2);
-                 inc1=-2*i1+ic1;inc2=ic2;inc3=ic3;
-                 i_fc_comm=mod(ineighbor-1,n_fc_comm)+1
-                 itag=4**3*((ineighbor-1)/n_fc_comm)+inc1*4**(1-1)+&
-                    inc2*4**(2-1)+inc3*4**(3-1)
-                 isend=isend+1
-
-                 if(stagger_grid) then
-                 !!  ibuf_send_next=ibuf_send+isize(1)
-                 !!  sendbuffer(ibuf_send:ibuf_send_next-isize_stg(1)-&
-                 !!     1)=reshape(pflux(iside,1,igrid)%flux,&
-                 !!     (/isize(1)-isize_stg(1)/))
-
-                 !!  sendbuffer(ibuf_send_next-isize_stg(1):ibuf_send_next-&
-                 !!     1)=reshape(pflux(iside,1,igrid)%edge,(/isize_stg(1)/))
-                 !!  call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(1),&
-                 !!      MPI_DOUBLE_PRECISION,ipe_neighbor,itag, icomm,&
-                 !!     fc_sendreq(isend),ierrmpi)
-                 !!  ibuf_send=ibuf_send_next
-                 else
-
-                   ! Record where this message's chunk sits in sendbuffer
-                   ! and who it is for. The packing and the posting are done in
-                   ! bulk after the tree walk, below.
-                   snd_igrid(isend) = igrid
-                   snd_ibuf(isend)  = ibuf_send
-                   snd_size(isend)  = isize(1)
-                   snd_pe(isend)    = ipe_neighbor
-                   snd_tag(isend)   = itag
-                   snd_comm(isend)  = i_fc_comm
-                   snd_ngroup(iside,1) = snd_ngroup(iside,1) + 1
-                   snd_group(snd_ngroup(iside,1),iside,1) = isend
-                   ibuf_send=ibuf_send+isize(1)
-                 end if
-               end if
-
-               !!if(stagger_grid) then
-               !!  ! If we are in a fine block surrounded by coarse blocks
-               !!  do idir=idims+1,ndim
-               !!    pi1=i1+kr(idir,1);pi2=i2+kr(idir,2);pi3=i3+kr(idir,3);
-               !!    mi1=i1-kr(idir,1);mi2=i2-kr(idir,2);mi3=i3-kr(idir,3);
-               !!    ph1=pi1-kr(idims,1)*(2*iside-3)
-               !!    ph2=pi2-kr(idims,2)*(2*iside-3)
-               !!    ph3=pi3-kr(idims,3)*(2*iside-3);
-               !!    mh1=mi1-kr(idims,1)*(2*iside-3)
-               !!    mh2=mi2-kr(idims,2)*(2*iside-3)
-               !!    mh3=mi3-kr(idims,3)*(2*iside-3);
-
-               !!    if (neighbor_type(pi1,pi2,pi3,&
-               !!       igrid)==2.and.neighbor_type(ph1,ph2,ph3,&
-               !!       igrid)==2.and.mype/=neighbor(2,pi1,pi2,pi3,&
-               !!       igrid).and.neighbor_pole(pi1,pi2,pi3,igrid)==0) then
-               !!      ! Get relative position in the grid for tags
-               !!      ineighbor=neighbor(1,pi1,pi2,pi3,igrid)
-               !!      ipe_neighbor=neighbor(2,pi1,pi2,pi3,igrid)
-               !!      ic1=1+modulo(node(pig1_,igrid)-1,2)
-               !!      ic2=1+modulo(node(pig2_,igrid)-1,2)
-               !!      ic3=1+modulo(node(pig3_,igrid)-1,2);
-               !!      inc1=-2*pi1+ic1;inc2=-2*pi2+ic2;inc3=-2*pi3+ic3;
-               !!      itag_cc=4**3*(ineighbor-1)+inc1*4**(1-1)+inc2*4**(2-1)+&
-               !!         inc3*4**(3-1)
-               !!      ! Reshape to buffer and send
-               !!      isend_cc=isend_cc+1
-               !!      ibuf_cc_send_next=ibuf_cc_send+isize_stg(1)
-               !!      sendbuffer_cc(ibuf_cc_send:ibuf_cc_send_next-&
-               !!         1)=reshape(pflux(iside,1,igrid)%edge,&
-               !!         shape=(/isize_stg(1)/))
-               !!      call mpi_isend_wrapper(sendbuffer_cc(ibuf_cc_send),isize_stg(1),&
-               !!         MPI_DOUBLE_PRECISION,ipe_neighbor,itag_cc,icomm,&
-               !!         cc_sendreq(isend_cc),ierrmpi)
-               !!      ibuf_cc_send=ibuf_cc_send_next
-               !!    end if
-
-               !!    if (neighbor_type(mi1,mi2,mi3,&
-               !!       igrid)==2.and.neighbor_type(mh1,mh2,mh3,&
-               !!       igrid)==2.and.mype/=neighbor(2,mi1,mi2,mi3,&
-               !!       igrid).and.neighbor_pole(mi1,mi2,mi3,igrid)==0) then
-               !!      ! Get relative position in the grid for tags
-               !!      ineighbor=neighbor(1,mi1,mi2,mi3,igrid)
-               !!      ipe_neighbor=neighbor(2,mi1,mi2,mi3,igrid)
-               !!      ic1=1+modulo(node(pig1_,igrid)-1,2)
-               !!      ic2=1+modulo(node(pig2_,igrid)-1,2)
-               !!      ic3=1+modulo(node(pig3_,igrid)-1,2);
-               !!      inc1=-2*pi1+ic1;inc2=-2*pi2+ic2;inc3=-2*pi3+ic3;
-               !!      inc1=-2*mi1+ic1;inc2=-2*mi2+ic2;inc3=-2*mi3+ic3;
-               !!      itag_cc=4**3*(ineighbor-1)+inc1*4**(1-1)+inc2*4**(2-1)+&
-               !!         inc3*4**(3-1)
-               !!      ! Reshape to buffer and send
-               !!      isend_cc=isend_cc+1
-               !!      ibuf_cc_send_next=ibuf_cc_send+isize_stg(1)
-               !!      sendbuffer_cc(ibuf_cc_send:ibuf_cc_send_next-&
-               !!         1)=reshape(pflux(iside,1,igrid)%edge,&
-               !!         shape=(/isize_stg(1)/))
-               !!      call mpi_isend_wrapper(sendbuffer_cc(ibuf_cc_send),isize_stg(1),&
-               !!         MPI_DOUBLE_PRECISION,ipe_neighbor,itag_cc,icomm,&
-               !!         cc_sendreq(isend_cc),ierrmpi)
-               !!      ibuf_cc_send=ibuf_cc_send_next
-               !!    end if
-               !!  end do
-               !!end if ! end if stagger grid
-
-             end if
-           end do
-        case (2)
-           do iside=1,2
-             i1=kr(1,2)*(2*iside-3);i2=kr(2,2)*(2*iside-3)
-             i3=kr(3,2)*(2*iside-3);
-
-             if (neighbor_pole(i1,i2,i3,igrid)/=0) cycle
-
-             if (neighbor_type(i1,i2,i3,igrid)==neighbor_coarse) then
-               ! send flux to coarser neighbor
-               ineighbor=neighbor(1,i1,i2,i3,igrid)
-               ipe_neighbor=neighbor(2,i1,i2,i3,igrid)
-               if (ipe_neighbor/=mype) then
-                 ic1=1+modulo(node(pig1_,igrid)-1,2)
-                 ic2=1+modulo(node(pig2_,igrid)-1,2)
-                 ic3=1+modulo(node(pig3_,igrid)-1,2);
-                 inc1=ic1;inc2=-2*i2+ic2;inc3=ic3;
-                 i_fc_comm=mod(ineighbor-1,n_fc_comm)+1
-                 itag=4**3*((ineighbor-1)/n_fc_comm)+inc1*4**(1-1)+&
-                    inc2*4**(2-1)+inc3*4**(3-1)
-                 isend=isend+1
-
-                 if(stagger_grid) then
-                 !!  ibuf_send_next=ibuf_send+isize(2)
-                 !!  sendbuffer(ibuf_send:ibuf_send_next-isize_stg(2)-&
-                 !!     1)=reshape(pflux(iside,2,igrid)%flux,&
-                 !!     (/isize(2)-isize_stg(2)/))
-
-                 !!  sendbuffer(ibuf_send_next-isize_stg(2):ibuf_send_next-&
-                 !!     1)=reshape(pflux(iside,2,igrid)%edge,(/isize_stg(2)/))
-                 !!  call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(2),&
-                 !!      MPI_DOUBLE_PRECISION,ipe_neighbor,itag, icomm,&
-                 !!     fc_sendreq(isend),ierrmpi)
-                 !!  ibuf_send=ibuf_send_next
-                 else
-
-                   ! Record where this message's chunk sits in sendbuffer
-                   ! and who it is for. The packing and the posting are done in
-                   ! bulk after the tree walk, below.
-                   snd_igrid(isend) = igrid
-                   snd_ibuf(isend)  = ibuf_send
-                   snd_size(isend)  = isize(2)
-                   snd_pe(isend)    = ipe_neighbor
-                   snd_tag(isend)   = itag
-                   snd_comm(isend)  = i_fc_comm
-                   snd_ngroup(iside,2) = snd_ngroup(iside,2) + 1
-                   snd_group(snd_ngroup(iside,2),iside,2) = isend
-                   ibuf_send=ibuf_send+isize(2)
-                 end if
-               end if
-
-               !!if(stagger_grid) then
-               !!  ! If we are in a fine block surrounded by coarse blocks
-               !!  do idir=idims+1,ndim
-               !!    pi1=i1+kr(idir,1);pi2=i2+kr(idir,2);pi3=i3+kr(idir,3);
-               !!    mi1=i1-kr(idir,1);mi2=i2-kr(idir,2);mi3=i3-kr(idir,3);
-               !!    ph1=pi1-kr(idims,1)*(2*iside-3)
-               !!    ph2=pi2-kr(idims,2)*(2*iside-3)
-               !!    ph3=pi3-kr(idims,3)*(2*iside-3);
-               !!    mh1=mi1-kr(idims,1)*(2*iside-3)
-               !!    mh2=mi2-kr(idims,2)*(2*iside-3)
-               !!    mh3=mi3-kr(idims,3)*(2*iside-3);
-
-               !!    if (neighbor_type(pi1,pi2,pi3,&
-               !!       igrid)==2.and.neighbor_type(ph1,ph2,ph3,&
-               !!       igrid)==2.and.mype/=neighbor(2,pi1,pi2,pi3,&
-               !!       igrid).and.neighbor_pole(pi1,pi2,pi3,igrid)==0) then
-               !!      ! Get relative position in the grid for tags
-               !!      ineighbor=neighbor(1,pi1,pi2,pi3,igrid)
-               !!      ipe_neighbor=neighbor(2,pi1,pi2,pi3,igrid)
-               !!      ic1=1+modulo(node(pig1_,igrid)-1,2)
-               !!      ic2=1+modulo(node(pig2_,igrid)-1,2)
-               !!      ic3=1+modulo(node(pig3_,igrid)-1,2);
-               !!      inc1=-2*pi1+ic1;inc2=-2*pi2+ic2;inc3=-2*pi3+ic3;
-               !!      itag_cc=4**3*(ineighbor-1)+inc1*4**(1-1)+inc2*4**(2-1)+&
-               !!         inc3*4**(3-1)
-               !!      ! Reshape to buffer and send
-               !!      isend_cc=isend_cc+1
-               !!      ibuf_cc_send_next=ibuf_cc_send+isize_stg(2)
-               !!      sendbuffer_cc(ibuf_cc_send:ibuf_cc_send_next-&
-               !!         1)=reshape(pflux(iside,2,igrid)%edge,&
-               !!         shape=(/isize_stg(2)/))
-               !!      call mpi_isend_wrapper(sendbuffer_cc(ibuf_cc_send),isize_stg(2),&
-               !!         MPI_DOUBLE_PRECISION,ipe_neighbor,itag_cc,icomm,&
-               !!         cc_sendreq(isend_cc),ierrmpi)
-               !!      ibuf_cc_send=ibuf_cc_send_next
-               !!    end if
-
-               !!    if (neighbor_type(mi1,mi2,mi3,&
-               !!       igrid)==2.and.neighbor_type(mh1,mh2,mh3,&
-               !!       igrid)==2.and.mype/=neighbor(2,mi1,mi2,mi3,&
-               !!       igrid).and.neighbor_pole(mi1,mi2,mi3,igrid)==0) then
-               !!      ! Get relative position in the grid for tags
-               !!      ineighbor=neighbor(1,mi1,mi2,mi3,igrid)
-               !!      ipe_neighbor=neighbor(2,mi1,mi2,mi3,igrid)
-               !!      ic1=1+modulo(node(pig1_,igrid)-1,2)
-               !!      ic2=1+modulo(node(pig2_,igrid)-1,2)
-               !!      ic3=1+modulo(node(pig3_,igrid)-1,2);
-               !!      inc1=-2*pi1+ic1;inc2=-2*pi2+ic2;inc3=-2*pi3+ic3;
-               !!      inc1=-2*mi1+ic1;inc2=-2*mi2+ic2;inc3=-2*mi3+ic3;
-               !!      itag_cc=4**3*(ineighbor-1)+inc1*4**(1-1)+inc2*4**(2-1)+&
-               !!         inc3*4**(3-1)
-               !!      ! Reshape to buffer and send
-               !!      isend_cc=isend_cc+1
-               !!      ibuf_cc_send_next=ibuf_cc_send+isize_stg(2)
-               !!      sendbuffer_cc(ibuf_cc_send:ibuf_cc_send_next-&
-               !!         1)=reshape(pflux(iside,2,igrid)%edge,&
-               !!         shape=(/isize_stg(2)/))
-               !!      call mpi_isend_wrapper(sendbuffer_cc(ibuf_cc_send),isize_stg(2),&
-               !!         MPI_DOUBLE_PRECISION,ipe_neighbor,itag_cc,icomm,&
-               !!         cc_sendreq(isend_cc),ierrmpi)
-               !!      ibuf_cc_send=ibuf_cc_send_next
-               !!    end if
-               !!  end do
-               !!end if ! end if stagger grid
-
-             end if
-           end do
-        case (3)
-           do iside=1,2
-             i1=kr(1,3)*(2*iside-3);i2=kr(2,3)*(2*iside-3)
-             i3=kr(3,3)*(2*iside-3);
-
-             if (neighbor_pole(i1,i2,i3,igrid)/=0) cycle
-
-             if (neighbor_type(i1,i2,i3,igrid)==neighbor_coarse) then
-               ! send flux to coarser neighbor
-               ineighbor=neighbor(1,i1,i2,i3,igrid)
-               ipe_neighbor=neighbor(2,i1,i2,i3,igrid)
-               if (ipe_neighbor/=mype) then
-                 ic1=1+modulo(node(pig1_,igrid)-1,2)
-                 ic2=1+modulo(node(pig2_,igrid)-1,2)
-                 ic3=1+modulo(node(pig3_,igrid)-1,2);
-                 inc1=ic1;inc2=ic2;inc3=-2*i3+ic3;
-                 i_fc_comm=mod(ineighbor-1,n_fc_comm)+1
-                 itag=4**3*((ineighbor-1)/n_fc_comm)+inc1*4**(1-1)+&
-                    inc2*4**(2-1)+inc3*4**(3-1)
-                 isend=isend+1
-
-                 if(stagger_grid) then
-                 !!  ibuf_send_next=ibuf_send+isize(3)
-                 !!  sendbuffer(ibuf_send:ibuf_send_next-isize_stg(3)-&
-                 !!     1)=reshape(pflux(iside,3,igrid)%flux,&
-                 !!     (/isize(3)-isize_stg(3)/))
-
-                 !!  sendbuffer(ibuf_send_next-isize_stg(3):ibuf_send_next-&
-                 !!     1)=reshape(pflux(iside,3,igrid)%edge,(/isize_stg(3)/))
-                 !!  call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(3),&
-                 !!      MPI_DOUBLE_PRECISION,ipe_neighbor,itag, icomm,&
-                 !!     fc_sendreq(isend),ierrmpi)
-                 !!  ibuf_send=ibuf_send_next
-                 else
-
-                   ! Record where this message's chunk sits in sendbuffer
-                   ! and who it is for. The packing and the posting are done in
-                   ! bulk after the tree walk, below.
-                   snd_igrid(isend) = igrid
-                   snd_ibuf(isend)  = ibuf_send
-                   snd_size(isend)  = isize(3)
-                   snd_pe(isend)    = ipe_neighbor
-                   snd_tag(isend)   = itag
-                   snd_comm(isend)  = i_fc_comm
-                   snd_ngroup(iside,3) = snd_ngroup(iside,3) + 1
-                   snd_group(snd_ngroup(iside,3),iside,3) = isend
-                   ibuf_send=ibuf_send+isize(3)
-                 end if
-               end if
-
-               !!if(stagger_grid) then
-               !!  ! If we are in a fine block surrounded by coarse blocks
-               !!  do idir=idims+1,ndim
-               !!    pi1=i1+kr(idir,1);pi2=i2+kr(idir,2);pi3=i3+kr(idir,3);
-               !!    mi1=i1-kr(idir,1);mi2=i2-kr(idir,2);mi3=i3-kr(idir,3);
-               !!    ph1=pi1-kr(idims,1)*(2*iside-3)
-               !!    ph2=pi2-kr(idims,2)*(2*iside-3)
-               !!    ph3=pi3-kr(idims,3)*(2*iside-3);
-               !!    mh1=mi1-kr(idims,1)*(2*iside-3)
-               !!    mh2=mi2-kr(idims,2)*(2*iside-3)
-               !!    mh3=mi3-kr(idims,3)*(2*iside-3);
-
-               !!    if (neighbor_type(pi1,pi2,pi3,&
-               !!       igrid)==2.and.neighbor_type(ph1,ph2,ph3,&
-               !!       igrid)==2.and.mype/=neighbor(2,pi1,pi2,pi3,&
-               !!       igrid).and.neighbor_pole(pi1,pi2,pi3,igrid)==0) then
-               !!      ! Get relative position in the grid for tags
-               !!      ineighbor=neighbor(1,pi1,pi2,pi3,igrid)
-               !!      ipe_neighbor=neighbor(2,pi1,pi2,pi3,igrid)
-               !!      ic1=1+modulo(node(pig1_,igrid)-1,2)
-               !!      ic2=1+modulo(node(pig2_,igrid)-1,2)
-               !!      ic3=1+modulo(node(pig3_,igrid)-1,2);
-               !!      inc1=-2*pi1+ic1;inc2=-2*pi2+ic2;inc3=-2*pi3+ic3;
-               !!      itag_cc=4**3*(ineighbor-1)+inc1*4**(1-1)+inc2*4**(2-1)+&
-               !!         inc3*4**(3-1)
-               !!      ! Reshape to buffer and send
-               !!      isend_cc=isend_cc+1
-               !!      ibuf_cc_send_next=ibuf_cc_send+isize_stg(3)
-               !!      sendbuffer_cc(ibuf_cc_send:ibuf_cc_send_next-&
-               !!         1)=reshape(pflux(iside,3,igrid)%edge,&
-               !!         shape=(/isize_stg(3)/))
-               !!      call mpi_isend_wrapper(sendbuffer_cc(ibuf_cc_send),isize_stg(3),&
-               !!         MPI_DOUBLE_PRECISION,ipe_neighbor,itag_cc,icomm,&
-               !!         cc_sendreq(isend_cc),ierrmpi)
-               !!      ibuf_cc_send=ibuf_cc_send_next
-               !!    end if
-
-               !!    if (neighbor_type(mi1,mi2,mi3,&
-               !!       igrid)==2.and.neighbor_type(mh1,mh2,mh3,&
-               !!       igrid)==2.and.mype/=neighbor(2,mi1,mi2,mi3,&
-               !!       igrid).and.neighbor_pole(mi1,mi2,mi3,igrid)==0) then
-               !!      ! Get relative position in the grid for tags
-               !!      ineighbor=neighbor(1,mi1,mi2,mi3,igrid)
-               !!      ipe_neighbor=neighbor(2,mi1,mi2,mi3,igrid)
-               !!      ic1=1+modulo(node(pig1_,igrid)-1,2)
-               !!      ic2=1+modulo(node(pig2_,igrid)-1,2)
-               !!      ic3=1+modulo(node(pig3_,igrid)-1,2);
-               !!      inc1=-2*pi1+ic1;inc2=-2*pi2+ic2;inc3=-2*pi3+ic3;
-               !!      inc1=-2*mi1+ic1;inc2=-2*mi2+ic2;inc3=-2*mi3+ic3;
-               !!      itag_cc=4**3*(ineighbor-1)+inc1*4**(1-1)+inc2*4**(2-1)+&
-               !!         inc3*4**(3-1)
-               !!      ! Reshape to buffer and send
-               !!      isend_cc=isend_cc+1
-               !!      ibuf_cc_send_next=ibuf_cc_send+isize_stg(3)
-               !!      sendbuffer_cc(ibuf_cc_send:ibuf_cc_send_next-&
-               !!         1)=reshape(pflux(iside,3,igrid)%edge,&
-               !!         shape=(/isize_stg(3)/))
-               !!      call mpi_isend_wrapper(sendbuffer_cc(ibuf_cc_send),isize_stg(3),&
-               !!         MPI_DOUBLE_PRECISION,ipe_neighbor,itag_cc,icomm,&
-               !!         cc_sendreq(isend_cc),ierrmpi)
-               !!      ibuf_cc_send=ibuf_cc_send_next
-               !!    end if
-               !!  end do
-               !!end if ! end if stagger grid
-
-             end if
-           end do
-         end select
-       end do
-     end do
-
-     ! Pack every message, one kernel per (iside, idims) group rather than one
-     ! per message. Grouping is what makes that possible: pflux's slot is then
-     ! loop-invariant, and a derived-type component holding an allocatable
-     ! array cannot be selected by a device-side index.
-     !$acc update device(snd_igrid, snd_ibuf, snd_group)
-
+     ! One kernel per (iside, idims) group rather than one per chunk: pflux's
+     ! slot is then loop-invariant, and a derived-type component holding an
+     ! allocatable array cannot be selected by a device-side index.
      do idims = idimmin,idimmax
        do iside = 1,2
          ng = snd_ngroup(iside,idims)
@@ -938,23 +682,20 @@ module mod_fix_conserve
        end do
      end do
 
-     ! One transfer for the whole buffer, then post every send. This mirrors
-     ! the shape the receive side already has: recvflux posts all of its
-     ! receives and fix_conserve does a single update device after its
-     ! MPI_WAITALL. Doing it per message instead cost O(nsend*sendsize) of
-     ! traffic and rewrote host memory that earlier, already-posted Isends were
-     ! still reading, which MPI does not allow however identical the bytes are.
+     ! One transfer for the whole buffer, then one Isend per peer.  Each peer's
+     ! chunks are contiguous and in the order that peer expects them, so a
+     ! single message carries all of them and the tag carries no block index.
 #ifdef NOGPUDIRECT
-     if (isend > 0) then
+     if (n_send_pe > 0) then
        !$acc update host(sendbuffer)
      end if
 #else
      !$acc host_data use_device(sendbuffer)
 #endif
-     do k = 1,isend
-       call mpi_isend_wrapper(sendbuffer(snd_ibuf(k)),snd_size(k),&
-          MPI_DOUBLE_PRECISION,snd_pe(k),snd_tag(k),icomm_fc(snd_comm(k)),&
-          fc_sendreq(k),ierrmpi)
+     itag=idimmin+4*idimmax
+     do k = 1,n_send_pe
+       call mpi_isend_wrapper(sendbuffer(send_pe_off(k)),send_pe_len(k),&
+          MPI_DOUBLE_PRECISION,send_pe(k),itag,icomm,fc_sendreq(k),ierrmpi)
      end do
 #ifndef NOGPUDIRECT
      !$acc end host_data
@@ -973,6 +714,7 @@ module mod_fix_conserve
    !> already sum to the coarse face's.
    subroutine fix_conserve(psb,idimmin,idimmax,nw0,nwfluxin)
      use mod_global_parameters
+     use mod_comm_lib, only: mpistop
 
      integer, intent(in) :: idimmin,idimmax, nw0, nwfluxin
      type(state) :: psb(max_blocks)
@@ -993,8 +735,19 @@ module mod_fix_conserve
      CoFiratio=one/dble(2**ndim)
 #:endif
 
-     if (nrecv>0) then
-       call MPI_WAITALL(nrecv,fc_recvreq,fc_recvstat,ierrmpi)
+     if (n_recv_pe>0) then
+       call MPI_WAITALL(n_recv_pe,fc_recvreq,fc_recvstat,ierrmpi)
+       ! With one aggregated message per peer, a disagreement about which
+       ! chunks the run holds no longer shows up as an MPI mismatch, so check
+       ! the arrival lengths. This catches any difference in the *set* of
+       ! chunks the two ranks enumerated; a difference in their *order* cannot
+       ! arise, since both sort the same run by the same key.
+       do irecv=1,n_recv_pe
+         call MPI_GET_COUNT(fc_recvstat(:,irecv),MPI_DOUBLE_PRECISION,nbuf,&
+            ierrmpi)
+         if (nbuf /= recv_pe_len(irecv)) call mpistop(&
+            "fix_conserve: flux message length disagrees with the layout")
+       end do
 #ifdef NOGPUDIRECT
        ! Without GPU-direct the IRECVs landed in host memory; the unpack below
        ! runs on the device, so push the payload across.
@@ -1566,8 +1319,8 @@ module mod_fix_conserve
        end do
      end do
 
-     if (nsend>0) then
-       call MPI_WAITALL(nsend,fc_sendreq,fc_sendstat,ierrmpi)
+     if (n_send_pe>0) then
+       call MPI_WAITALL(n_send_pe,fc_sendreq,fc_sendstat,ierrmpi)
      end if
 
    end subroutine fix_conserve
