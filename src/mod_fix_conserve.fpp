@@ -865,9 +865,17 @@ module mod_fix_conserve
      end do
    end subroutine sendflux
 
+   !> Correct the coarse cells abutting a refinement boundary: take out the
+   !> coarse face flux the update used and put back the sum of the fine ones.
+   !>
+   !> The stored flux is Cartesian qdt*f/dx or curvilinear qdt*f*A, see the
+   !> flux-fixing stores in mod_finite_volume.  The Cartesian form is already a
+   !> per-volume quantity but of the *fine* cell, so it is rescaled by
+   !> CoFiratio; the curvilinear form is extensive and is divided here by the
+   !> coarse cell's own volume, with no ratio, because the four fine face areas
+   !> already sum to the coarse face's.
    subroutine fix_conserve(psb,idimmin,idimmax,nw0,nwfluxin)
      use mod_global_parameters
-     use mod_geometry, only: sync_geometry_host
 
      integer, intent(in) :: idimmin,idimmax, nw0, nwfluxin
      type(state) :: psb(max_blocks)
@@ -877,17 +885,16 @@ module mod_fix_conserve
      integer :: ix1, ix2, ix3 !JESSE ADDED
      integer :: nxCo1,nxCo2,nxCo3, iw, ix, ipe_neighbor, ineighbor, nbuf,&
          ibufnext, nw1
+#:if GEOM == 'Cartesian'
      double precision :: CoFiratio
-
-     ! the flux correction divides by dvolume on the host
-     call sync_geometry_host()
+#:endif
 
      nw1=nw0-1+nwfluxin
-     if (slab_uniform) then
-       ! The flux is divided by volume of fine cell. We need, however,
-       ! to divide by volume of coarse cell => muliply by volume ratio
-       CoFiratio=one/dble(2**ndim)
-     end if
+#:if GEOM == 'Cartesian'
+     ! The flux is divided by volume of fine cell. We need, however,
+     ! to divide by volume of coarse cell => muliply by volume ratio
+     CoFiratio=one/dble(2**ndim)
+#:endif
 
      if (nrecv>0) then
        call MPI_WAITALL(nrecv,fc_recvreq,fc_recvstat,ierrmpi)
@@ -949,8 +956,7 @@ module mod_fix_conserve
              end select
 
              ! remove coarse flux
-             if (slab_uniform) then
-                !TODO do I need to add "private(ix2,ix3)"?
+#:if GEOM == 'Cartesian'
                 !$acc loop collapse(ndim-1) vector
                 do ix3=ixMlo3,ixMhi3
                   do ix2=ixMlo2,ixMhi2 
@@ -960,18 +966,18 @@ module mod_fix_conserve
                                           1:nwfluxin,igrid)
                   end do
                 end do
-             !  psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
-             !     nw0:nw1) = psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
-             !     nw0:nw1) -pflux(iside,1,igrid)%flux(1,:,:,1:nwfluxin)
-             !else
-             !  do iw=nw0,nw1
-             !    psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
-             !       iw)=psb(igrid)%w(ix,ixMlo2:ixMhi2,ixMlo3:ixMhi3,&
-             !       iw)-pflux(iside,1,igrid)%flux(1,:,:,&
-             !       iw-nw0+1) /ps(igrid)%dvolume(ix,ixMlo2:ixMhi2,&
-             !       ixMlo3:ixMhi3)
-             !  end do
-             end if
+#:else
+                !$acc loop collapse(ndim-1) vector
+                do ix3=ixMlo3,ixMhi3
+                  do ix2=ixMlo2,ixMhi2
+                    psb(igrid)%w(ix,ix2,ix3,nw0:nw1) = &
+                      psb(igrid)%w(ix,ix2,ix3,nw0:nw1) - &
+                      pflux(iside,1)%flux(1,ix2-nghostcells,ix3-nghostcells,&
+                                          1:nwfluxin,igrid) &
+                      / bgeo%dvolume(ix,ix2,ix3,igrid)
+                  end do
+                end do
+#:endif
 
 
              ! add fine flux
@@ -992,8 +998,7 @@ module mod_fix_conserve
                ixmax3=ixmin3-1+nxCo3
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
-                 if (slab_uniform) then
-                     ! Direction 1, so loop runs over directions 2 and 3
+#:if GEOM == 'Cartesian'
                      !$acc loop collapse(ndim-1) vector
                      do ix3=1,nxCo3 
                         do ix2=1,nxCo2 
@@ -1003,21 +1008,19 @@ module mod_fix_conserve
                               ineighbor) * CoFiratio
                         end do
                      end do
-
-                 !  psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                 !     nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                 !     ixmin3:ixmax3,nw0:nw1) + pflux(iotherside,1,&
-                 !     ineighbor)%flux(:,:,:,1:nwfluxin)* CoFiratio
-                 !else
-                 !  do iw=nw0,nw1
-                 !    psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                 !       iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                 !       ixmin3:ixmax3,iw) +pflux(iotherside,1,&
-                 !       ineighbor)%flux(:,:,:,&
-                 !       iw-nw0+1) /ps(igrid)%dvolume(ixmin1:ixmax1,&
-                 !       ixmin2:ixmax2,ixmin3:ixmax3)
-                 !  end do
-                 end if
+#:else
+                     ! Direction 1, so loop runs over directions 2 and 3
+                     !$acc loop collapse(ndim-1) vector
+                     do ix3=1,nxCo3
+                        do ix2=1,nxCo2
+                           psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0:nw1) = &
+                            psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0:nw1) + &
+                            pflux(iotherside,1)%flux(1,ix2,ix3,1:nwfluxin,&
+                              ineighbor) &
+                            / bgeo%dvolume(ix,ixmin2+ix2-1,ixmin3+ix3-1,igrid)
+                        end do
+                     end do
+#:endif
                !else
                !  if (slab_uniform) then
                !    ibufnext=ibuf+isize(1)
@@ -1049,7 +1052,7 @@ module mod_fix_conserve
                !    ibuf=ibufnext
                !  end if
                else
-                 if (slab_uniform) then
+#:if GEOM == 'Cartesian'
                    do ix3=1,nxCo_fc(3,1)
                      do ix2=1,nxCo_fc(2,1)
                        do iw=1,nwfluxin
@@ -1060,7 +1063,19 @@ module mod_fix_conserve
                        end do
                      end do
                    end do
-                 end if
+#:else
+                   do ix3=1,nxCo_fc(3,1)
+                     do ix2=1,nxCo_fc(2,1)
+                       do iw=1,nwfluxin
+                         psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
+                           psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                           recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
+                              +(ix2-1)+(ix3-1)*nxCo_fc(2,1)+(iw-1)*nxCo_fc(2,1)*nxCo_fc(3,1)) &
+                           / bgeo%dvolume(ix,ixmin2+ix2-1,ixmin3+ix3-1,igrid)
+                       end do
+                     end do
+                   end do
+#:endif
                end if
             end do
            end do
@@ -1106,7 +1121,7 @@ module mod_fix_conserve
              end select
 
              ! remove coarse flux
-             if (slab_uniform) then
+#:if GEOM == 'Cartesian'
                 !$acc loop collapse(ndim-1) vector
                 do ix3=ixMlo3,ixMhi3
                   do ix1=ixMlo1,ixMhi1 
@@ -1116,18 +1131,18 @@ module mod_fix_conserve
                                   1:nwfluxin,igrid)
                   end do
                 end do
-             !  psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
-             !     nw0:nw1) = psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
-             !     nw0:nw1) -pflux(iside,2,igrid)%flux(:,1,:,1:nwfluxin)
-             !else
-             !  do iw=nw0,nw1
-             !    psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
-             !       iw)=psb(igrid)%w(ixMlo1:ixMhi1,ix,ixMlo3:ixMhi3,&
-             !       iw)-pflux(iside,2,igrid)%flux(:,1,:,&
-             !       iw-nw0+1) /ps(igrid)%dvolume(ixMlo1:ixMhi1,ix,&
-             !       ixMlo3:ixMhi3)
-             !  end do
-             end if
+#:else
+                !$acc loop collapse(ndim-1) vector
+                do ix3=ixMlo3,ixMhi3
+                  do ix1=ixMlo1,ixMhi1
+                    psb(igrid)%w(ix1,ix,ix3,nw0:nw1) = &
+                     psb(igrid)%w(ix1,ix,ix3,nw0:nw1) - &
+                     pflux(iside,2)%flux(ix1-nghostcells,1,ix3-nghostcells,&
+                                  1:nwfluxin,igrid) &
+                     / bgeo%dvolume(ix1,ix,ix3,igrid)
+                  end do
+                end do
+#:endif
 
 
              ! add fine flux
@@ -1149,7 +1164,7 @@ module mod_fix_conserve
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
 
-                 if (slab_uniform) then
+#:if GEOM == 'Cartesian'
                    !$acc loop collapse(ndim-1) vector
                    do ix3=1,nxCo3 
                      do ix1=1,nxCo1 
@@ -1159,21 +1174,18 @@ module mod_fix_conserve
                             1:nwfluxin,ineighbor) * CoFiratio
                      end do
                    end do
-
-                 !  psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                 !     nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                 !     ixmin3:ixmax3,nw0:nw1) + pflux(iotherside,2,&
-                 !     ineighbor)%flux(:,:,:,1:nwfluxin)* CoFiratio
-                 !else
-                 !  do iw=nw0,nw1
-                 !    psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                 !       iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                 !       ixmin3:ixmax3,iw) +pflux(iotherside,2,&
-                 !       ineighbor)%flux(:,:,:,&
-                 !       iw-nw0+1) /ps(igrid)%dvolume(ixmin1:ixmax1,&
-                 !       ixmin2:ixmax2,ixmin3:ixmax3)
-                 !  end do
-                 end if
+#:else
+                   !$acc loop collapse(ndim-1) vector
+                   do ix3=1,nxCo3
+                     do ix1=1,nxCo1
+                       psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0:nw1) = &
+                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0:nw1) + &
+                         pflux(iotherside,2)%flux(ix1,1,ix3,&
+                            1:nwfluxin,ineighbor) &
+                         / bgeo%dvolume(ixmin1+ix1-1,ix,ixmin3+ix3-1,igrid)
+                     end do
+                   end do
+#:endif
                !else
                !  if (slab_uniform) then
                !    ibufnext=ibuf+isize(2)
@@ -1205,7 +1217,7 @@ module mod_fix_conserve
                !    ibuf=ibufnext
                !  end if
                else
-                 if (slab_uniform) then
+#:if GEOM == 'Cartesian'
                    do ix3=1,nxCo_fc(3,2)
                      do ix1=1,nxCo_fc(1,2)
                        do iw=1,nwfluxin
@@ -1216,7 +1228,19 @@ module mod_fix_conserve
                        end do
                      end do
                    end do
-                 end if
+#:else
+                   do ix3=1,nxCo_fc(3,2)
+                     do ix1=1,nxCo_fc(1,2)
+                       do iw=1,nwfluxin
+                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
+                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                           recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
+                              +(ix1-1)+(ix3-1)*nxCo_fc(1,2)+(iw-1)*nxCo_fc(1,2)*nxCo_fc(3,2)) &
+                           / bgeo%dvolume(ixmin1+ix1-1,ix,ixmin3+ix3-1,igrid)
+                       end do
+                     end do
+                   end do
+#:endif
                end if
              end do
              end do
@@ -1262,7 +1286,7 @@ module mod_fix_conserve
              end select
 
              ! remove coarse flux
-             if (slab_uniform) then
+#:if GEOM == 'Cartesian'
                !$acc loop collapse(ndim-1) vector
                do ix2=ixMlo2,ixMhi2
                  do ix1=ixMlo1,ixMhi1 
@@ -1272,18 +1296,18 @@ module mod_fix_conserve
                         1,1:nwfluxin,igrid)
                  end do
                end do
-             !  psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
-             !     nw0:nw1) = psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
-             !     nw0:nw1) -pflux(iside,3,igrid)%flux(:,:,1,1:nwfluxin)
-             !else
-             !  do iw=nw0,nw1
-             !    psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
-             !       iw)=psb(igrid)%w(ixMlo1:ixMhi1,ixMlo2:ixMhi2,ix,&
-             !       iw)-pflux(iside,3,igrid)%flux(:,:,1,&
-             !       iw-nw0+1) /ps(igrid)%dvolume(ixMlo1:ixMhi1,ixMlo2:ixMhi2,&
-             !       ix)
-             !  end do
-             end if
+#:else
+               !$acc loop collapse(ndim-1) vector
+               do ix2=ixMlo2,ixMhi2
+                 do ix1=ixMlo1,ixMhi1
+                   psb(igrid)%w(ix1,ix2,ix,nw0:nw1) = &
+                     psb(igrid)%w(ix1,ix2,ix,nw0:nw1) - &
+                     pflux(iside,3)%flux(ix1-nghostcells,ix2-nghostcells,&
+                        1,1:nwfluxin,igrid) &
+                     / bgeo%dvolume(ix1,ix2,ix,igrid)
+                 end do
+               end do
+#:endif
 
 
              ! add fine flux
@@ -1303,7 +1327,7 @@ module mod_fix_conserve
                ixmax3=ix
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
-                 if (slab_uniform) then
+#:if GEOM == 'Cartesian'
                    !$acc loop collapse(ndim-1) vector
                    do ix2=1,nxCo2 
                      do ix1=1,nxCo1 
@@ -1313,20 +1337,18 @@ module mod_fix_conserve
                             ineighbor)* CoFiratio
                      end do
                    end do
-                 !  psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                 !     nw0:nw1) = psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                 !     ixmin3:ixmax3,nw0:nw1) + pflux(iotherside,3,&
-                 !     ineighbor)%flux(:,:,:,1:nwfluxin)* CoFiratio
-                 !else
-                 !  do iw=nw0,nw1
-                 !    psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,ixmin3:ixmax3,&
-                 !       iw)=psb(igrid)%w(ixmin1:ixmax1,ixmin2:ixmax2,&
-                 !       ixmin3:ixmax3,iw) +pflux(iotherside,3,&
-                 !       ineighbor)%flux(:,:,:,&
-                 !       iw-nw0+1) /ps(igrid)%dvolume(ixmin1:ixmax1,&
-                 !       ixmin2:ixmax2,ixmin3:ixmax3)
-                 !  end do
-                 end if
+#:else
+                   !$acc loop collapse(ndim-1) vector
+                   do ix2=1,nxCo2
+                     do ix1=1,nxCo1
+                       psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0:nw1) = &
+                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0:nw1) + &
+                         pflux(iotherside,3)%flux(ix1,ix2,1,1:nwfluxin,&
+                            ineighbor) &
+                         / bgeo%dvolume(ixmin1+ix1-1,ixmin2+ix2-1,ix,igrid)
+                     end do
+                   end do
+#:endif
                !else
                !  if (slab_uniform) then
                !    ibufnext=ibuf+isize(3)
@@ -1358,7 +1380,7 @@ module mod_fix_conserve
                !    ibuf=ibufnext
                !  end if
                else
-                 if (slab_uniform) then
+#:if GEOM == 'Cartesian'
                    do ix2=1,nxCo_fc(2,3)
                      do ix1=1,nxCo_fc(1,3)
                        do iw=1,nwfluxin
@@ -1369,7 +1391,19 @@ module mod_fix_conserve
                        end do
                      end do
                    end do
-                 end if
+#:else
+                   do ix2=1,nxCo_fc(2,3)
+                     do ix1=1,nxCo_fc(1,3)
+                       do iw=1,nwfluxin
+                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
+                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                           recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
+                              +(ix1-1)+(ix2-1)*nxCo_fc(1,3)+(iw-1)*nxCo_fc(1,3)*nxCo_fc(2,3)) &
+                           / bgeo%dvolume(ixmin1+ix1-1,ixmin2+ix2-1,ix,igrid)
+                       end do
+                     end do
+                   end do
+#:endif
                end if
              end do
              end do

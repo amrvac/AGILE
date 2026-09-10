@@ -250,21 +250,45 @@ end subroutine finite_volume_local
                      - f(:, 2) * bgeo%surfaceC(ix1, ix2, ix3, 1, n)) * inv_dvol
 #:endif
 
-                ! Store fluxes for flux fixing in direction 1
+                ! Store fluxes for flux fixing in direction 1.  What is
+                ! stored differs by geometry: qdt*f/dx, the face's own
+                ! contribution to the cell update, on a Cartesian mesh, and the
+                ! extensive qdt*f*A on a curvilinear one.  The extensive form is
+                ! what lets fix_conserve divide by the *coarse* cell's volume
+                ! and sum the four fine faces without a volume ratio, since the
+                ! fine face areas add up to the coarse one exactly.
                 select case (neighbor_type_1m)
                 case (neighbor_fine)
+#:if GEOM == 'Cartesian'
                    if (ix1.eq.ixOmin1) pflux(1,1)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux,n) &
                         = qdt * inv_dr(1) * f(:,1)
+#:else
+                   if (ix1.eq.ixOmin1) pflux(1,1)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux,n) &
+                        = qdt * bgeo%surfaceC(ix1-1, ix2, ix3, 1, n) * f(:,1)
+#:endif
                 case (neighbor_coarse)
+#:if GEOM == 'Cartesian'
                    if (ix1.eq.ixOmin1) fC1(1,ix2,ix3,1:nw_flux) = - qdt * inv_dr(1) * f(:,1)
+#:else
+                   if (ix1.eq.ixOmin1) fC1(1,ix2,ix3,1:nw_flux) = - qdt * bgeo%surfaceC(ix1-1, ix2, ix3, 1, n) * f(:,1)
+#:endif
                 end select
 
                 select case (neighbor_type_1p)
                 case (neighbor_fine)
+#:if GEOM == 'Cartesian'
                    if (ix1.eq.ixOmax1) pflux(2,1)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux,n) &
                         = - qdt * inv_dr(1) * f(:,2)
+#:else
+                   if (ix1.eq.ixOmax1) pflux(2,1)%flux(1,ix2-nghostcells,ix3-nghostcells,1:nw_flux,n) &
+                        = - qdt * bgeo%surfaceC(ix1, ix2, ix3, 1, n) * f(:,2)
+#:endif
                 case (neighbor_coarse)
+#:if GEOM == 'Cartesian'
                    if (ix1.eq.ixOmax1) fC1(2,ix2,ix3,1:nw_flux) = qdt * inv_dr(1) * f(:,2)
+#:else
+                   if (ix1.eq.ixOmax1) fC1(2,ix2,ix3,1:nw_flux) = qdt * bgeo%surfaceC(ix1, ix2, ix3, 1, n) * f(:,2)
+#:endif
                 end select
 
                 tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
@@ -282,21 +306,45 @@ end subroutine finite_volume_local
                      - f(:, 2) * bgeo%surfaceC(ix1, ix2, ix3, 2, n)) * inv_dvol
 #:endif
 
-                ! Store fluxes for flux fixing in direction 2
+                ! Store fluxes for flux fixing in direction 2.  What is
+                ! stored differs by geometry: qdt*f/dx, the face's own
+                ! contribution to the cell update, on a Cartesian mesh, and the
+                ! extensive qdt*f*A on a curvilinear one.  The extensive form is
+                ! what lets fix_conserve divide by the *coarse* cell's volume
+                ! and sum the four fine faces without a volume ratio, since the
+                ! fine face areas add up to the coarse one exactly.
                 select case (neighbor_type_2m)
                 case (neighbor_fine)
+#:if GEOM == 'Cartesian'
                    if (ix2.eq.ixOmin2) pflux(1,2)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux,n) &
                         = qdt * inv_dr(2) * f(:,1)
+#:else
+                   if (ix2.eq.ixOmin2) pflux(1,2)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux,n) &
+                        = qdt * bgeo%surfaceC(ix1, ix2-1, ix3, 2, n) * f(:,1)
+#:endif
                 case (neighbor_coarse)
+#:if GEOM == 'Cartesian'
                    if (ix2.eq.ixOmin2) fC2(1,ix1,ix3,1:nw_flux) = - qdt * inv_dr(2) * f(:,1)
+#:else
+                   if (ix2.eq.ixOmin2) fC2(1,ix1,ix3,1:nw_flux) = - qdt * bgeo%surfaceC(ix1, ix2-1, ix3, 2, n) * f(:,1)
+#:endif
                 end select
 
                 select case (neighbor_type_2p)
                 case (neighbor_fine)
+#:if GEOM == 'Cartesian'
                    if (ix2.eq.ixOmax2) pflux(2,2)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux,n) &
                         = - qdt * inv_dr(2) * f(:,2)
+#:else
+                   if (ix2.eq.ixOmax2) pflux(2,2)%flux(ix1-nghostcells,1,ix3-nghostcells,1:nw_flux,n) &
+                        = - qdt * bgeo%surfaceC(ix1, ix2, ix3, 2, n) * f(:,2)
+#:endif
                 case (neighbor_coarse)
+#:if GEOM == 'Cartesian'
                    if (ix2.eq.ixOmax2) fC2(2,ix1,ix3,1:nw_flux) = qdt * inv_dr(2) * f(:,2)
+#:else
+                   if (ix2.eq.ixOmax2) fC2(2,ix1,ix3,1:nw_flux) = qdt * bgeo%surfaceC(ix1, ix2, ix3, 2, n) * f(:,2)
+#:endif
                 end select
 
                 tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
@@ -314,21 +362,45 @@ end subroutine finite_volume_local
                      - f(:, 2) * bgeo%surfaceC(ix1, ix2, ix3, 3, n)) * inv_dvol
 #:endif
 
-                ! Store fluxes for flux fixing in direction 3
+                ! Store fluxes for flux fixing in direction 3.  What is
+                ! stored differs by geometry: qdt*f/dx, the face's own
+                ! contribution to the cell update, on a Cartesian mesh, and the
+                ! extensive qdt*f*A on a curvilinear one.  The extensive form is
+                ! what lets fix_conserve divide by the *coarse* cell's volume
+                ! and sum the four fine faces without a volume ratio, since the
+                ! fine face areas add up to the coarse one exactly.
                 select case (neighbor_type_3m)
                 case (neighbor_fine)
+#:if GEOM == 'Cartesian'
                    if (ix3.eq.ixOmin3) pflux(1,3)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux,n) &
                         = qdt * inv_dr(3) * f(:,1)
+#:else
+                   if (ix3.eq.ixOmin3) pflux(1,3)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux,n) &
+                        = qdt * bgeo%surfaceC(ix1, ix2, ix3-1, 3, n) * f(:,1)
+#:endif
                 case (neighbor_coarse)
+#:if GEOM == 'Cartesian'
                    if (ix3.eq.ixOmin3) fC3(1,ix1,ix2,1:nw_flux) = - qdt * inv_dr(3) * f(:,1)
+#:else
+                   if (ix3.eq.ixOmin3) fC3(1,ix1,ix2,1:nw_flux) = - qdt * bgeo%surfaceC(ix1, ix2, ix3-1, 3, n) * f(:,1)
+#:endif
                 end select
 
                 select case (neighbor_type_3p)
                 case (neighbor_fine)
+#:if GEOM == 'Cartesian'
                    if (ix3.eq.ixOmax3) pflux(2,3)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux,n) &
                         = - qdt * inv_dr(3) * f(:,2)
+#:else
+                   if (ix3.eq.ixOmax3) pflux(2,3)%flux(ix1-nghostcells,ix2-nghostcells,1,1:nw_flux,n) &
+                        = - qdt * bgeo%surfaceC(ix1, ix2, ix3, 3, n) * f(:,2)
+#:endif
                 case (neighbor_coarse)
+#:if GEOM == 'Cartesian'
                    if (ix3.eq.ixOmax3) fC3(2,ix1,ix2,1:nw_flux) = qdt * inv_dr(3) * f(:,2)
+#:else
+                   if (ix3.eq.ixOmax3) fC3(2,ix1,ix2,1:nw_flux) = qdt * bgeo%surfaceC(ix1, ix2, ix3, 3, n) * f(:,2)
+#:endif
                 end select
 
 #:if GEOM != 'Cartesian'
