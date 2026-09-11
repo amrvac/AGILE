@@ -8,14 +8,61 @@ module mod_coarsen_refine
 #endif
   implicit none
   private
-  !> MPI recv send variables for AMR
+  !> MPI recv send variables for AMR.  One request per neighbouring rank now,
+  !> not one per chunk, so these are sized by npe.
   integer :: itag, irecv, isend
   integer, dimension(:), allocatable :: recvrequest, sendrequest
   integer, dimension(:,:), allocatable :: recvstatus, sendstatus
-  !> MPI buffers to send non-local coarsened grids
-  double precision, allocatable, dimension(:,:,:,:,:)  :: snd_buff_cf, rcv_buff_cf
-  integer, allocatable, dimension(:,:)  :: rcv_info_cf
-  !$acc declare create(snd_buff_cf,rcv_buff_cf,rcv_info_cf)
+
+  !> MPI buffers to send non-local coarsened grids.
+  !>
+  !> The exchange is aggregated per destination rank: every coarsened child
+  !> bound for one peer occupies a contiguous run of snd_buff_cf and travels in
+  !> a single Isend, so the message count is the number of neighbouring ranks
+  !> rather than the number of (parent, child) pairs.  That is also what lets
+  !> the tag be a constant; it used to be itag=ipeFi+igridFi, which is unique
+  !> only because the matching Irecv names ipeFi as its source, and was itself a
+  !> workaround for MPI_TAG_UB.
+  !>
+  !> Both ranks order a peer's run by the key
+  !>
+  !>     ikey = 8*(igridCo-1) + (ic1-1) + 2*(ic2-1) + 4*(ic3-1)
+  !>
+  !> built from the *receiving* parent's block index: the sender has it as the
+  !> igrid argument of coarsen_grid_siblings, the receiver as its own igrid.
+  !> Both know it because amr_coarsen_refine walks the globally replicated
+  !> coarsen() table in the same order on every rank and calls getnode() for
+  !> every event, so the free-node bookkeeping is replicated too.  Sorting by
+  !> the key makes the two layouts agree element for element with no handshake.
+  !>
+  !> Aggregation gives up MPI's own mismatch detection, so the arrival lengths
+  !> are checked against the layout in exchange_coarsened_blocks.
+  double precision, allocatable, dimension(:) :: snd_buff_cf, rcv_buff_cf
+  !$acc declare create(snd_buff_cf,rcv_buff_cf)
+
+  !> Per outgoing / incoming chunk, appended by coarsen_grid_siblings during
+  !> the walk and turned into per-peer runs by exchange_coarsened_blocks.
+  !> cf_snd_igrid / cf_snd_ibuf and the rcv counterparts are read by the pack
+  !> and unpack kernels and are therefore device-resident; cf_snd_dest,
+  !> cf_snd_key, cf_rcv_src and cf_rcv_key are the host-side working set the
+  !> layout is derived from.
+  integer :: n_cf_snd, n_cf_rcv
+  integer, allocatable, dimension(:) :: cf_snd_igrid, cf_snd_ibuf
+  integer, allocatable, dimension(:) :: cf_snd_dest, cf_snd_key
+  integer, allocatable, dimension(:) :: cf_rcv_igrid, cf_rcv_ibuf
+  integer, allocatable, dimension(:) :: cf_rcv_src, cf_rcv_key
+  integer, allocatable, dimension(:,:) :: cf_rcv_ic
+  !$acc declare create(cf_snd_igrid,cf_snd_ibuf,cf_rcv_igrid,cf_rcv_ibuf,&
+  !$acc&               cf_rcv_ic)
+
+  !> The peers themselves, ascending, with the extent of each one's run.  Host
+  !> only: these drive the MPI calls and nothing else.
+  integer :: n_cf_send_pe, n_cf_recv_pe
+  integer, allocatable, dimension(:) :: cf_send_pe, cf_send_pe_off,&
+     cf_send_pe_len
+  integer, allocatable, dimension(:) :: cf_recv_pe, cf_recv_pe_off,&
+     cf_recv_pe_len
+
   !> maximum number of coarse blocks that can be sent after coarsening
   integer, parameter :: max_buff=1024
   !$acc declare copyin(max_buff)
@@ -67,8 +114,14 @@ contains
     ! to save memory: first coarsen then refine
     irecv=0
     isend=0
-    allocate(recvstatus(MPI_STATUS_SIZE,max_blocks),recvrequest(max_blocks),&
-         sendstatus(MPI_STATUS_SIZE,max_blocks),sendrequest(max_blocks))
+    n_cf_snd=0
+    n_cf_rcv=0
+    if (.not.allocated(recvrequest)) then
+       allocate(recvstatus(MPI_STATUS_SIZE,npe),recvrequest(npe),&
+            sendstatus(MPI_STATUS_SIZE,npe),sendrequest(npe))
+       allocate(cf_send_pe(npe),cf_send_pe_off(npe),cf_send_pe_len(npe),&
+            cf_recv_pe(npe),cf_recv_pe_off(npe),cf_recv_pe_len(npe))
+    end if
     recvrequest=MPI_REQUEST_NULL
     sendrequest=MPI_REQUEST_NULL
 
@@ -80,12 +133,18 @@ contains
        sendrequest_stg=MPI_REQUEST_NULL
     end if
 
-    ! Allocate the send and receive buffers
+    ! Allocate the chunk descriptors and the exchange buffers.  Both are
+    ! capped by max_buff chunks, which coarsen_grid_siblings checks against.
     if ( .not. allocated(snd_buff_cf) ) then
-       allocate( snd_buff_cf(block_nx1/2, block_nx2/2, block_nx3/2, nw, max_buff), &
-            rcv_buff_cf(block_nx1/2, block_nx2/2, block_nx3/2, nw, max_buff), &
-            rcv_info_cf(4, max_buff) )
-       !$acc update device(snd_buff_cf, rcv_buff_cf, rcv_info_cf)
+       allocate( snd_buff_cf((block_nx1/2)*(block_nx2/2)*(block_nx3/2)*nw &
+            *max_buff), &
+            rcv_buff_cf((block_nx1/2)*(block_nx2/2)*(block_nx3/2)*nw &
+            *max_buff) )
+       allocate( cf_snd_igrid(max_buff), cf_snd_ibuf(max_buff), &
+            cf_snd_dest(max_buff), cf_snd_key(max_buff), &
+            cf_rcv_igrid(max_buff), cf_rcv_ibuf(max_buff), &
+            cf_rcv_src(max_buff), cf_rcv_key(max_buff), cf_rcv_ic(3,max_buff) )
+       !$acc update device(snd_buff_cf, rcv_buff_cf)
     end if
 
     do ipe=0,npe-1
@@ -126,49 +185,21 @@ contains
        end do
     end do
 
-    if (irecv>0) then
-       call MPI_WAITALL(irecv,recvrequest,recvstatus,ierrmpi)
-       if(stagger_grid) call MPI_WAITALL(irecv,recvrequest_stg,recvstatus_stg,&
+    ! Lay the chunks out per peer, exchange them in one message each, and
+    ! apply them.  The walk above only recorded descriptors.
+    call exchange_coarsened_blocks
+
+    ! The staggered path still posts per chunk; see the note in
+    ! coarsen_grid_siblings.  It is unreachable here (stagger_grid is false and
+    ! fix_edges is not called), so it is left as it was found.
+    if(stagger_grid) then
+       if (irecv>0) call MPI_WAITALL(irecv,recvrequest_stg,recvstatus_stg,&
             ierrmpi)
-    end if
-    if (isend>0) then
-       call MPI_WAITALL(isend,sendrequest,sendstatus,ierrmpi)
-       if(stagger_grid) call MPI_WAITALL(isend,sendrequest_stg,sendstatus_stg,&
+       if (isend>0) call MPI_WAITALL(isend,sendrequest_stg,sendstatus_stg,&
             ierrmpi)
+       deallocate(recvstatus_stg,recvrequest_stg,sendstatus_stg,&
+            sendrequest_stg)
     end if
-
-    ! unpack the receive buffers on GPU
-#ifdef NOGPUDIRECT
-    !$acc update device(rcv_buff_cf(:,:,:,:,1:irecv))
-#endif
-    !$acc update device(rcv_info_cf(:,1:irecv))
-
-    !$acc parallel loop gang
-    do ibuff = 1, irecv
-       igrid = rcv_info_cf(1,ibuff)
-       ic1   = rcv_info_cf(2,ibuff)
-       ic2   = rcv_info_cf(3,ibuff)
-       ic3   = rcv_info_cf(4,ibuff)
-       !$acc loop collapse(4) vector
-       do iw = 1, nw
-          do ix3 = 1, block_nx3/2
-             do ix2 = 1, block_nx2/2
-                do ix1 = 1, block_nx1/2
-                   ps(igrid)%w( &
-                        ixMlo1-1+(ic1-1)*block_nx1/2 + ix1, &
-                        ixMlo2-1+(ic2-1)*block_nx2/2 + ix2, &
-                        ixMlo3-1+(ic3-1)*block_nx3/2 + ix3, &
-                        iw) &
-                        = rcv_buff_cf(ix1, ix2, ix3, iw, ibuff)
-                end do
-             end do
-          end do
-       end do
-    end do
-
-    deallocate(recvstatus,recvrequest,sendstatus,sendrequest)
-    if(stagger_grid) deallocate(recvstatus_stg,recvrequest_stg,sendstatus_stg,&
-         sendrequest_stg)
 
     ! non-local coarsening done
     do ipe=0,npe-1
@@ -442,6 +473,7 @@ contains
     ! New passive cell, coarsen from initial condition:
     if (.not. active) then
        if (ipe == mype) then
+          ! initial_condition fetches this block's positions back itself
           call initial_condition(igrid)
           do ic3=1,2
              do ic2=1,2
@@ -479,7 +511,7 @@ contains
                    call coarsen_grid(ps(igridFi),ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,&
                         ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid),&
                         ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixComin1,ixComin2,&
-                        ixComin3,ixComax1,ixComax2,ixComax3)
+                        ixComin3,ixComax1,ixComax2,ixComax3,bgeo,igridFi,bgeo,igrid)
                    ! remove solution space of child
                    !call dealloc_node(igridFi)
                 else
@@ -492,39 +524,31 @@ contains
                    call coarsen_grid(ps(igridFi),ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,&
                         ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,psc(igridFi),&
                         ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3,&
-                        ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3)
+                        ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3,&
+                        bgeo,igridFi,bgeoc,igridFi)
 
-                   !itag=ipeFi*max_blocks+igridFi
-                   itag=ipeFi+igridFi
+                   ! Record the chunk; exchange_coarsened_blocks packs and
+                   ! posts them all once the walk is over, one message per
+                   ! peer.  The key is built from the receiving parent's block
+                   ! index, igrid, which the receiver derives from its own.
                    isend=isend+1
-                   ! fill send buffer on GPU
-                   if (isend > max_buff) then
+                   n_cf_snd=n_cf_snd+1
+                   if (n_cf_snd > max_buff) then
                       call mpistop('coarsen_grid_siblings: max_buff too small in send')
                    end if
-                   !$acc parallel loop gang
-                   do iw = 1, nw
-                      !$acc loop collapse(3) vector
-                      do ix3 = 1, block_nx3/2
-                         do ix2 = 1, block_nx2/2
-                            do ix1 = 1, block_nx1/2
-                               snd_buff_cf(ix1, ix2, ix3, iw, isend) = &
-                                    psc(igridFi)%w(ixCoMmin1-1+ix1, ixCoMmin2-1+ix2, ixCoMmin3-1+ix3, iw)
-                            end do
-                         end do
-                      end do
-                   end do
+                   cf_snd_igrid(n_cf_snd) = igridFi
+                   cf_snd_dest(n_cf_snd)  = ipe
+                   cf_snd_key(n_cf_snd)   = 8*(igrid-1) + (ic1-1) + 2*(ic2-1)&
+                       + 4*(ic3-1)
 
-#ifndef NOGPUDIRECT
-                   !$acc host_data use_device(snd_buff_cf)
-#else
-                   !$acc update host(snd_buff_cf(:,:,:,:,isend))
-#endif
-                   call mpi_isend_wrapper(snd_buff_cf(:,:,:,:,isend), &
-                        block_nx1*block_nx2*block_nx3/8*nw,MPI_DOUBLE_PRECISION,ipe,itag, icomm,&
-                        sendrequest(isend),ierrmpi)
-#ifndef NOGPUDIRECT
-                   !$acc end host_data
-#endif
+                   ! The staggered branch below is NOT aggregated, and carries
+                   ! two defects that are recorded rather than repaired because
+                   ! nothing reaches it (stagger_grid is false throughout this
+                   ! fork and fix_edges has no caller): the do idir loop stores
+                   ! every request into the single slot sendrequest_stg(isend),
+                   ! leaking ndim-1 handles that are never waited on; and
+                   ! itag_stg multiplies igridFi by 3, 4 or 5 for ndir=3, so
+                   ! (igridFi=4,idir=1) collides with (igridFi=3,idir=2).
                    if(stagger_grid) then
                       do idir=1,ndim
                          itag_stg=(npe+ipeFi+1)+igridFi*(ndir-1+idir)
@@ -536,21 +560,20 @@ contains
                 end if
              else
                 if (ipe==mype) then
-                   itag=ipeFi+igridFi
                    irecv=irecv+1
-                   if (irecv > max_buff) then
+                   n_cf_rcv=n_cf_rcv+1
+                   if (n_cf_rcv > max_buff) then
                       call mpistop('coarsen_grid_siblings: max_buff too small in receive')
                    end if
-#ifndef NOGPUDIRECT
-                   !$acc host_data use_device(rcv_buff_cf)
-#endif
-                   call mpi_irecv_wrapper(rcv_buff_cf(:,:,:,:,irecv), &
-                        block_nx1*block_nx2*block_nx3/8*nw,MPI_DOUBLE_PRECISION,ipeFi, &
-                        itag, icomm,recvrequest(irecv),ierrmpi)
-#ifndef NOGPUDIRECT
-                   !$acc end host_data
-#endif
-                   rcv_info_cf(:,irecv) = [igrid, ic1, ic2, ic3]
+                   cf_rcv_igrid(n_cf_rcv) = igrid
+                   cf_rcv_src(n_cf_rcv)   = ipeFi
+                   cf_rcv_ic(1,n_cf_rcv)  = ic1
+                   cf_rcv_ic(2,n_cf_rcv)  = ic2
+                   cf_rcv_ic(3,n_cf_rcv)  = ic3
+                   ! the sender builds this same key from the block index it
+                   ! was handed for this parent
+                   cf_rcv_key(n_cf_rcv)   = 8*(igrid-1) + (ic1-1) + 2*(ic2-1)&
+                       + 4*(ic3-1)
                    if(stagger_grid) then
                       do idir=1,ndim
                          itag_stg=(npe+ipeFi+1)+igridFi*(ndir-1+idir)
@@ -565,5 +588,158 @@ contains
     end do
 
   end subroutine coarsen_grid_siblings
+
+  !> Exchange and apply the non-local half of a coarsening step, one message
+  !> per neighbouring rank.
+  !>
+  !> coarsen_grid_siblings has already written each off-rank child into its own
+  !> coarse representative psc(igridFi) - which is bgc(1)%w(...,igridFi), so it
+  !> is on the device - and recorded a descriptor for it.  Here those
+  !> descriptors are laid out as one contiguous run per peer, ordered by the
+  !> shared key, packed by a single kernel and sent as a single message each.
+  subroutine exchange_coarsened_blocks
+    use mod_global_parameters
+    use mod_msg_layout, only: layout_runs
+    use mod_comm_lib, only: mpistop
+
+    integer :: k, nxCo1, nxCo2, nxCo3, nchunk, nbuf
+    integer :: ixCoMmin1, ixCoMmin2, ixCoMmin3
+    integer :: igrid, ibuf, ic1, ic2, ic3, iw, ix1, ix2, ix3
+    integer, allocatable :: chunksize(:)
+
+    nxCo1 = block_nx1/2; nxCo2 = block_nx2/2; nxCo3 = block_nx3/2
+    ! only 1:nwgc is coarsened and only 1:nwgc is applied - the analytic extras
+    ! past it are re-derived by alloc_node - so nwgc, not nw, is what travels
+    nchunk = nxCo1*nxCo2*nxCo3*nwgc
+    ! psc is indexed from 1 in every direction, like bgc(1)%w
+    ixCoMmin1 = 1+nghostcells
+    ixCoMmin2 = 1+nghostcells
+    ixCoMmin3 = 1+nghostcells
+
+    ! Every chunk is one coarsened child, so they are all the same size.
+    allocate(chunksize(max(n_cf_snd,n_cf_rcv,1)))
+    chunksize = nchunk
+    call layout_runs(n_cf_snd, cf_snd_dest, cf_snd_key, chunksize, cf_snd_ibuf,&
+       n_cf_send_pe, cf_send_pe, cf_send_pe_off, cf_send_pe_len)
+    call layout_runs(n_cf_rcv, cf_rcv_src, cf_rcv_key, chunksize, cf_rcv_ibuf,&
+       n_cf_recv_pe, cf_recv_pe, cf_recv_pe_off, cf_recv_pe_len)
+    deallocate(chunksize)
+
+    if (n_cf_snd > 0) then
+      !$acc update device(cf_snd_igrid(1:n_cf_snd), cf_snd_ibuf(1:n_cf_snd))
+    end if
+    if (n_cf_rcv > 0) then
+      !$acc update device(cf_rcv_igrid(1:n_cf_rcv), cf_rcv_ibuf(1:n_cf_rcv),&
+      !$acc&              cf_rcv_ic(:,1:n_cf_rcv))
+    end if
+
+    ! One Irecv per peer, straight into that peer's run.  A peer sends exactly
+    ! one message, so (communicator, source) already disambiguates and the tag
+    ! carries nothing.
+    itag = 0
+    if (n_cf_recv_pe > 0) then
+#ifndef NOGPUDIRECT
+      !$acc host_data use_device(rcv_buff_cf)
+#endif
+      do k = 1, n_cf_recv_pe
+        call mpi_irecv_wrapper(rcv_buff_cf(cf_recv_pe_off(k)),&
+           cf_recv_pe_len(k),MPI_DOUBLE_PRECISION,cf_recv_pe(k),itag,icomm,&
+           recvrequest(k),ierrmpi)
+      end do
+#ifndef NOGPUDIRECT
+      !$acc end host_data
+#endif
+    end if
+
+    ! Pack every outgoing chunk in one kernel.  bgc(1)%w carries the grid index
+    ! last, so the block can be selected by a device-side index.
+    if (n_cf_snd > 0) then
+      !$acc parallel loop gang default(present) private(igrid,ibuf)
+      do k = 1, n_cf_snd
+         igrid = cf_snd_igrid(k)
+         ibuf  = cf_snd_ibuf(k)
+         !$acc loop collapse(4) vector
+         do iw = 1, nwgc
+            do ix3 = 1, nxCo3
+               do ix2 = 1, nxCo2
+                  do ix1 = 1, nxCo1
+                     snd_buff_cf(ibuf + (ix1-1) + nxCo1*(ix2-1) &
+                          + nxCo1*nxCo2*(ix3-1) &
+                          + nxCo1*nxCo2*nxCo3*(iw-1)) = &
+                          bgc(1)%w(ixCoMmin1-1+ix1, ixCoMmin2-1+ix2,&
+                                   ixCoMmin3-1+ix3, iw, igrid)
+                  end do
+               end do
+            end do
+         end do
+      end do
+    end if
+
+    if (n_cf_send_pe > 0) then
+#ifdef NOGPUDIRECT
+      !$acc update host(snd_buff_cf(1:n_cf_snd*nchunk))
+#else
+      !$acc host_data use_device(snd_buff_cf)
+#endif
+      do k = 1, n_cf_send_pe
+        call mpi_isend_wrapper(snd_buff_cf(cf_send_pe_off(k)),&
+           cf_send_pe_len(k),MPI_DOUBLE_PRECISION,cf_send_pe(k),itag,icomm,&
+           sendrequest(k),ierrmpi)
+      end do
+#ifndef NOGPUDIRECT
+      !$acc end host_data
+#endif
+    end if
+
+    if (n_cf_recv_pe > 0) then
+      call MPI_WAITALL(n_cf_recv_pe,recvrequest,recvstatus,ierrmpi)
+      ! With one aggregated message per peer a disagreement about which chunks
+      ! the run holds is no longer an MPI mismatch, so check the arrival
+      ! lengths.  A difference in order cannot arise: both ranks sort the same
+      ! run by the same key.
+      do k = 1, n_cf_recv_pe
+        call MPI_GET_COUNT(recvstatus(:,k),MPI_DOUBLE_PRECISION,nbuf,ierrmpi)
+        if (nbuf /= cf_recv_pe_len(k)) call mpistop( &
+           "exchange_coarsened_blocks: message length disagrees with the layout")
+      end do
+#ifdef NOGPUDIRECT
+      !$acc update device(rcv_buff_cf(1:n_cf_rcv*nchunk))
+#endif
+    end if
+
+    ! Apply every incoming chunk in one kernel.
+    if (n_cf_rcv > 0) then
+      !$acc parallel loop gang default(present) private(igrid,ibuf,ic1,ic2,ic3)
+      do k = 1, n_cf_rcv
+         igrid = cf_rcv_igrid(k)
+         ibuf  = cf_rcv_ibuf(k)
+         ic1   = cf_rcv_ic(1,k)
+         ic2   = cf_rcv_ic(2,k)
+         ic3   = cf_rcv_ic(3,k)
+         !$acc loop collapse(4) vector
+         do iw = 1, nwgc  ! analytic extras past nwgc are set in alloc_node
+            do ix3 = 1, nxCo3
+               do ix2 = 1, nxCo2
+                  do ix1 = 1, nxCo1
+                     bg(1)%w( &
+                          ixMlo1-1+(ic1-1)*nxCo1 + ix1, &
+                          ixMlo2-1+(ic2-1)*nxCo2 + ix2, &
+                          ixMlo3-1+(ic3-1)*nxCo3 + ix3, &
+                          iw, igrid) &
+                          = rcv_buff_cf(ibuf + (ix1-1) + nxCo1*(ix2-1) &
+                            + nxCo1*nxCo2*(ix3-1) &
+                            + nxCo1*nxCo2*nxCo3*(iw-1))
+                  end do
+               end do
+            end do
+         end do
+      end do
+    end if
+
+    if (n_cf_send_pe > 0) then
+      call MPI_WAITALL(n_cf_send_pe,sendrequest,sendstatus,ierrmpi)
+    end if
+
+  end subroutine exchange_coarsened_blocks
 
 end module mod_coarsen_refine
