@@ -144,6 +144,8 @@
     gamma_to_gamma_1=srhd_gamma/gamma_1
     !$acc update device(gamma_1,inv_gamma_1,gamma_to_gamma_1)
 
+    phys_write_info => srhd_write_info
+
     phys_internal_e=.false.
     phys_partial_ionization=.false.
     need_global_cmax=.false.
@@ -461,5 +463,25 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
 end subroutine estimate_speeds_minmax
 #:enddef
 
+#:def write_info()
+  !> Write this module's parameters to a snapshot
+  subroutine srhd_write_info(fh)
+    use mod_global_parameters
+    integer, intent(in)                 :: fh
+
+    integer                             :: er
+    integer, parameter                  :: n_par = 1
+    double precision                    :: values(n_par)
+    integer, dimension(MPI_STATUS_SIZE) :: st
+    character(len=name_len)             :: names(n_par)
+
+    call MPI_FILE_WRITE(fh, n_par, 1, MPI_INTEGER, st, er)
+
+    names(1) = "gamma"
+    values(1) = srhd_gamma
+    call MPI_FILE_WRITE(fh, values, n_par, MPI_DOUBLE_PRECISION, st, er)
+    call MPI_FILE_WRITE(fh, names, n_par * name_len, MPI_CHARACTER, st, er)
+  end subroutine srhd_write_info
+#:enddef
 
 #:endif

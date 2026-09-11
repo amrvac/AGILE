@@ -132,6 +132,7 @@ contains
   @:to_primitive()
   @:to_conservative()
   @:phys_activate()
+  @:write_info()
 
   
   subroutine phys_check()
