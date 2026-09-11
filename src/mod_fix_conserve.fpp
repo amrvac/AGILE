@@ -18,6 +18,11 @@ module mod_fix_conserve
   type(fluxalloc), dimension(:,:), allocatable, public :: pflux
 
   integer, save                        :: nrecv, nsend
+  !> Extent of recvbuffer / sendbuffer actually used by the current exchange.
+  !> The buffers are grown and never shrunk, so size() can exceed this, and the
+  !> host/device transfers have to be sliced by it rather than moving the whole
+  !> array.
+  integer, save                        :: fc_recvsize, fc_sendsize
   double precision, allocatable, save  :: recvbuffer(:), sendbuffer(:)
   integer, dimension(:), allocatable   :: fc_recvreq, fc_sendreq
   integer, dimension(:,:), allocatable :: fc_recvstat, fc_sendstat
@@ -215,16 +220,29 @@ module mod_fix_conserve
        end select
      end do
 
-     ! Reallocate buffers when size differs
+     fc_recvsize = recvsize
+     fc_sendsize = sendsize
+
+     ! Grow the buffers to fit, never shrink.  init_comm_fix_conserve runs
+     ! every timestep and the number of coarse-fine interfaces oscillates as
+     ! the mesh moves, so reallocating whenever the size merely *differs* meant
+     ! a device free and malloc on most steps: measured on four ranks in
+     ! tests/hd/spherical/blast_amr.par, 164 of 216 calls on the busiest rank.
+     ! Those are synchronising on CUDA.  Holding the high-water mark costs
+     ! almost nothing here - it was 4640 doubles, 37 kB, in that same run.
+     !
+     ! Everything downstream is sized by recvsize / sendsize rather than by
+     ! size(buffer), so a buffer larger than the exchange is harmless; the two
+     ! host/device transfers are sliced for exactly this reason.
      if (allocated(recvbuffer)) then
-       if (recvsize /= size(recvbuffer)) then
+       if (recvsize > size(recvbuffer)) then
          !$acc exit data delete(recvbuffer)
          deallocate(recvbuffer)
          allocate(recvbuffer(recvsize))
          !$acc enter data create(recvbuffer)
        end if
      else
-       allocate(recvbuffer(recvsize))
+       allocate(recvbuffer(max(recvsize,1)))
        !$acc enter data create(recvbuffer)
      end if
 
@@ -237,21 +255,24 @@ module mod_fix_conserve
      end if
 
      if (allocated(sendbuffer)) then
-       if (sendsize /= size(sendbuffer)) then
+       if (sendsize > size(sendbuffer)) then
          !$acc exit data delete(sendbuffer)
          deallocate(sendbuffer)
          allocate(sendbuffer(sendsize))
          !$acc enter data create(sendbuffer)
        end if
      else
-       allocate(sendbuffer(sendsize))
+       allocate(sendbuffer(max(sendsize,1)))
        !$acc enter data create(sendbuffer)
      end if
 
-     ! Per-chunk working set, sized by nsend / nrecv, so each is reallocated
-     ! exactly when its buffer is. npe bounds the peer lists trivially.
+     ! Per-chunk working set, sized by nsend / nrecv, and grown on the same
+     ! never-shrink rule as the buffers above - it churned in lockstep with
+     ! them, and three of these carry a device copy. Only 1:nsend / 1:nrecv is
+     ! ever read, so a longer array is harmless. npe bounds the peer lists
+     ! trivially.
      if (allocated(snd_ibuf)) then
-       if (size(snd_ibuf) /= max(nsend,1)) then
+       if (max(nsend,1) > size(snd_ibuf)) then
          !$acc exit data delete(snd_igrid, snd_ibuf, snd_group)
          deallocate(snd_igrid, snd_ibuf, snd_key, snd_dest, snd_dims, snd_group)
        end if
@@ -264,7 +285,7 @@ module mod_fix_conserve
      end if
 
      if (allocated(rcv_key)) then
-       if (size(rcv_key) /= max(nrecv,1)) deallocate(rcv_key, rcv_src,&
+       if (max(nrecv,1) > size(rcv_key)) deallocate(rcv_key, rcv_src,&
           rcv_dims, rcv_off)
      end if
      if (.not.allocated(rcv_key)) then
@@ -277,22 +298,28 @@ module mod_fix_conserve
        allocate(recv_pe(npe), recv_pe_off(npe), recv_pe_len(npe))
      end if
 
+     ! Only 1:n_recv_pe / 1:n_send_pe of these is ever posted or waited on, and
+     ! that is bounded by the chunk count, so growing without shrinking is safe.
      if (allocated(fc_recvreq)) then
-       if (nrecv /= size(fc_recvreq)) then
+       if (nrecv > size(fc_recvreq)) then
          deallocate(fc_recvreq, fc_recvstat)
-         allocate(fc_recvstat(MPI_STATUS_SIZE,nrecv), fc_recvreq(nrecv))
+         allocate(fc_recvstat(MPI_STATUS_SIZE,max(nrecv,1)),&
+            fc_recvreq(max(nrecv,1)))
        end if
      else
-       allocate(fc_recvstat(MPI_STATUS_SIZE,nrecv), fc_recvreq(nrecv))
+       allocate(fc_recvstat(MPI_STATUS_SIZE,max(nrecv,1)),&
+          fc_recvreq(max(nrecv,1)))
      end if
 
      if (allocated(fc_sendreq)) then
-       if (nsend /= size(fc_sendreq)) then
+       if (nsend > size(fc_sendreq)) then
          deallocate(fc_sendreq, fc_sendstat)
-         allocate(fc_sendstat(MPI_STATUS_SIZE,nsend), fc_sendreq(nsend))
+         allocate(fc_sendstat(MPI_STATUS_SIZE,max(nsend,1)),&
+            fc_sendreq(max(nsend,1)))
        end if
      else
-       allocate(fc_sendstat(MPI_STATUS_SIZE,nsend), fc_sendreq(nsend))
+       allocate(fc_sendstat(MPI_STATUS_SIZE,max(nsend,1)),&
+          fc_sendreq(max(nsend,1)))
      end if
 
      if(stagger_grid) then
@@ -638,7 +665,9 @@ module mod_fix_conserve
      ! single message carries all of them and the tag carries no block index.
 #ifdef NOGPUDIRECT
      if (n_send_pe > 0) then
-       !$acc update host(sendbuffer)
+       ! sliced, not whole-array: the buffer is grown and not shrunk, so
+       ! size(sendbuffer) can exceed what this exchange actually uses
+       !$acc update host(sendbuffer(1:fc_sendsize))
      end if
 #else
      !$acc host_data use_device(sendbuffer)
@@ -963,8 +992,9 @@ module mod_fix_conserve
        end do
 #ifdef NOGPUDIRECT
        ! Without GPU-direct the IRECVs landed in host memory; the unpack below
-       ! runs on the device, so push the payload across.
-       !$acc update device(recvbuffer)
+       ! runs on the device, so push the payload across.  Sliced, not
+       ! whole-array: the buffer is grown and not shrunk.
+       !$acc update device(recvbuffer(1:fc_recvsize))
 #endif
      end if
 
