@@ -71,12 +71,6 @@
   logical, public                         :: srhd_source_usr = .false.
   !$acc declare copyin(srhd_source_usr)
 
-  !> floors for variables
-  double precision, public                :: srhd_p_floor   = 0.0d0  !< Pressure floor
-  double precision, public                :: srhd_rho_floor = 0.0d0  !< Density floor
-  double precision, public                :: srhd_t_floor   = 0.0d0  !< Temperature (p/rho) floor
-  !$acc declare copyin(srhd_p_floor, srhd_rho_floor, srhd_t_floor)
-  
 #:enddef
 
 #:def read_params()
@@ -87,7 +81,7 @@
     integer                      :: n
 
     namelist /srhd_list/ srhd_eos,srhd_gamma,srhd_n_tracer, &
-      He_abundance, srhd_source_usr, srhd_p_floor, srhd_rho_floor, srhd_t_floor
+      He_abundance, srhd_source_usr
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -98,8 +92,7 @@
 #ifdef _OPENACC
     !$acc update device(srhd_eos, &
     !$acc&     srhd_gamma, srhd_n_tracer, &
-    !$acc&     He_abundance, srhd_source_usr, &
-    !$acc&     srhd_p_floor, srhd_rho_floor, srhd_t_floor)
+    !$acc&     He_abundance, srhd_source_usr)
 #endif
 
   end subroutine read_params
@@ -394,21 +387,6 @@ end subroutine addsource_geometry
     endif 
     !! end: call srhd_get_pressure_eos(rho,rhoh,pth,E)
 
-    !! floors are now applied if requested in par file
-    !! keeps xi unmodified
-    if (srhd_rho_floor > 0.0_dp) then
-       rho = max(rho, srhd_rho_floor)
-    end if
-
-    if (srhd_p_floor > 0.0_dp) then
-       pth = max(pth, srhd_p_floor)
-    end if
-
-    if (srhd_t_floor > 0.0_dp) then
-       pth = max(pth/rho, srhd_t_floor)
-    end if
-
-    
     u(iw_rho)=rho
     u(iw_mom(1))=u(lfac_)*u(iw_mom(1))/u(xi_)
     u(iw_mom(2))=u(lfac_)*u(iw_mom(2))/u(xi_)
