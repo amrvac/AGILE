@@ -85,4 +85,6 @@
     pb=7.64d-6
     zetap=1.0d0
     lfacjet=20.0d0
+    floor_rho=1.0d-7
+    floor_p=1.0d-9
 /
