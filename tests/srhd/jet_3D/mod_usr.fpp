@@ -9,16 +9,8 @@ module mod_usr
   double precision :: rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet
   double precision :: Qjet, Mdotjet, p0val, t0val, tcross, vhead
 
-  !> Floors for density and pressure, applied every timestep on the device by
-  !> apply_floor (hooked in via usr_process_adv_global). <=0 disables the
-  !> respective floor. Kept local to this case rather than as a general
-  !> srhd_list option, so a case that does not ask for it pays nothing and
-  !> risks nothing.
-  double precision :: floor_rho = 0.0d0, floor_p = 0.0d0
-
 !$acc declare create(rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet)
 !$acc declare create(Qjet,Mdotjet,p0val,t0val,tcross,vhead)
-!$acc declare create(floor_rho,floor_p)
 
 contains
 
@@ -47,8 +39,7 @@ contains
     character(len=*), intent(in) :: files(:)
     integer                      :: n
 
-    namelist /usr_list/  rjet, zjet, rhob, etarho, pb, zetap, lfacjet, &
-         floor_rho, floor_p
+    namelist /usr_list/  rjet, zjet, rhob, etarho, pb, zetap, lfacjet
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -57,7 +48,6 @@ contains
     end do
 
 !$acc update device(rjet,zjet,rhob,etarho,pb,zetap,lfacjet)
-!$acc update device(floor_rho,floor_p)
 
     rhojet=etarho*rhob
     pjet=zetap*pb
@@ -392,13 +382,18 @@ contains
 
   !> Density and pressure floor, called every timestep via
   !> usr_process_adv_global, straight on the device: no host/device traffic,
-  !> and (unlike the reverted general srhd floor) rho and p are floored
-  !> through a full to_primitive/to_conservative round trip - reusing
-  !> mod_physics's own copies (public via the plain `use mod_physics` above,
-  !> since mod_physics instantiates the srhd macros itself) rather than
-  !> duplicating or re-instantiating them here - so xi_ and lfac_ stay
-  !> consistent with the floored state rather than silently disagreeing with
-  !> it. A no-op unless floor_rho or floor_p is set positive in &usr_list.
+  !> and rho and p are floored through a full to_primitive/to_conservative
+  !> round trip - reusing mod_physics's own copies (public via the plain
+  !> `use mod_physics` above, since mod_physics instantiates the srhd macros
+  !> itself) rather than duplicating or re-instantiating them here - so xi_
+  !> and lfac_ stay consistent with the floored state rather than silently
+  !> disagreeing with it.
+  !>
+  !> The thresholds are srhd's own srhd_small_density and srhd_small_pressure
+  !> from &srhd_list, not case-local parameters, so that this hook, the
+  !> pressure bracket in con2prim and the floor fix_prim_state applies to
+  !> reconstructed face states all agree on what "too small" means. A no-op
+  !> unless at least one of them is set positive.
   !>
   !> Covers the whole block (ixG), ghost cells included, rather than just
   !> the mesh. getbc only refreshes a *destination* state at the end of each
@@ -420,7 +415,7 @@ contains
     integer :: iigrid, igrid, ix1, ix2, ix3
     double precision :: u(1:nw_phys)
 
-    if (floor_rho <= 0.0d0 .and. floor_p <= 0.0d0) return
+    if (srhd_small_density <= 0.0d0 .and. srhd_small_pressure <= 0.0d0) return
 
     !$acc parallel loop private(igrid) gang
     do iigrid = 1, igridstail_active
@@ -434,8 +429,8 @@ contains
                 u = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
                 call to_primitive(u)
 
-                if (floor_rho > 0.0d0) u(iw_rho) = max(u(iw_rho), floor_rho)
-                if (floor_p   > 0.0d0) u(iw_e)   = max(u(iw_e),   floor_p)
+                u(iw_rho) = max(u(iw_rho), srhd_small_density)
+                u(iw_e)   = max(u(iw_e),   srhd_small_pressure)
 
                 call to_conservative(u)
                 bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid) = u

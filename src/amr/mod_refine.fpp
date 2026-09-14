@@ -118,7 +118,7 @@ contains
   subroutine prolong_2nd(sCo,ixComin1,ixComin2,ixComin3,ixComax1,ixComax2,&
      ixComax3,sFi,dxCo1,dxCo2,dxCo3,xComin1,xComin2,xComin3,dxFi1,dxFi2,dxFi3,&
      xFimin1,xFimin2,xFimin3,igridCo,igridFi)
-    use mod_physics, only: phys_to_conserved, phys_handle_small_values
+    use mod_physics, only: phys_to_conserved
     use mod_global_parameters
     use mod_geometry, only: sync_positions_host
     use mod_amr_fct, only: already_fine, prolong_2nd_stg
@@ -232,11 +232,8 @@ contains
             fine_max3)
     end if
 
-    ! these two read sFi%x on the host
-    if(fix_small_values .or. prolongprimitive) call sync_positions_host(igridFi)
-    if(fix_small_values) call phys_handle_small_values(prolongprimitive,sFi%w,&
-         sFi%x,ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,ixMlo2,ixMlo3,&
-         ixMhi1,ixMhi2,ixMhi3,'prolong_2nd')
+    ! this reads sFi%x on the host
+    if(prolongprimitive) call sync_positions_host(igridFi)
     if(prolongprimitive) call phys_to_conserved(ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
          ixGhi2,ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,sFi%w,sFi%x)
 

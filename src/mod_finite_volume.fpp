@@ -30,6 +30,7 @@ contains
 #:endif
 @:to_primitive()
 @:to_conservative()
+@:fix_prim_state()
 @:get_cmax()
 @:get_flux()
 @:estimate_speeds_minmax()
@@ -632,6 +633,15 @@ end subroutine finite_volume_local
     ! Face 2: between cells 3 and 4
     uL(:,2) = u(:,3) + 0.5_dp*sig(:,2)
     uR(:,2) = u(:,4) - 0.5_dp*sig(:,3)
+
+    ! The slopes above were limited slot by slot, so a state can come out
+    ! inadmissible or -- where the physics carries auxiliary variables --
+    ! internally inconsistent. Repair it here, once, rather than in each of the
+    ! three Riemann solvers: this is the single producer of face states.
+    call fix_prim_state(uL(:,1))
+    call fix_prim_state(uR(:,1))
+    call fix_prim_state(uL(:,2))
+    call fix_prim_state(uR(:,2))
   end subroutine muscl_reconstruct_prim
 
 

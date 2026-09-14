@@ -94,3 +94,15 @@ subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
 
 end subroutine addsource_geometry
 #:enddef
+
+#:def fix_prim_state()
+!> Make a reconstructed primitive face state admissible before it is handed to
+!> the Riemann solver. Genuinely empty by default: a physics module without
+!> auxiliary variables and without a floor of its own needs nothing here, and
+!> the call is inlined away.
+pure subroutine fix_prim_state(u)
+  !$acc routine seq
+  real(dp), intent(inout) :: u(nw_phys)
+
+end subroutine fix_prim_state
+#:enddef

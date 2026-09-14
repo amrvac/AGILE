@@ -63,6 +63,14 @@
   double precision, public  :: He_abundance=0.1d0
   !$acc declare copyin(He_abundance)
 
+  !> Smallest gas pressure allowed. Both the lower bracket of the pressure
+  !> root-find in con2prim and the floor fix_prim_state applies to a
+  !> reconstructed face state. Zero, the default, leaves both unfloored.
+  double precision, public                :: srhd_small_pressure = 0.0d0
+  !> Smallest rest-mass density allowed
+  double precision, public                :: srhd_small_density  = 0.0d0
+  !$acc declare copyin(srhd_small_pressure,srhd_small_density)
+
   !> Whether particles module is added
   logical, public                         :: srhd_particles = .false.
   !$acc declare copyin(srhd_particles)
@@ -81,7 +89,8 @@
     integer                      :: n
 
     namelist /srhd_list/ srhd_eos,srhd_gamma,srhd_n_tracer, &
-      He_abundance, srhd_source_usr
+      He_abundance, srhd_source_usr, &
+      srhd_small_pressure, srhd_small_density
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -89,10 +98,16 @@
 111    close(unitpar)
     end do
 
+    if (srhd_small_pressure < 0.0d0) call mpistop(&
+       "srhd_small_pressure should be positive.")
+    if (srhd_small_density < 0.0d0) call mpistop(&
+       "srhd_small_density should be positive.")
+
 #ifdef _OPENACC
     !$acc update device(srhd_eos, &
     !$acc&     srhd_gamma, srhd_n_tracer, &
     !$acc&     He_abundance, srhd_source_usr)
+    !$acc update device(srhd_small_pressure, srhd_small_density)
 #endif
 
   end subroutine read_params
@@ -433,6 +448,58 @@ end subroutine addsource_geometry
   end subroutine to_conservative
 #:enddef
 
+#:def fix_prim_state()
+  !> Make a reconstructed primitive face state admissible before it is handed
+  !> to the Riemann solver.
+  !>
+  !> Two things happen here, and only the second is optional. The MUSCL
+  !> reconstruction limits every slot of the state independently, including the
+  !> auxiliaries xi and lfac -- but those are not independent variables, they
+  !> are functions of (rho, u^i, p). A reconstructed face state therefore does
+  !> not in general satisfy lfac = sqrt(1+|u|^2) or xi = lfac^2*rho*h, while
+  !> get_flux, get_cmax and estimate_speeds_minmax all read them. Left alone,
+  !> v2 = 1-1/lfac^2 and v_n = u_n/lfac come from different sources, v_n can
+  !> exceed v (even exceed 1), the radicand of the relativistic characteristic
+  !> speeds goes negative and the HLL wave speeds collapse onto each other --
+  !> which removes the solver's dissipation exactly where it is needed. So the
+  !> auxiliaries are always recomputed from the reconstructed primitives, by
+  !> the same expressions to_conservative uses.
+  !>
+  !> The floors are the optional part. Both default to zero, in which case the
+  !> max() calls only clamp states that were already unphysical; set
+  !> srhd_small_pressure (and srhd_small_density) positive in &srhd_list to get
+  !> an actual floor, which is the useful configuration -- a state floored to
+  !> exactly zero still gives csound2 = gamma*p/(rho*h) a zero denominator.
+  pure subroutine fix_prim_state(u)
+    !$acc routine seq
+    real(dp), intent(inout) :: u(nw_phys)
+
+    real(dp) :: rho, pth, rhoh, E, E_th
+
+    rho = max(u(iw_rho), srhd_small_density)
+    pth = max(u(iw_e),   srhd_small_pressure)
+    u(iw_rho) = rho
+    u(iw_e)   = pth
+
+    u(lfac_) = dsqrt(1.0d0 + u(iw_mom(1))**2 + u(iw_mom(2))**2 &
+         + u(iw_mom(3))**2)
+
+    !! begin: call srhd_get_enthalpy_eos(rho,pth,rhoh)
+    if (srhd_eos) then
+       E_th = pth*inv_gamma_1
+       E    = E_th + dsqrt(E_th**2 + rho**2)
+       ! writing rho/E on purpose, for numerics
+       rhoh = 0.5_dp*((srhd_gamma + 1.0_dp)*E - gamma_1*rho*(rho/E))
+    else
+       rhoh = rho + gamma_to_gamma_1*pth
+    end if
+    !! end: call srhd_get_enthalpy_eos(rho,pth,rhoh)
+
+    u(xi_) = u(lfac_)**2 * rhoh
+
+  end subroutine fix_prim_state
+#:enddef
+
 #:def get_flux()
   subroutine get_flux(u, xC, flux_dim, flux)
     use mod_global_parameters, only:cmax_global
@@ -507,7 +574,11 @@ pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
     vidim = u(iw_mom(flux_dim))/u(lfac_)
     tmp2  = vidim**2
     tmp1  = 1.0d0-v2*csound2-tmp2*(1.0d0-csound2)
-    tmp2  = dsqrt(csound2*(1.0_dp-v2)*tmp1)
+    ! the radicand is positive analytically, as in estimate_speeds_minmax; clip
+    ! it so an inadmissible state (c_s^2 > 1 from a collapsed rhoh) yields a
+    ! degenerate speed rather than a NaN. get_cmax feeds setdt, where a single
+    ! NaN survives the global MPI_ALLREDUCE and takes dt down for every rank.
+    tmp2  = dsqrt(max(csound2*(1.0_dp-v2)*tmp1, 0.0_dp))
     tmp1  = vidim*(1.0_dp-csound2)
     cmax  = (tmp1+tmp2)/(1.0_dp-v2*csound2)
     cmin  = (tmp1-tmp2)/(1.0_dp-v2*csound2)

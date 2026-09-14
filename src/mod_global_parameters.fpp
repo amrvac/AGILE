@@ -423,21 +423,12 @@ module mod_global_parameters
   double precision :: unit_radflux=1.d0
   !$acc declare copyin(unit_radflux)
 
-  !> error handling
-  double precision :: small_temperature,small_pressure,small_density
-  !$acc declare create(small_temperature,small_pressure,small_density)
-
   !> amplitude of background dipolar, quadrupolar, octupolar, user's field
   double precision :: Bdip=0.d0
   double precision :: Bquad=0.d0
   double precision :: Boct=0.d0
   double precision :: Busr=0.d0
   !$acc declare copyin(Bdip, Bquad, Boct, Busr)
-
-  !> check and optionally fix unphysical small values (density, gas pressure)
-  logical :: check_small_values=.true.
-  logical :: fix_small_values=.false.
-  !$acc declare copyin(check_small_values, fix_small_values)
 
   !> split magnetic field as background B0 field
   ! TODO these should be moved in a different file  

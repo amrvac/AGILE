@@ -355,16 +355,6 @@ typesourcesplit= 'sfs' | 'sf' | 'ssfss' | 'ssf'
 dimsplit= F | T
 typedimsplit= 'default' | 'xyyx'| 'xy'
 
-small_density= DOUBLE
-small_pressure= DOUBLE
-small_temperature= DOUBLE
-small_values_method='error' | 'replace' | 'average'
-small_values_daverage=1
-check_small_values= F | T
-fix_small_values= F | T
-trace_small_values= F | T
-small_values_fix_iw= LOGICAL, LOGICAL, LOGICAL, ...
-
 typegrad = 'central' | 'limited'
 typediv = 'central' | 'limited'
 typecurl = 'central' | 'Gaussbased' | 'Stokesbased'
@@ -496,38 +486,25 @@ split strategy.
 
 ### Positivity fixes {: #par_positivityfix }
 Negative pressure or density caused by the numerical approximations can make the
-code crash. For HD and MHD modules this can be monitored
-or even cured by the handle_small_values subroutines in each substep of iteration. 
-The control parameters small_density, small_pressure, small_temperature play a role here:
-they can be set to small positive values but not negative values, while their default is 0. If 
-small_temperature is positive, small_pressure is overwritten by the product of 
-small_rho and small_temperature. If check_small_values is set to .true.,
-an additional check for small values will be triggered in phys_get_pthermal. NOTE: If 
-small values are detected then a crash will occur regardless
-of whether any other positivity fixes are enabled. If fix_small_values is set to .true., 
-small values are actually treated or fixed in subroutines such as phys_to_primitive, 
-phys_to_conserved and source terms like resistive terms in MHD. 
+code crash. Upstream MPI-AMRVAC monitors and cures this through a generic
+`handle_small_values` layer in `&methodlist`, controlled by `small_density`,
+`small_pressure`, `small_temperature`, `small_values_method`,
+`small_values_daverage`, `check_small_values`, `fix_small_values`,
+`trace_small_values` and `small_values_fix_iw`.
 
-The actual treatment is determined by the small_values_method parameter: Its default value
-'error' causes a full stop in the handle_small_values subroutine in the physics 
-modules. In this way, you can use it for debugging purposes, to spot from where the actual
-negative pressure and unphysical value gets introduced during which call. If the compilation
-is in debug mode and trace_small_value=T, then the error message shows the path of execution as
-number of lines of subroutines so that you know when the small values are encountered in the execution
-sqeuence. If it is somehow unavoidable in
-your simulations, then you may rerun with a recovery process turned on as
-follows.  When small_values_method='replace', the parameters small_pressure, small_density 
-are used to replace any unphysical value and set momentum to be 0, as encoded in 
-`mod_small_values.t`. When you select small_values_method='average', any unphysical value
-is replaced by averaging from a user-controlled environment about the faulty cells.
-The width of this environment in cells is set by the integer small_values_daverage.
-The parameter small_values_fix_iw is an array, containing a logical for each variable. It has a length nw. 
-It can be used to make sure that a certain variable is not adjusted by the small_values_method. 
-The default is true for all the variables. If the user sets it to false for a given variable, 
-that variable will not be adjusted by the small_values_method. The first elements are the logicals 
-for the conservative variables in their standard order. As an example: if the user would like to adjust 
-the pressure and density but not the momentum in a 2D MHD simulation, then small_values_fix_iw has to 
-be set to T, F, F, T, T, T. 
+**None of those keys exist in AGILE.** The generic layer was never wired up in
+this fork — no physics module ever assigned `phys_handle_small_values`, so the
+whole of `mod_small_values` and every one of the namelist keys above was inert,
+and they have been removed. A par file that still sets any of them will now
+fail to read, since a Fortran namelist read rejects an unrecognised key.
+
+A floor is a physics-specific treatment and lives with its physics module
+instead. At present only `srhd` has one: `srhd_small_pressure` and
+`srhd_small_density` in `&srhd_list` (declared with the other srhd module
+variables in `src/srhd/mod_srhd_templates.fpp`), both defaulting to zero. `srhd_small_pressure` is the lower bracket of the
+pressure root-find in `con2prim`. The other physics modules have no floor; when
+one of them needs it, the parameter belongs in that module's own namelist and
+templates, not in `&methodlist`. 
 
 ### Special process {: #par_process }
 User controlled special process can be added to 

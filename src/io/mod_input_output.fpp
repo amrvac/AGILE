@@ -191,7 +191,6 @@ contains
   subroutine read_par_files()
     use mod_global_parameters
     use mod_physics, only: phys_energy, physics_type, phys_wider_stencil
-    use mod_small_values
     use mod_limiter
     use mod_slice
     use mod_geometry
@@ -271,9 +270,7 @@ contains
        H_correction, typegrad,&
        typediv,typecurl,flatcd,flatsh,&
        rk2_alfa,imex222_lambda,ssprk_order,rk3_switch,imex_switch,&
-       small_temperature,small_pressure,small_density, small_values_method,&
-        small_values_daverage, fix_small_values, check_small_values,&
-        trace_small_values, small_values_fix_iw, schmid_rad1,schmid_rad2,&
+       schmid_rad1,schmid_rad2,&
        schmid_rad3, phys,&
        flux_adaptive_diffusion, flux_ad_min, flux_ad_scale
 
@@ -353,14 +350,6 @@ contains
     typegrad   = 'central'
     typediv    = 'central'
     typecurl   = 'central'
-
-    ! defaults for smallest physical values allowed
-    small_temperature = 0.d0
-    small_pressure    = 0.d0
-    small_density     = 0.d0
-
-    allocate(small_values_fix_iw(nw))
-    small_values_fix_iw(:) = .true.
 
     ! defaults for convert behavior
 
@@ -697,13 +686,6 @@ contains
          ("Please restart from a snapshot when firstprocess=T")
       if (convert) call mpistop('Change convert to .false. for a new run!')
     end if
-
-    if (small_pressure < 0.d0) call mpistop(&
-       "small_pressure should be positive.")
-    if (small_density < 0.d0) call mpistop(&
-       "small_density should be positive.")
-    ! Give priority to non-zero small temperature
-    if (small_temperature>0.d0) small_pressure=small_density*small_temperature
 
     if(convert) autoconvert=.false.
 
@@ -1781,7 +1763,7 @@ contains
     deallocate(flux_scheme)
 
     !$acc update device(ixGhi1,ixGhi2,ixGhi3,ixGshi1,ixGshi2,ixGshi3,schmid_rad1,schmid_rad2,schmid_rad3,cada3_radius)
-    !$acc update device(fix_small_values,H_correction,type_limiter, max_blocks)
+    !$acc update device(H_correction,type_limiter, max_blocks)
     !$acc update device(rk_beta11,rk_beta22,rk_beta33,rk_beta44,rk_c2,rk_c3,rk_c4)
     !$acc update device(rk_alfa21,rk_alfa22,rk_alfa31,rk_alfa33,rk_alfa41,rk_alfa44)
     !$acc update device(rk_beta54,rk_beta55,rk_alfa53,rk_alfa54,rk_alfa55,rk_c5)
