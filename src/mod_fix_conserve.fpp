@@ -1,4 +1,8 @@
 !> Module for flux conservation near refinement boundaries
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
+
 module mod_fix_conserve
 #ifdef USE_MPIWRAPPERS
   use mod_mpi_wrapper
@@ -946,8 +950,7 @@ module mod_fix_conserve
 
              ! remove coarse flux
              if (slab_uniform) then
-                !TODO do I need to add "private(ix2,ix3)"?
-                !$acc loop collapse(ndim-1) vector
+                ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                 do ix3=ixMlo3,ixMhi3
                   do ix2=ixMlo2,ixMhi2 
                     psb(igrid)%w(ix,ix2,ix3,nw0:nw1) = &
@@ -990,7 +993,7 @@ module mod_fix_conserve
                  iotherside=3-iside
                  if (slab_uniform) then
                      ! Direction 1, so loop runs over directions 2 and 3
-                     !$acc loop collapse(ndim-1) vector
+                     ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                      do ix3=1,nxCo3 
                         do ix2=1,nxCo2 
                            psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0:nw1) = &
@@ -1103,7 +1106,7 @@ module mod_fix_conserve
 
              ! remove coarse flux
              if (slab_uniform) then
-                !$acc loop collapse(ndim-1) vector
+                ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                 do ix3=ixMlo3,ixMhi3
                   do ix1=ixMlo1,ixMhi1 
                     psb(igrid)%w(ix1,ix,ix3,nw0:nw1) = &
@@ -1146,7 +1149,7 @@ module mod_fix_conserve
                  iotherside=3-iside
 
                  if (slab_uniform) then
-                   !$acc loop collapse(ndim-1) vector
+                   ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                    do ix3=1,nxCo3 
                      do ix1=1,nxCo1 
                        psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0:nw1) = &
@@ -1259,7 +1262,7 @@ module mod_fix_conserve
 
              ! remove coarse flux
              if (slab_uniform) then
-               !$acc loop collapse(ndim-1) vector
+               ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                do ix2=ixMlo2,ixMhi2
                  do ix1=ixMlo1,ixMhi1 
                    psb(igrid)%w(ix1,ix2,ix,nw0:nw1) = &
@@ -1300,7 +1303,7 @@ module mod_fix_conserve
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
                  if (slab_uniform) then
-                   !$acc loop collapse(ndim-1) vector
+                   ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                    do ix2=1,nxCo2 
                      do ix1=1,nxCo1 
                        psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0:nw1) = &
