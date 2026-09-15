@@ -289,11 +289,11 @@
   use mod_usr, only: gravity_field
 #:endif    
   ${GPU_ROUTINE_SEQ()}$
-  real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
-  real(dp), intent(out)  :: dtnew
-  ! .. local ..
-  integer                :: idim
-  real(dp)               :: field
+    real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
+    real(dp), intent(out)  :: dtnew
+    ! .. local ..
+    integer                :: idim
+    real(dp)               :: field
 
     dtnew = huge(1.0d0)
     
