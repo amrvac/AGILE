@@ -295,31 +295,31 @@ contains
 
  end subroutine alloc_node
   
-#! ---------------------------------------------------------------------------
-#! Per-cell geometry helpers, shared by the three kernels of
-#! fill_geometry_device below.  They are fypp macros rather than
-#! `!$acc routine seq` procedures deliberately: an inlined call inside those
-#! kernels is what nvfortran's -Minline previously mis-hoisted, giving every
-#! cell of a block the position of the first one.
-#! ---------------------------------------------------------------------------
-
-#! Radial faces, face midpoint, physical extent and volume barycentre of one
-#! cell, from its logical centre `s` and logical spacing `d`.  Writes the
-#! fixed local names fL, fR, rc, ds1 and rbar.
-#!
-#! Under LOG_RADIUS the logical radial coordinate held in rnode is
-#! xi = ln(1 + r/r0), so the faces are the map r_of_s of the logical faces and
-#! every area and volume below follows unchanged.  With the default r0 = 0 that
-#! map is just the exponential.  Keeping rc (the midpoint of the
-#! faces) and ds1 (their separation) makes those expressions algebraically
-#! *exact* for any face pair whatsoever:  rc*ds1 is precisely
-#! (rR**2 - rL**2)/2, and (rc**2 + ds1**2/12)*ds1 is precisely
-#! (rR**3 - rL**3)/3.
-#!
-#! rbar, the volume barycentre, is what goes into bgeo%x.  It is written with
-#! the common factor (rR - rL) cancelled analytically, so it loses no accuracy
-#! however small ds1/rc becomes - the naive quotient of quartic differences
-#! would cancel away most of the mantissa on a fine grid.
+! ---------------------------------------------------------------------------
+! Per-cell geometry helpers, shared by the three kernels of
+! fill_geometry_device below.  They are fypp macros rather than
+! `!$acc routine seq` procedures deliberately: an inlined call inside those
+! kernels is what nvfortran's -Minline previously mis-hoisted, giving every
+! cell of a block the position of the first one.
+! ---------------------------------------------------------------------------
+!
+! Radial faces, face midpoint, physical extent and volume barycentre of one
+! cell, from its logical centre `s` and logical spacing `d`.  Writes the
+! fixed local names fL, fR, rc, ds1 and rbar.
+!
+! Under LOG_RADIUS the logical radial coordinate held in rnode is
+! xi = ln(1 + r/r0), so the faces are the map r_of_s of the logical faces and
+! every area and volume below follows unchanged.  With the default r0 = 0 that
+! map is just the exponential.  Keeping rc (the midpoint of the
+! faces) and ds1 (their separation) makes those expressions algebraically
+! *exact* for any face pair whatsoever:  rc*ds1 is precisely
+! (rR**2 - rL**2)/2, and (rc**2 + ds1**2/12)*ds1 is precisely
+! (rR**3 - rL**3)/3.
+!
+! rbar, the volume barycentre, is what goes into bgeo%x.  It is written with
+! the common factor (rR - rL) cancelled analytically, so it loses no accuracy
+! however small ds1/rc becomes - the naive quotient of quartic differences
+! would cancel away most of the mantissa on a fine grid.
 #:def RADIAL_CELL(s, d)
              fL = ${s}$ - half*${d}$
              fR = ${s}$ + half*${d}$
