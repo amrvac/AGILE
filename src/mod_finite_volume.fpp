@@ -97,6 +97,8 @@ end subroutine finite_volume_local
     type(block_grid_t)                                    :: bgb
     ! .. local ..
     integer                :: n, iigrid, ix1,ix2,ix3
+    double precision       :: uprim(nw_phys, ixImin1:ixImax1,ixImin2:ixImax2,&
+       ixImin3:ixImax3)
     real(dp)               :: tmp(nw_phys,5)
     real(dp)               :: tmp1(nw_phys,3),tmp2(nw_phys,3),tmp3(nw_phys,3)
     real(dp)               :: f(nw_flux, 2)
@@ -108,11 +110,7 @@ end subroutine finite_volume_local
     real(dp)               :: wprim(nw_phys), wCT(nw_phys), wnew(nw_phys)
     integer, parameter     :: max_batch=4096
     integer                :: nbatches, ibatch, igrid_beg, igrid_end
-    double precision       :: uprim(nw_phys, ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3, max_batch)
     !-----------------------------------------------------------------------------
-
-    ${GPU_ENTER_DATA_CREATE("uprim")}$
 
     ! batch-launch the kernels (oom issue when many ~30000 blocks):
     nbatches = (igridstail_active + max_batch - 1) / max_batch ! ceiling division
@@ -121,7 +119,7 @@ end subroutine finite_volume_local
        igrid_beg = (ibatch-1) * max_batch + 1
        igrid_end = min(ibatch * max_batch, igridstail_active)
 
-       ${GPU_PARALLEL_LOOP_GANG("private(inv_dr, dr, n, typelim)")}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(uprim, inv_dr, dr, n, typelim)")}$ ${GPU_DEFAULT_PRESENT()}$
        do iigrid = igrid_beg, igrid_end
           n = igrids_active(iigrid)
 
@@ -134,8 +132,8 @@ end subroutine finite_volume_local
              do ix2=ixImin2,ixImax2 
                 do ix1=ixImin1,ixImax1 
                    ! Convert to primitive
-                   uprim(1:nw_phys, ix1,ix2,ix3, iigrid - igrid_beg + 1) = bga%w(ix1,ix2,ix3, 1:nw_phys, n)
-                   call to_primitive(uprim(1:nw_phys, ix1,ix2,ix3, iigrid - igrid_beg + 1))
+                   uprim(1:nw_phys, ix1,ix2,ix3) = bga%w(ix1,ix2,ix3, 1:nw_phys, n)
+                   call to_primitive(uprim(1:nw_phys, ix1,ix2,ix3))
                 end do
              end do
           end do
@@ -146,7 +144,7 @@ end subroutine finite_volume_local
              do ix1=ixOmin1,ixOmax1 
                 ! Compute fluxes in all dimensions
 
-                tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3, iigrid - igrid_beg + 1)
+                tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
                 xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                 xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                 xlocC(1,1) = xlocC(1,1)-0.5_dp*dr(1)
@@ -155,7 +153,7 @@ end subroutine finite_volume_local
                 bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
                      n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(1)
 
-                tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3, iigrid - igrid_beg + 1)
+                tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
                 xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                 xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                 xlocC(2,1) = xlocC(2,1)-0.5_dp*dr(2)
@@ -164,7 +162,7 @@ end subroutine finite_volume_local
                 bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
                      n) + qdt * (f(:, 1) - f(:, 2)) * inv_dr(2)
 
-                tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2, iigrid - igrid_beg + 1)
+                tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
                 xlocC(1:ndim,1) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                 xlocC(1:ndim,2) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                 xlocC(3,1) = xlocC(3,1)-0.5_dp*dr(3)
@@ -176,7 +174,7 @@ end subroutine finite_volume_local
 #:if defined('SOURCE_LOCAL')
                    ! Add local source terms:
                    xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
-                   wprim        = uprim(1:nw_phys, ix1, ix2, ix3, iigrid - igrid_beg + 1)
+                   wprim        = uprim(1:nw_phys, ix1, ix2, ix3)
                    wCT          = bga%w(ix1, ix2, ix3, 1:nw_phys, n)
                    wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
                    call addsource_local(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
@@ -190,17 +188,17 @@ end subroutine finite_volume_local
                    xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                    wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
 
-                   tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3, iigrid - igrid_beg + 1)
+                   tmp = uprim(1:nw_phys, ix1-2:ix1+2, ix2, ix3)
                    call addsource_nonlocal(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp,&
                         qt, wnew, xloc, dr, 1, .false. )
 
-                   tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3, iigrid - igrid_beg + 1)
+                   tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
                    call addsource_nonlocal(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp,&
                         qt, wnew, xloc, dr, 2, .false. )
 
-                   tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2, iigrid - igrid_beg + 1)
+                   tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
                    call addsource_nonlocal(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp,&
                         qt, wnew, xloc, dr, 3, .false. )
@@ -212,9 +210,9 @@ end subroutine finite_volume_local
                    ! Add non-local compact source terms:
                    xloc(1:ndim) = ps(n)%x(ix1, ix2, ix3, 1:ndim)
                    wnew         = bgb%w(ix1, ix2, ix3, 1:nw_phys, n)
-                   tmp1 = uprim(1:nw_phys, ix1-1:ix1+1, ix2, ix3, iigrid - igrid_beg + 1)
-                   tmp2 = uprim(1:nw_phys, ix1, ix2-1:ix2+1, ix3, iigrid - igrid_beg + 1)
-                   tmp3 = uprim(1:nw_phys, ix1, ix2, ix3-1:ix3+1, iigrid - igrid_beg + 1)
+                   tmp1 = uprim(1:nw_phys, ix1-1:ix1+1, ix2, ix3)
+                   tmp2 = uprim(1:nw_phys, ix1, ix2-1:ix2+1, ix3)
+                   tmp3 = uprim(1:nw_phys, ix1, ix2, ix3-1:ix3+1)
                    call addsource_compact(qdt*dble(idimsmax-idimsmin+1)/dble(ndim),&
                         dtfactor*dble(idimsmax-idimsmin+1)/dble(ndim), qtC, tmp1,tmp2,tmp3, &
                         qt, wnew, xloc, dr, .false. )
@@ -226,7 +224,6 @@ end subroutine finite_volume_local
           end do
        end do
     end do
-    ${GPU_EXIT_DATA_DELETE("uprim")}$
 
   end subroutine finite_volume_local_${scheme_tag}$
   #:enddef

@@ -117,7 +117,7 @@ contains
   subroutine prolong_2nd(sCo,ixComin1,ixComin2,ixComin3,ixComax1,ixComax2,&
      ixComax3,sFi,dxCo1,dxCo2,dxCo3,xComin1,xComin2,xComin3,dxFi1,dxFi2,dxFi3,&
      xFimin1,xFimin2,xFimin3,igridCo,igridFi)
-    use mod_physics, only: phys_to_conserved, phys_handle_small_values, nw_phys
+    use mod_physics, only: phys_to_conserved, phys_handle_small_values
     use mod_global_parameters
     use mod_amr_fct, only: already_fine, prolong_2nd_stg
 
@@ -132,7 +132,7 @@ contains
        ixFi2,ixFi3, ix1,ix2,ix3, idim, iw, ixCgmin1,ixCgmin2,ixCgmin3,ixCgmax1,&
        ixCgmax2,ixCgmax3, el
     double precision :: slopeL, slopeR, slopeC, signC, signR
-    double precision :: slope(nw_phys,ndim)
+    double precision :: slope(nw,ndim)
     double precision :: eta1,eta2,eta3
     logical :: fine_min1,fine_min2,fine_min3,fine_max1,fine_max2,fine_max3
 
