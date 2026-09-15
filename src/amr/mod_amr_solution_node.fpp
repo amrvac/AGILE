@@ -361,16 +361,16 @@ contains
 #:endif
 #:enddef
 
-#! Polar volume barycentre of one cell, from its centre `s` and spacing `d`.
-#! Writes the fixed local names uu and tbar.
-#!
-#!   theta_bar = theta_c + cot(theta_c) * (sin(u) - u*cos(u))/sin(u),  u = d/2
-#!
-#! which is the sin(theta)-weighted centroid with the common factor sin(u)
-#! already cancelled - again so that the O(d**2) offset is not computed as the
-#! difference of two O(1) quantities.  The expression is correctly
-#! antisymmetric about theta = 0, which is what the mirrored ghost cells
-#! beyond the polar axis rely on.
+! Polar volume barycentre of one cell, from its centre `s` and spacing `d`.
+! Writes the fixed local names uu and tbar.
+!
+!   theta_bar = theta_c + cot(theta_c) * (sin(u) - u*cos(u))/sin(u),  u = d/2
+!
+! which is the sin(theta)-weighted centroid with the common factor sin(u)
+! already cancelled - again so that the O(d**2) offset is not computed as the
+! difference of two O(1) quantities.  The expression is correctly
+! antisymmetric about theta = 0, which is what the mirrored ghost cells
+! beyond the polar axis rely on.
 #:def POLAR_BARYCENTRE(s, d)
              uu = half*${d}$
              if (dabs(dsin(${s}$)) < smalldouble) then
