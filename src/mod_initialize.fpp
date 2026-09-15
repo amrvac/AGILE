@@ -58,6 +58,7 @@ contains
     use mod_geometry
 
     integer :: igrid, level, ipe, ig1,ig2,ig3
+    integer :: nx1, nx2, nx3, iside 
     logical :: ok
 
     allocate(ps(max_blocks))
@@ -80,7 +81,6 @@ contains
     allocate(rnode(rnodehi,max_blocks),rnode_sub(rnodehi,max_blocks))
     allocate(node(nodehi,max_blocks),node_sub(nodehi,max_blocks),&
        phyboundblock(max_blocks))
-    allocate(pflux(2,3,max_blocks))
 
     allocate( bg(1:nstep) )
     ${GPU_ENTER_DATA_COPYIN('bg')}$
@@ -134,6 +134,29 @@ contains
     ixMlo3=ixGlo3+nghostcells;ixMhi1=ixGhi1-nghostcells
     ixMhi2=ixGhi2-nghostcells;ixMhi3=ixGhi3-nghostcells;
     ${GPU_UPDATE_DEVICE('ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3')}$
+
+    nx1 = ixMhi1-ixMlo1+1
+    nx2 = ixMhi2-ixMlo2+1
+    nx3 = ixMhi3-ixMlo3+1
+
+    allocate(pflux(2,3))
+    ${GPU_ENTER_DATA_COPYIN('pflux')}$
+    
+    do iside = 1, 2
+       
+      allocate(pflux(iside,1)%flux(1,1:nx2,1:nx3,1:nwflux,1:max_blocks))
+      pflux(iside,1)%flux = 0.0d0
+      ${GPU_ENTER_DATA_COPYIN('pflux(iside,1)%flux')}$
+         
+      allocate(pflux(iside,2)%flux(1:nx1,1,1:nx3,1:nwflux,1:max_blocks))
+      pflux(iside,2)%flux = 0.0d0
+      ${GPU_ENTER_DATA_COPYIN('pflux(iside,2)%flux')}$
+         
+      allocate(pflux(iside,3)%flux(1:nx1,1:nx2,1,1:nwflux,1:max_blocks))
+      pflux(iside,3)%flux = 0.0d0
+      ${GPU_ENTER_DATA_COPYIN('pflux(iside,3)%flux')}$
+
+    end do
 
     if (nbufferx1>(ixMhi1-ixMlo1+1).or.nbufferx2>(ixMhi2-ixMlo2+&
        1).or.nbufferx3>(ixMhi3-ixMlo3+1)) then
