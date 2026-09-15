@@ -41,13 +41,19 @@ contains
 
           dxinv(1)=one/dx1;dxinv(2)=one/dx2;dxinv(3)=one/dx3;
 
-          !$acc loop vector collapse(ndim) REDUCTION(min:dtmin_mype) private(u, xloc)
+          !$acc loop vector collapse(ndim) REDUCTION(min:dtmin_mype) private(u, xloc#{if GEOM != 'Cartesian'}#, dxinv#{endif}#)
           do ix3=ixMlo3,ixMhi3 
              do ix2=ixMlo2,ixMhi2 
                 do ix1=ixMlo1,ixMhi1 
                    u = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
                    call to_primitive(u)
-                   xloc(1:ndim) = ps(igrid)%x(ix1, ix2, ix3, 1:ndim)
+                   xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, igrid)
+
+#:if GEOM != 'Cartesian'
+                   ! In a curvilinear system the coordinate spacing is not a
+                   ! length: use the physical cell sizes set by fillgeo.
+                   dxinv(1:ndim) = one / bgeo%ds(ix1, ix2, ix3, 1:ndim, igrid)
+#:endif
 
                    cmaxtot = 0.0d0
                    !$acc loop seq
@@ -59,8 +65,8 @@ contains
 
 #:if defined('SOURCE_DT')
                    u = bg(1)%w(ix1,ix2,ix3,1:nw_phys,igrid)
-                   xloc(1:ndim) = ps(igrid)%x(ix1, ix2, ix3, 1:ndim)
-                   call phys_get_dt(u, xloc, [dx1, dx2, dx3], qdtnew)
+                   xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, igrid)
+                   call phys_get_dt(u, xloc, one/dxinv(1:ndim), qdtnew)
                    dtmin_mype = min( dtmin_mype, qdtnew )
 #:endif
 
@@ -89,7 +95,7 @@ contains
 
                    u(1:nw_phys) = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
                    call to_primitive(u)
-                   xloc(1:ndim) = ps(igrid)%x(ix1, ix2, ix3, 1:ndim)
+                   xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, igrid)
                    !$acc loop seq
                    do idims = 1, ndim
                       cmax = get_cmax(u, xloc, idims)

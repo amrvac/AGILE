@@ -11,6 +11,9 @@ financial support.
 
 # General {: #general }
 * [Equations](equations.html) The equations and parameters in physics modules.
+* [Coordinate systems](coordinate_systems.html) Cartesian, spherical,
+  cylindrical and logarithmic-radius geometries, the geometric source terms
+  each one adds, and the polar axis.
 * [Parameters](par.html) Description of all parameters in "amrvac.par" parameter file.
 * [Auxiliary variables](mpiamrvac_nw.html) Description of the intended use
   for _nw, nwflux, nwaux, nwextra, nwauxio_ parameters.
@@ -36,4 +39,3 @@ visualization.
 visualisation and analysis (e.g. column densities).
 * [Analysis routine](analysis.html) Using the run-time analysis routine.
 * [3D Printing](print3D.html) A note on how to generate 3D printed results.
-* [Yt visualization](yt_usage.html) The recommended yt usage for visualization.

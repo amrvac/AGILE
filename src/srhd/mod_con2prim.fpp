@@ -4,14 +4,14 @@ use mod_global_parameters
 use mod_physics_vars
 implicit none
 
-! Note : we need phys_gamma and use small_pressure
+! Note : we need phys_gamma and srhd_small_pressure, both from mod_physics_vars
 
   !> parameters for NR in con2prim
   integer, public                  :: maxitnr   = 100
   double precision, public         :: absaccnr  = 1.0d-8
   double precision, public         :: tolernr   = 1.0d-9
   double precision, public         :: dmaxvel   = 1.0d-7
-  
+
   !$acc declare copyin(maxitnr,absaccnr,tolernr,dmaxvel)
 
 
@@ -67,7 +67,7 @@ contains
 
     ! left and right brackets for p-range
     pmin=dsqrt(sqrs)/(one-dmaxvel)-tau-d
-    pLabs=max(small_pressure,pmin)
+    pLabs=max(srhd_small_pressure,pmin)
     pRabs=1.0d99
     ! start value from input
     pcurrent=pLabs
@@ -314,7 +314,7 @@ contains
 
     ! left and right brackets for p-range
     pmin=dsqrt(sqrs)/(one-dmaxvel)-tau-d
-    pLabs=max(small_pressure,pmin)
+    pLabs=max(srhd_small_pressure,pmin)
     pRabs=1.0d99
     ! start value from input
     pcurrent=pLabs

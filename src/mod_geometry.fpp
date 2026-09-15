@@ -20,6 +20,37 @@ module mod_geometry
 
 contains
 
+  !> Set the coordinate system from the GEOM compile-time define.
+  !>
+  !> Called once before usr_init, so a case does not have to call
+  !> set_coordinate_system itself. Cases that do are still fine: the call is
+  !> idempotent, and the consistency check in set_coordinate_system catches a
+  !> name that disagrees with what the code was built for.
+  !>
+  !> Doing this centrally matters because set_coordinate_system is the only
+  !> writer of coordinate, ndir, r_, phi_ and z_. Leaving coordinate at its
+  !> -1 default is silently catastrophic rather than loud: read_par_files
+  !> skips the conversion of angular domain bounds, and the select case in
+  !> get_surface_area and in the cell-volume fill match nothing, so surfaceC
+  !> and dvolume are simply never written.
+  subroutine set_coordinate_system_from_config()
+#:if GEOM == 'spherical'
+  #:if defined('LOG_RADIUS')
+    call set_coordinate_system("logSpherical_3D")
+  #:else
+    call set_coordinate_system("spherical_3D")
+  #:endif
+#:elif GEOM == 'cylindrical'
+  #:if defined('LOG_RADIUS')
+    call set_coordinate_system("logCylindrical_3D")
+  #:else
+    call set_coordinate_system("cylindrical_3D")
+  #:endif
+#:else
+    call set_coordinate_system("Cartesian_3D")
+#:endif
+  end subroutine set_coordinate_system_from_config
+
   !> Set the coordinate system to be used
   subroutine set_coordinate_system(geom)
     use mod_global_parameters
@@ -95,10 +126,119 @@ contains
       phi_ = 3
       z_   = -1
       coordinate=spherical
+    ! The two logarithmically stretched systems are the same coordinate
+    ! systems - identical ndir, r_, phi_, z_ and the same `coordinate` value,
+    ! so every select case (coordinate) in the code keeps matching. What
+    ! differs is only that the mesh is uniform in ln(r) rather than in r, which
+    ! the LOG_RADIUS define carries. The names are kept distinct here because
+    ! geometry_name goes into the snapshot header, and a log snapshot must not
+    ! restart into a uniformly spaced build.
+    case ("logSpherical","logSpherical_3D")
+      ndir = ndim
+      r_   = 1
+      if(ndir==3) phi_ = 3
+      z_   = -1
+      coordinate=spherical
+    case ("logCylindrical","logCylindrical_3D")
+      ndir = ndim
+      r_   = 1
+      z_   = 2
+      if(ndir==3) phi_ = 3
+      coordinate=cylindrical
     case default
       call mpistop("Unknown geometry specified")
     end select
+
+    ! The coordinate system is a compile-time choice in AGILE: the GEOM define
+    ! (set from `geometry` in &meshlist) specializes the finite-volume kernels.
+    ! Guard against a mod_usr that disagrees with what the code was built for.
+#:if GEOM == 'spherical'
+    if (coordinate /= spherical) call mpistop("meshlist geometry is spherical, &
+       &but mod_usr set a non-spherical coordinate system")
+  #:if PHYS != 'hd' and PHYS != 'mhd' and PHYS != 'srhd' and PHYS != 'ffhd'
+    ! Only physics modules that define the addsource_geometry macro can be run
+    ! curvilinear; without it the momentum equations would silently miss their
+    ! curvature terms.
+    call mpistop("geometry='spherical' is only implemented for phys='hd', phys='mhd', phys='srhd' and phys='ffhd'")
+  #:endif
+#:elif GEOM == 'cylindrical'
+    if (coordinate /= cylindrical) call mpistop("meshlist geometry is &
+       &cylindrical, but mod_usr set a non-cylindrical coordinate system")
+  #:if PHYS != 'hd' and PHYS != 'mhd' and PHYS != 'srhd' and PHYS != 'ffhd'
+    ! Only physics modules that define the addsource_geometry macro can be run
+    ! curvilinear; without it the momentum equations would silently miss their
+    ! curvature terms.
+    call mpistop("geometry='cylindrical' is only implemented for phys='hd', phys='mhd', phys='srhd' and phys='ffhd'")
+  #:endif
+#:else
+    if (coordinate /= Cartesian) call mpistop("meshlist geometry is Cartesian, &
+       &but mod_usr set a non-Cartesian coordinate system")
+#:endif
+
+    ! coordinate alone cannot tell a log-stretched system from a uniform one -
+    ! that is the point of the design - so the radial spacing is checked
+    ! separately, on the name.
+#:if defined('LOG_RADIUS')
+    if (geom(1:3) /= "log") call mpistop("meshlist geometry is logSpherical or &
+       &logCylindrical, but mod_usr set a uniformly spaced coordinate system")
+#:else
+    if (geom(1:3) == "log") call mpistop("mod_usr set a logarithmically &
+       &stretched coordinate system, but meshlist geometry is not &
+       &logSpherical or logCylindrical")
+#:endif
   end subroutine set_coordinate_system
+
+  !> The radial coordinate map, from the logical coordinate s to the physical
+  !> radius r, and its inverse.
+  !>
+  !> These are the host-side definition of the map a LOG_RADIUS build uses,
+  !> and the one place it is written down:
+  !>
+  !>    log_r0 == 0 :  r = exp(s)                        (s = ln(r))
+  !>    log_r0 >  0 :  r = sign(s)*r0*(exp(|s|) - 1)     (s = ln(1 + r/r0))
+  !>
+  !> The offset form is the one that reaches the axis. Its pivot is deliberate:
+  !> s = 0 corresponds to r = 0 exactly, so the map is *odd*, and the mesh in
+  !> the ghost layer beyond a cylindrical axis is the exact mirror of the mesh
+  !> inside it. That is what the pole copy in getbc assumes when it fills ghost
+  !> cell j from interior cell j of the block half a revolution away - the two
+  !> have to occupy mirrored volumes, or the copied cell average belongs to a
+  !> cell of a different size. The naive map r = exp(s) - r0 is *not* odd:
+  !> its ghost cells shrink outward while the cells they mirror grow, and the
+  !> first ghost cell is then misplaced by several percent of a cell width.
+  !>
+  !> The odd branch is only ever taken in that ghost layer; s >= 0 everywhere
+  !> in the physical domain of an offset build. Device code that only ever
+  !> sees the domain therefore uses the cheaper equivalent
+  !> r = log_ra*exp(s) + log_rb instead of calling these.
+  !>
+  !> A case's mod_usr should use these rather than writing exp/log by hand:
+  !> xprobmin1 and xprobmax1 hold the *logical* radial bounds in a LOG_RADIUS
+  !> build, so r_of_s is how a case recovers a physical radius from them.
+  pure elemental function r_of_s(s) result(r)
+    use mod_global_parameters
+    double precision, intent(in) :: s
+    double precision             :: r
+
+    if (log_r0 > zero) then
+      r = dsign(one,s)*log_r0*(dexp(dabs(s)) - one)
+    else
+      r = dexp(s)
+    end if
+  end function r_of_s
+
+  !> Inverse of r_of_s. See there.
+  pure elemental function s_of_r(r) result(s)
+    use mod_global_parameters
+    double precision, intent(in) :: r
+    double precision             :: s
+
+    if (log_r0 > zero) then
+      s = dsign(one,r)*dlog(one + dabs(r)/log_r0)
+    else
+      s = dlog(r)
+    end if
+  end function s_of_r
 
   subroutine set_pole
     use mod_global_parameters
@@ -126,6 +266,20 @@ contains
         end if
       end if
     case (cylindrical)
+#:if defined('LOG_RADIUS')
+      ! With log_r0 = 0 the radial mesh is uniform in ln(r) and can never
+      ! reach r = 0, so a logCylindrical domain has no axis. Running the tests
+      ! below would then be actively wrong rather than merely redundant:
+      ! xprobmin1 holds ln(r_min), which is exactly zero for the perfectly
+      ! ordinary domain r_min = 1, and an axis would be reported where there
+      ! is none. A user who asks for typeboundary_min1='pole' anyway is caught
+      ! by check_pole_setup, which sees poleB_requested without poleB.
+      !
+      ! With log_r0 > 0 the logical coordinate is ln(1 + r/r0), so xprobmin1
+      ! is zero if and only if r_min is - the tests below are then not merely
+      ! safe but exact, and are used unchanged.
+      if (log_r0 <= zero) return
+#:endif
       
       if (1 == phi_ .and. periodB(1)) then
         if(mod(ng1(1),2)/=0) then
@@ -181,245 +335,183 @@ contains
 
   end subroutine set_pole
 
-  !> Deallocate geometry-related variables
-  subroutine putgridgeo(igrid)
+  !> Validate a configured polar axis, once, on the host.
+  !>
+  !> Upstream MPI-AMRVAC defers most of this to the copy itself: pole_copy
+  !> calls mpistop("Pole boundary condition should be symm or asymm") when it
+  !> meets a typeboundary entry it cannot use.  Here the equivalent branches
+  !> live inside OpenACC kernels in getbc, where mpistop is unreachable and a
+  !> bad entry would simply be treated as symmetric.  So everything that could
+  !> go wrong is checked here, before any of it is relied on.
+  !>
+  !> The checks also cover a mismatch that upstream cannot detect at all: where
+  !> an axis is (poleB, derived from the domain bounds in set_pole) and where
+  !> the user said one is (poleB_requested, recorded when read_par_files
+  !> expanded typeboundary='pole') are decided independently, so a domain that
+  !> reaches theta=0 without a 'pole' face - or a 'pole' face on a domain that
+  !> does not reach the axis - is otherwise silently wrong.
+  subroutine check_pole_setup
     use mod_global_parameters
-    integer, intent(in) :: igrid
+    use mod_comm_lib, only: mpistop
 
-    deallocate(ps(igrid)%surfaceC,ps(igrid)%surface,ps(igrid)%dvolume,&
-       ps(igrid)%dx,psc(igrid)%dx,ps(igrid)%ds,psc(igrid)%dvolume)
+    integer          :: idim, iside, iB, iw
+    double precision :: phi_len
 
-  end subroutine putgridgeo
+    do idim=1,ndim
+      do iside=1,2
+        if (poleB(iside,idim) .and. .not.poleB_requested(iside,idim)) then
+          if (mype==0) write(unitterm,*) "dimension",idim," side",iside,&
+             " reaches the axis but was not given typeboundary='pole'"
+          call mpistop("a domain boundary lies on the axis but was not &
+             &declared 'pole'")
+        end if
+        if (poleB_requested(iside,idim) .and. .not.poleB(iside,idim)) then
+          if (mype==0) write(unitterm,*) "dimension",idim," side",iside,&
+             " was given typeboundary='pole' but set_pole found no axis there"
+          call mpistop("typeboundary='pole' on a face that is not on the &
+             &axis; the phi direction has to be periodic, the number of level-1&
+             & blocks across it even, and the face itself at theta=0, theta=pi &
+             &or r=0")
+        end if
+      end do
+    end do
 
-  !> calculate area of surfaces of cells
-  subroutine get_surface_area(s,ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&
-     ixGmax3)
-    use mod_global_parameters
-    use mod_usr_methods, only: usr_set_surface
+    if (.not.any(poleB)) return
 
-    type(state) :: s
-    integer, intent(in) :: ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3
+#:if PHYS != 'hd' and PHYS != 'mhd' and PHYS != 'srhd' and PHYS != 'ffhd'
+    ! The sign table the pole copy reads is built from iw_mom/iw_mag in
+    ! read_par_files, which describes hd, mhd and srhd (srhd's mom(:) is the
+    ! spatial four-velocity u^i=lfac*v^i, a genuine vector under the pole's
+    ! pi-rotation since lfac is rotation-invariant - see the case select in
+    ! read_par_files).  ffhd is covered too: its only conserved quantities are
+    ! scalars (rho, the field-aligned momentum m_par, the energy), all
+    ! symmetric across the axis, and its frozen field is not exchanged through
+    ! getbc at all - fill_nwextra_device re-derives it analytically in
+    ! every ghost cell - so it needs no entry in the sign table.
+    call mpistop("polar-axis treatment is only implemented for phys='hd', &
+       &phys='mhd', phys='srhd' and phys='ffhd'")
+#:endif
 
-    double precision :: x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-       ndim), xext(ixGmin1-1:ixGmax1,1), drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-       ixGmin3:ixGmax3), drs_ext(ixGmin1-1:ixGmax1), dx2(ixGmin1:ixGmax1,&
-       ixGmin2:ixGmax2,ixGmin3:ixGmax3), dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-       ixGmin3:ixGmax3)
-    double precision :: exp_factor_ext(ixGmin1-1:ixGmax1),&
-       del_exp_factor_ext(ixGmin1-1:ixGmax1),&
-       exp_factor_primitive_ext(ixGmin1-1:ixGmax1)
-    double precision :: exp_factor(ixGmin1:ixGmax1),&
-       del_exp_factor(ixGmin1:ixGmax1),exp_factor_primitive(ixGmin1:ixGmax1)
+    if (stagger_grid) call mpistop("polar-axis treatment does not support &
+       &stagger_grid")
 
-    select case (coordinate)
-
-    case (Cartesian_expansion)
-      drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)
-      x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=s%x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)
-      
-
-    case (Cartesian,Cartesian_stretched)
-      drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)
-      
-      dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)
-      
-      dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)
-
-      
-      
-      
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)= dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)= drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)= drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,2)
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,3)
-     
-      s%surfaceC(0,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=s%surfaceC(1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1);
-      s%surfaceC(ixGmin1:ixGmax1,0,ixGmin3:ixGmax3,&
-         2)=s%surfaceC(ixGmin1:ixGmax1,1,ixGmin3:ixGmax3,2);
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,0,&
-         3)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,1,3);
-    case (spherical)
-      x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=s%x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)
-      
-      x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,2)=s%x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,2)
-     
-      drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)
-      
-      dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)
-     
-      
-      dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)
-     
-
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)=(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)+half*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))**2  *two*dsin(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3,2))*dsin(half*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-
-      
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dsin(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3,2)+half*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-
-      
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-     
-
-      
-      
-      
-      s%surfaceC(0,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=(x(1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3,1)-half*drs(1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))**2*two*dsin(x(1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2))*dsin(half*dx2(1,ixGmin2:ixGmax2,ixGmin3:ixGmax3))*dx3(1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      s%surfaceC(ixGmin1:ixGmax1,0,ixGmin3:ixGmax3,2)=x(ixGmin1:ixGmax1,1,&
-         ixGmin3:ixGmax3,1)*drs(ixGmin1:ixGmax1,1,&
-         ixGmin3:ixGmax3)*dsin(x(ixGmin1:ixGmax1,1,ixGmin3:ixGmax3,&
-         2)-half*dx2(ixGmin1:ixGmax1,1,ixGmin3:ixGmax3))*dx3(ixGmin1:ixGmax1,1,&
-         ixGmin3:ixGmax3)
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,0,&
-         3)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,1,3)
-     
-
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)**2  *two*dsin(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2))*dsin(half*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-      
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dsin(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3,2))*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-
-      
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-
-    case (cylindrical)
-      x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=s%x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)
-      drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)
-      
-      dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)
-      
-      dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)=s%dx(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)
-
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)=dabs(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)+half*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3))*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3) *dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-      
-      if (z_==2) s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      if (phi_==2) s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-     
-      
-      if (z_==3) s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      if (phi_==3) s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-     
-      
-      
-      
-      s%surfaceC(0,ixGmin2:ixGmax2,ixGmin3:ixGmax3,1)=dabs(x(1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3,1)-half*drs(1,ixGmin2:ixGmax2,ixGmin3:ixGmax3))*dx2(1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3)*dx3(1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-     
-      s%surfaceC(ixGmin1:ixGmax1,0,ixGmin3:ixGmax3,&
-         2)=s%surfaceC(ixGmin1:ixGmax1,1,ixGmin3:ixGmax3,2);
-      s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,0,&
-         3)=s%surfaceC(ixGmin1:ixGmax1,ixGmin2:ixGmax2,1,3);
-
-      s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)=dabs(x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1))*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3) *dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)
-      
-      if (z_==2) s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      if (phi_==2) s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         2)=drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx3(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      
-      if (z_==3) s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         1)*drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-      if (phi_==3) s%surface(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,&
-         3)=drs(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-         ixGmin3:ixGmax3)*dx2(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3)
-
+    ! The pi-periodic neighbour is found by shifting the phi block index by
+    ! ng(1)/2, which is half a revolution only if phi spans a full one.  A
+    ! half-turn domain with periodic boundaries passes every check upstream
+    ! makes and then quietly shifts by the wrong angle.
+    select case (phi_)
+    case (1)
+      phi_len = xprobmax1 - xprobmin1
+    case (2)
+      phi_len = xprobmax2 - xprobmin2
+    case (3)
+      phi_len = xprobmax3 - xprobmin3
     case default
-      call mpistop("Sorry, coordinate unknown")
+      call mpistop("a pole needs a phi direction")
     end select
+    if (dabs(phi_len - two*dpi) > 1.0d-12*dpi) then
+      if (mype==0) write(unitterm,*) "phi spans",phi_len," rather than 2*pi"
+      call mpistop("a polar axis requires the phi direction to span a full &
+         &turn (xprobmax-xprobmin = 1 in the 2*pi units of &meshlist)")
+    end if
 
-  end subroutine get_surface_area
+    ! getbc turns the per-variable entry on a pole face into a plus or a minus
+    ! sign and has no third option, so anything else here would be read as
+    ! symmetric.  read_par_files writes only symm/asymm for a 'pole' face; this
+    ! guards against a later edit that widens it.
+    do idim=1,ndim
+      do iside=1,2
+        if (.not.poleB(iside,idim)) cycle
+        iB=2*idim-2+iside
+        do iw=1,nwflux+nwaux
+          if (typeboundary(iw,iB)/=bc_symm .and. typeboundary(iw,&
+             iB)/=bc_asymm) then
+            if (mype==0) write(unitterm,*) "variable",iw," on boundary",iB,&
+               " has boundary type",typeboundary(iw,iB)
+            call mpistop("every variable on a pole face must end up symm or &
+               &asymm")
+          end if
+        end do
+      end do
+    end do
+
+  end subroutine check_pole_setup
+
+  !> Return cell-centre positions from the device to the host.
+  !>
+  !> fill_geometry_device builds a block's geometry on the GPU and leaves it
+  !> there. Positions are the part host code asks for most often - the initial
+  !> condition, the user hooks and the output all read ps(igrid)%x - but it
+  !> asks rarely compared to how often blocks are (re)allocated, so the copy
+  !> back does not belong in alloc_node: with AMR that would pay for it on
+  !> every regrid, for blocks nothing on the host is going to look at.
+  !>
+  !> Call this instead immediately before host code that reads ps(igrid)%x,
+  !> passing igrid when it is about to read a single block. Every such site is
+  !> listed in CLAUDE.md; a missed one reads whatever the host copy held for
+  !> the block that previously occupied that slot.
+  subroutine sync_positions_host(igrid)
+    use mod_global_parameters
+
+    integer, intent(in), optional :: igrid
+
+    integer :: iigrid
+
+    if (present(igrid)) then
+       !$acc update self(bgeo%x(:,:,:,:,igrid), bgeoc%x(:,:,:,:,igrid))
+    else
+       do iigrid = 1, igridstail
+          !$acc update self(bgeo%x(:,:,:,:,igrids(iigrid)), &
+          !$acc             bgeoc%x(:,:,:,:,igrids(iigrid)))
+       end do
+    end if
+
+  end subroutine sync_positions_host
+
+  !> Return a block's whole geometry - positions and metrics alike - from the
+  !> device to the host, for every grid the host is about to read.
+  !>
+  !> This is the output-time counterpart of sync_positions_host: saveamrfile
+  !> calls it in the same place it pulls back bg%w, which covers the log, the
+  !> snapshot, the slices, the collapsed views and autoconvert, and the
+  !> standalone convert path does the same before generate_plotfile.
+  !>
+  !> The fetch is unconditional and covers the whole grid in one pass, on
+  !> purpose. Remembering "the host is already up to date" in a flag cannot be
+  !> made honest, because the geometry is per block: any such flag would have
+  !> to be cleared after refreshing whatever set of blocks happened to be
+  !> listed at the time, and the next regrid or selectgrids can put a block
+  !> that was not in that set straight back in front of host code. Doing every
+  !> grid at once also keeps this to a few update directives per block rather
+  !> than paying the per-call overhead once per reader.
+  subroutine sync_geometry_host()
+    use mod_global_parameters
+
+    integer :: iigrid
+
+    ! Index igrids(iigrid) directly rather than through a local igrid: a
+    ! variable whose only uses are inside !$acc directives looks dead to the
+    ! Fortran front end, the assignment to it is dropped, and the update then
+    ! silently targets the wrong block.  sync_positions_host below is written
+    ! the same way for the same reason.
+    do iigrid = 1, igridstail
+       !$acc update self(bgeo%x(:,:,:,:,igrids(iigrid)))
+       !$acc update self(bgeoc%x(:,:,:,:,igrids(iigrid)))
+#:if GEOM != 'Cartesian'
+       ! A Cartesian build has no metrics to fetch - they are not allocated -
+       ! so there this reduces to exactly sync_positions_host.
+       !$acc update self(bgeo%dvolume(:,:,:,igrids(iigrid)), &
+       !$acc             bgeo%surfaceC(:,:,:,:,igrids(iigrid)), &
+       !$acc             bgeo%ds(:,:,:,:,igrids(iigrid)), &
+       !$acc             bgeo%dx(:,:,:,:,igrids(iigrid)))
+       !$acc update self(bgeoc%dvolume(:,:,:,igrids(iigrid)), &
+       !$acc             bgeoc%surfaceC(:,:,:,:,igrids(iigrid)), &
+       !$acc             bgeoc%ds(:,:,:,:,igrids(iigrid)), &
+       !$acc             bgeoc%dx(:,:,:,:,igrids(iigrid)))
+#:endif
+    end do
+
+  end subroutine sync_geometry_host
 
   !> Calculate curl of a vector qvec within ixL
   !> Options to
@@ -457,6 +549,15 @@ contains
     ! Calculate curl within ixL: CurlV_i=eps_ijk*d_j V_k
     ! Curl can have components (idirmin:3)
     ! Determine exact value of idirmin while doing the loop.
+
+    ! The Stokesbased discretisation divides by block%surface, the cell-centre
+    ! face areas.  Those are no longer built: no other routine reads them, and
+    ! carrying a block-sized array per direction for 1:max_blocks purely for
+    ! this branch is not worth the memory.  Fail here rather than divide by an
+    ! unassociated pointer.
+    if (type_curl == Stokesbased) call mpistop(&
+       "curlvector: typecurl='Stokesbased' needs block%surface, which is no &
+       &longer built - see geo_t in mod_physicaldata")
 
     use_4th_order = .false.
     if (present(fourthorder)) use_4th_order = fourthorder

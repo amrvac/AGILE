@@ -3,26 +3,97 @@ module mod_selectgrids
   implicit none
   private
 
-  public :: selectgrids 
- 
+  !> Distance, in blocks, from the active zone, for every block of every rank.
+  !> The lookups at the bottom of this file index it by (igrid, ipe) straight
+  !> out of the neighbour tables, so it stays a full [max_blocks, 0:npe-1]
+  !> table.  Only the *exchange* is sized by the number of leaves; see
+  !> gather_isafety.  Kept between calls rather than allocated per regrid.
+  integer, allocatable :: isafety(:,:)
+
+  !> Exchange buffers for gather_isafety, one entry per leaf.
+  integer, allocatable :: sndsafety(:), rcvsafety(:)
+
+  public :: selectgrids
+
 contains
+
+  !> Make every rank's isafety flags known to every rank.
+  !>
+  !> The flags live in a [max_blocks, 0:npe-1] table, but only the leaves carry
+  !> a meaningful value and only the owner of a leaf writes one, so gathering
+  !> the whole table would move npe*max_blocks integers - sized by the
+  !> allocated bound rather than by the blocks that exist.  Instead each rank
+  !> contributes just its own leaves, in Morton order, and the gather moves
+  !> nleafs integers in total.
+  !>
+  !> sfc(1:2, Morton_no) is the globally replicated (igrid, ipe) of each leaf,
+  !> and Morton_start/Morton_stop cut it into the per-rank runs, so the counts
+  !> and displacements are known to everyone without a handshake and the
+  !> scatter back into (igrid, ipe) needs no inverse map.
+  subroutine gather_isafety
+    use mod_forest
+    use mod_global_parameters
+    use mod_comm_lib, only: mpistop
+
+    integer :: Morton_no, ipe, nown
+    integer :: cnt(0:npe-1), disp(0:npe-1)
+
+    do ipe = 0, npe-1
+      cnt(ipe)  = Morton_stop(ipe) - Morton_start(ipe) + 1
+      disp(ipe) = Morton_start(ipe) - 1
+    end do
+    nown = cnt(mype)
+
+    if (.not. allocated(sndsafety)) then
+      allocate(sndsafety(max(nleafs,1)), rcvsafety(max(nleafs,1)))
+    else if (size(rcvsafety) < nleafs) then
+      deallocate(sndsafety, rcvsafety)
+      allocate(sndsafety(max(nleafs,1)), rcvsafety(max(nleafs,1)))
+    end if
+
+    do Morton_no = Morton_start(mype), Morton_stop(mype)
+      ! the run this rank owns must be the run sfc says it owns, or the
+      ! displacements below would scatter another rank's flags
+      if (sfc(2,Morton_no) /= mype) call mpistop(&
+         "gather_isafety: Morton range disagrees with the space-filling curve")
+      sndsafety(Morton_no-Morton_start(mype)+1) = isafety(sfc(1,Morton_no),mype)
+    end do
+
+    call MPI_ALLGATHERV(sndsafety, nown, MPI_INTEGER, rcvsafety, cnt, disp,&
+       MPI_INTEGER, icomm, ierrmpi)
+
+    isafety = -1
+    do Morton_no = 1, nleafs
+      isafety(sfc(1,Morton_no),sfc(2,Morton_no)) = rcvsafety(Morton_no)
+    end do
+
+  end subroutine gather_isafety
 
   !=============================================================================
   subroutine selectgrids
   
   use mod_forest
   use mod_global_parameters
+  use mod_usr_methods, only: usr_flag_grid
   integer :: iigrid, igrid, jgrid, kgrid, isave, my_isafety
-  integer, allocatable,  dimension(:,:)  :: isafety
   
   ! Set the number of safety-blocks (additional blocks after 
   ! flag_grid_usr): 
   integer, parameter :: nsafety = 1
   integer             :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, ipe
+  integer             :: Morton_no
   type(tree_node_ptr) :: tree
   integer             :: userflag
+  logical             :: have_flag_hook
   !-----------------------------------------------------------------------------
   if (.not. allocated(isafety)) allocate(isafety(max_blocks,0:npe-1))
+
+  ! Whether the user asked for grids to be deactivated at all.  Tested up front
+  ! rather than by inspecting the last grid's flag below, because everything
+  ! past the early return is collective: a rank that owns no grids never enters
+  ! the loop, so the last-flag test made the return condition differ between
+  ! ranks and could leave the others inside MPI_ALLGATHERV.
+  have_flag_hook = associated(usr_flag_grid)
   
   ! reset all grids to active:
   neighbor_active = .true.
@@ -49,7 +120,7 @@ contains
         igridstail_passive = kgrid
   
   !     Check if user wants to deactivate grids at all and return if not:
-        if (userflag == -1) then
+        if (.not. have_flag_hook) then
  !$acc update device(igrids_active, igrids_passive, igridstail_active, igridstail_passive)
            return
         end if
@@ -58,8 +129,7 @@ contains
   !     Now, we re-activate a safety belt of radius nsafety blocks.
   
   !     First communicate the current isafety buffer:
-        call MPI_ALLGATHER(isafety(:,mype),max_blocks,MPI_INTEGER,isafety,&
-           max_blocks,MPI_INTEGER,icomm,ierrmpi)
+        call gather_isafety
   
   !     Now check the distance of neighbors to the active zone:
         do isave = 1, nsafety
@@ -73,8 +143,7 @@ contains
            end do
            
   !     Communicate the incremented buffers:
-           call MPI_ALLGATHER(isafety(:,mype),max_blocks,MPI_INTEGER,isafety,&
-              max_blocks,MPI_INTEGER,icomm,ierrmpi)
+           call gather_isafety
         end do
   
   !     Update the active and passive arrays:
@@ -95,19 +164,21 @@ contains
         igridstail_passive = kgrid
   
   !     Update the tree:
+  !     Walk the leaves through the space-filling curve rather than scanning
+  !     the whole [max_blocks, 0:npe-1] table: sfc lists exactly the blocks
+  !     that exist, so this is O(nleafs) and needs no associated() test.
         nleafs_active = 0
-        do ipe=0,npe-1
-           do igrid=1,max_blocks
-              if (isafety(igrid,ipe) == -1) cycle
-              if (.not.associated(igrid_to_node(igrid,ipe)%node)) cycle
-              tree%node => igrid_to_node(igrid,ipe)%node
-              if (isafety(igrid,ipe) > nsafety) then
-                 tree%node%active=.false.
-              else
-                 tree%node%active=.true.
-                nleafs_active = nleafs_active + 1
-              end if
-           end do
+        do Morton_no=1,nleafs
+           igrid = sfc(1,Morton_no)
+           ipe   = sfc(2,Morton_no)
+           if (isafety(igrid,ipe) == -1) cycle
+           tree%node => igrid_to_node(igrid,ipe)%node
+           if (isafety(igrid,ipe) > nsafety) then
+              tree%node%active=.false.
+           else
+              tree%node%active=.true.
+              nleafs_active = nleafs_active + 1
+           end if
         end do
 
  !$acc update device(igrids_active, igrids_passive, igridstail_active, igridstail_passive)

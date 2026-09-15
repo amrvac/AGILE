@@ -123,6 +123,7 @@ contains
       ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, ws, x, A)
     use mod_global_parameters
     use mod_usr_methods, only: usr_init_vector_potential
+    use mod_comm_lib, only: mpistop
 
     integer, intent(in)                :: ixIsmin1,ixIsmin2,ixIsmin3,ixIsmax1,&
        ixIsmax2,ixIsmax3, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
@@ -141,6 +142,13 @@ contains
        ixIsmin2:ixIsmax2,ixIsmin3:ixIsmax3,1:ndim)
     double precision                   :: circ(ixIsmin1:ixIsmax1,&
        ixIsmin2:ixIsmax2,ixIsmin3:ixIsmax3,1:ndim)
+
+    ! The edge integral below weights the vector potential by block%dsC, the
+    ! cell-face lengths.  Those are no longer built: this routine is the only
+    ! reader, it has no callers, and it needs stagger_grid, which this fork
+    ! does not support.  Fail here rather than touch an unassociated pointer.
+    call mpistop("b_from_vector_potentialA needs block%dsC, which is no &
+       &longer built - see geo_t in mod_physicaldata")
 
     A=zero
     ! extend one layer of cell center locations in xCC

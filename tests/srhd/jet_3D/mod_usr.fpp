@@ -29,6 +29,7 @@ contains
     usr_init_one_grid  => initonegrid_usr
     usr_aux_output     => specialvar_output
     usr_add_aux_names  => specialvarnames_output
+    usr_process_adv_global => apply_floor
 
     call phys_activate()
 
@@ -377,6 +378,69 @@ contains
     end associate
 
   end subroutine usr_refine_grid
+
+
+  !> Density and pressure floor, called every timestep via
+  !> usr_process_adv_global, straight on the device: no host/device traffic,
+  !> and rho and p are floored through a full to_primitive/to_conservative
+  !> round trip - reusing mod_physics's own copies (public via the plain
+  !> `use mod_physics` above, since mod_physics instantiates the srhd macros
+  !> itself) rather than duplicating or re-instantiating them here - so xi_
+  !> and lfac_ stay consistent with the floored state rather than silently
+  !> disagreeing with it.
+  !>
+  !> The thresholds are srhd's own srhd_small_density and srhd_small_pressure
+  !> from &srhd_list, not case-local parameters, so that this hook, the
+  !> pressure bracket in con2prim and the floor fix_prim_state applies to
+  !> reconstructed face states all agree on what "too small" means. A no-op
+  !> unless at least one of them is set positive.
+  !>
+  !> Covers the whole block (ixG), ghost cells included, rather than just
+  !> the mesh. getbc only refreshes a *destination* state at the end of each
+  !> RK substage, never the source state a substage starts from, and nothing
+  !> in the main loop calls getbc between this hook and the next timestep's
+  !> first substage - so a mesh-only floor would leave stale, unfloored
+  !> ghost values feeding straight into the next flux computation at every
+  !> block boundary, defeating the point of flooring. Since the floor is a
+  !> pointwise max(value, floor), flooring a block's own ghost cell and
+  !> flooring the neighbour's interior cell it mirrors give bit-identical
+  !> results, so covering ixG keeps every ghost consistent with its owning
+  !> interior without any ghost exchange at all.
+  subroutine apply_floor(iit, qt)
+    use mod_global_parameters
+    implicit none
+    integer, intent(in)          :: iit
+    double precision, intent(in) :: qt
+
+    integer :: iigrid, igrid, ix1, ix2, ix3
+    double precision :: u(1:nw_phys)
+
+    if (srhd_small_density <= 0.0d0 .and. srhd_small_pressure <= 0.0d0) return
+
+    !$acc parallel loop private(igrid) gang
+    do iigrid = 1, igridstail_active
+       igrid = igrids_active(iigrid)
+
+       !$acc loop vector collapse(3) private(u)
+       do ix3 = ixGlo3, ixGhi3
+          do ix2 = ixGlo2, ixGhi2
+             do ix1 = ixGlo1, ixGhi1
+
+                u = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
+                call to_primitive(u)
+
+                u(iw_rho) = max(u(iw_rho), srhd_small_density)
+                u(iw_e)   = max(u(iw_e),   srhd_small_pressure)
+
+                call to_conservative(u)
+                bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid) = u
+
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine apply_floor
 
 
 end module mod_usr

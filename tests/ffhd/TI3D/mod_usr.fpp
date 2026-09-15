@@ -87,9 +87,7 @@ contains
     w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3, q_) = zero
     #:endif
 
-    w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,iw_b1) = zero
-    w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,iw_b2) = zero
-    w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,iw_b3) = -1.0_dp
+    ! b1,b2,b3 are filled by fill_nwextra_device from usr_set_nwextra
 
     call phys_to_conserved(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
        ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,w,x)
@@ -100,6 +98,20 @@ contains
     endif
 
   end subroutine initonegrid_usr
+
+
+  !> Uniform vertical frozen field, b-hat = -z-hat everywhere (Cartesian).
+  !> Called by name from fill_nwextra_device; see mod_usr_methods.
+  pure subroutine usr_set_nwextra(x, bhat)
+    !$acc routine seq
+    double precision, intent(in)  :: x(1:ndim)
+    double precision, intent(out) :: bhat(1:3)
+
+    bhat(1) =  0.0_dp
+    bhat(2) =  0.0_dp
+    bhat(3) = -1.0_dp
+
+  end subroutine usr_set_nwextra
 
 
   pure real(dp) function gravity_field(wCT, x, idim) result(field)

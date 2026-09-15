@@ -1,9 +1,8 @@
-title: AGILE Documentation
+title: AGILE code
 copy_subdir: figmovdir
 
-# Introduction {: #introduction }
-This is the documentation for AGILE. The code is available on
-[Github](https://github.com/amrvac/AGILE). If you have questions or notice problems, please
+
+AGILE is available on [Github](https://github.com/amrvac/AGILE). If you have questions or notice problems, please
 raise an issue on <https://github.com/amrvac/AGILE/issues>.  
 Contributions via [pull requests](https://github.com/amrvac/AGILE/pulls) welcome!  
 
@@ -23,7 +22,10 @@ numerical schemes. The emphasis is on (near) conservation laws and on
 shock-dominated problems in particular. A number of *physics modules* are
 included; the hydrodynamics and the magnetohydrodynamics module are most
 frequently used. Users can add their own physics module or modify existing ones.
-At present, the framework supports only 3D simulations in Cartesian grid geometries.  
+At present, the framework supports only 3D simulations, in Cartesian,
+spherical, cylindrical, or logarithmic-radius spherical/cylindrical grid
+geometries (the curvilinear ones including the polar axis) -- see [Coordinate
+systems](coordinate_systems.html).  
 
 AGILE is written in Fortran 2003, uses OpenACC for GPU offloading and MPI for parallelization.
 

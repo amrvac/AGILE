@@ -48,9 +48,18 @@ module mod_variables
   integer            :: iwstart=1
   !$acc declare copyin(iwstart)
   
-  !> Maximum number of variables
-  integer, parameter :: max_nw = 50
+  !> Maximum number of variables. The largest build (cell-centred GLM-MHD with
+  !> anisotropic hyperbolic conduction and a few tracers) reaches ~15, so this
+  !> is comfortable headroom; mod_convert and var_set_extravar guard against
+  !> exceeding it.
+  integer, parameter :: max_nw = 20
   !$acc declare copyin(max_nw)
+
+  !> Indices in w of the extra variables, in registration order:
+  !> iw_extra(1:nwextra). Filled by var_set_extravar so that generic code can
+  !> address the extra variables without assuming where in w they sit.
+  integer :: iw_extra(max_nw) = -1
+  !$acc declare copyin(iw_extra)
 
   !> Primitive variable names
   character(len=name_len) :: prim_wnames(max_nw)
@@ -161,6 +170,12 @@ contains
     nwextra = nwextra + 1
     nw      = nw + 1
     iw      = nw
+    if (nwextra > max_nw) then
+      call errormsg("var_set_extravar: nwextra exceeds max_nw; raise max_nw &
+         &in mod_variables")
+    else
+      iw_extra(nwextra) = iw
+    end if
 
     if (.not. present(ix)) then
       prim_wnames(iw) = name_cons
@@ -169,7 +184,7 @@ contains
       write(cons_wnames(iw),"(A,I0)") name_cons, ix
       write(prim_wnames(iw),"(A,I0)") name_prim, ix
    end if
-   !$acc update device(nwextra,nw)
+   !$acc update device(nwextra,nw,iw_extra)
   end function var_set_extravar
 
   !> Set extra variable in wextra, which is not advected and has no boundary conditions and not output in dat.

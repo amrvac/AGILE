@@ -8,6 +8,7 @@ program compare_logs
   integer, parameter    :: dp = kind(0.0d0)
   real(dp), allocatable :: data1(:, :), data2(:, :)
   character(len=200)    :: arg_string
+  character(len=200)    :: fname1, fname2
   real(dp)              :: rtol ! Relative tolerance
   real(dp)              :: atol ! Absolute tolerance
 
@@ -36,11 +37,18 @@ program compare_logs
   read(arg_string, *) atol
 
   ! Load files
-  call get_command_argument(3, arg_string)
-  call read_log(trim(arg_string), data1)
+  call get_command_argument(3, fname1)
+  call read_log(trim(fname1), data1)
 
-  call get_command_argument(4, arg_string)
-  call read_log(trim(arg_string), data2)
+  call get_command_argument(4, fname2)
+  call read_log(trim(fname2), data2)
+
+  ! Reject non-finite values before comparing. Every comparison against a NaN
+  ! is false, so the tolerance test below would report a log full of NaN as a
+  ! pass - which is exactly how a run producing nothing but NaN once went
+  ! unnoticed across the whole test suite.
+  call check_finite(data1, trim(fname1))
+  call check_finite(data2, trim(fname2))
 
   if (any(shape(data1) /= shape(data2))) then
      error stop "Data has different shape"
@@ -51,6 +59,27 @@ program compare_logs
   end if
 
 contains
+
+  !> Abort if the table holds a NaN or an infinity, naming where it is.
+  subroutine check_finite(dd, fname)
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    real(dp), intent(in)         :: dd(:, :)
+    character(len=*), intent(in) :: fname
+    integer                      :: row, col
+
+    do row = 1, size(dd, 2)
+       do col = 1, size(dd, 1)
+          if (.not. ieee_is_finite(dd(col, row))) then
+             write(*, "(A)") "*** NON-FINITE VALUE in " // fname
+             write(*, "(A,I0,A,I0)") "***   at row ", row, ", column ", col
+             write(*, "(A)") "*** A NaN or Inf compares false against any tolerance,"
+             write(*, "(A)") "*** so this log would otherwise be reported as a pass."
+             call exit(1)
+          end if
+       end do
+    end do
+
+  end subroutine check_finite
 
   subroutine read_log(fname, dd)
     character(len=*), intent(in)         :: fname
@@ -89,6 +118,10 @@ contains
     error stop "Log file has too many rows"
 
 888 continue
+
+    ! Leaving the unit open leaves it positioned at EOF, which makes a second
+    ! read of the same file (comparing a log against itself) fail outright.
+    close(myunit)
 
     allocate(dd(n_cols, n))
     dd = dbuf(:, 1:n)
