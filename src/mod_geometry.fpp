@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 !> Module with geometry-related routines (e.g., divergence, curl)
 module mod_geometry
   use mod_comm_lib, only: mpistop
@@ -5,7 +8,7 @@ module mod_geometry
   public
 
   integer :: coordinate=-1
-  !$acc declare copyin(coordinate)
+  ${GPU_DECLARE_COPYIN('coordinate')}$
   integer, parameter :: Cartesian          = 0
   integer, parameter :: Cartesian_stretched= 1
   integer, parameter :: cylindrical        = 2
@@ -13,7 +16,7 @@ module mod_geometry
   integer, parameter :: Cartesian_expansion= 4
 
   integer :: type_curl=0
-  !$acc declare copyin(type_curl)
+  ${GPU_DECLARE_COPYIN('type_curl')}$
   integer, parameter :: central=1
   integer, parameter :: Gaussbased=2
   integer, parameter :: Stokesbased=3

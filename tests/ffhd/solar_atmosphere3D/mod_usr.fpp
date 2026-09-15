@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
     use mod_amrvac
     use mod_physics
@@ -5,15 +9,15 @@ module mod_usr
     implicit none
 
     double precision, allocatable :: pbc(:),rbc(:)
-    !$acc declare create(pbc,rbc)
+    ${GPU_DECLARE_CREATE('pbc,rbc')}$
     double precision :: usr_grav,trelax
     double precision :: heatunit,gzone,SRadius,dya
     double precision, allocatable :: pa(:),ra(:)
     integer, parameter :: jmax=5000
     double precision :: dh, Bh, dv, Bv, xv, dp1
     double precision :: ch, cv, dh1, dv1
-    !$acc declare create(dh,Bh,dv,Bv,xv,dp1,ch,cv,dh1,dv1)
-    !$acc declare create(usr_grav,SRadius,pbc,rbc)
+    ${GPU_DECLARE_CREATE('dh,Bh,dv,Bv,xv,dp1,ch,cv,dh1,dv1')}$
+    ${GPU_DECLARE_CREATE('usr_grav,SRadius,pbc,rbc')}$
   
   contains
 
@@ -36,7 +40,7 @@ module mod_usr
 
       call set_coordinate_system("Cartesian_3D")
       call usr_params_read(par_files)
-      !$acc update device(dh,Bh,dv,Bv,xv,dp1)
+      ${GPU_UPDATE_DEVICE('dh,Bh,dv,Bv,xv,dp1')}$
   
       unit_length        = 1.d9 !< cm
       unit_temperature   = 1.d6 !< K
@@ -56,16 +60,16 @@ module mod_usr
       dya=(2.d0*gzone+xprobmax3-xprobmin3)/dble(jmax) !< cells size of high-resolution 1D solar atmosphere
 
       usr_grav=-2.74d4*unit_length/unit_velocity**2 !< solar gravity
-      !$acc update device(usr_grav)
+      ${GPU_UPDATE_DEVICE('usr_grav')}$
 
       SRadius=69.61d0 !< Solar radius
-      !$acc update device(SRadius)
+      ${GPU_UPDATE_DEVICE('SRadius')}$
 
       ch = (Bh*dh**3.d0)*0.5d0
       cv = (Bv*dv**3.d0)*0.5d0
       dh1 = dh + dp1
       dv1 = dv + dp1
-      !$acc update device(ch,cv,dh1,dv1)
+      ${GPU_UPDATE_DEVICE('ch,cv,dh1,dv1')}$
 
       call inithdstatic
 
@@ -142,7 +146,7 @@ module mod_usr
         pbc(ibc)=pa(na)+(one-cos(dpi*res/dya))/two*(pa(na+1)-pa(na))
       end do
       deallocate(ya,gg,Ta)
-      !$acc update device(rbc,pbc)
+      ${GPU_UPDATE_DEVICE('rbc,pbc')}$
     end subroutine inithdstatic
 
     subroutine initonegrid_usr(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
@@ -216,7 +220,7 @@ module mod_usr
 
     subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-        !$acc routine vector
+        ${GPU_ROUTINE_VECTOR()}$
 
         integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB
@@ -234,7 +238,7 @@ module mod_usr
         select case(iB)
         case(5)
 
-        !$acc loop collapse(3) vector
+        ${GPU_LOOP_VECTOR("collapse(3)")}$
         do ix3=ixOmin3,ixOmax3
             do ix2=ixOmin2,ixOmax2
             do ix1=ixOmin1,ixOmax1
@@ -259,11 +263,11 @@ module mod_usr
         ! case(6)
 
         ! ! to include ix3 into loop, perhaps precompute?
-        ! !$acc loop collapse(2) vector
+        ! ${GPU_LOOP_VECTOR("collapse(2)")}$
         ! do ix2=ixOmin2,ixOmax2
         ! do ix1=ixOmin1,ixOmax1
 
-        !   !$acc routine seq
+        !   ${GPU_ROUTINE_SEQ()}$
         !   tmp = 0.d0
         !   do ix3=ixOmin3,ixOmax3
         !     gravity = 0.5d0*(gravity_field(w(ix1,ix2,ix3,:), x(ix1,ix2,ix3,:), 3) + &
@@ -274,7 +278,7 @@ module mod_usr
 
         ! end do 
         ! end do
-        ! !$acc loop collapse(2) vector
+        ! ${GPU_LOOP_VECTOR("collapse(2)")}$
         !   do ix2=ixOmin2,ixOmax2
         !     do ix1=ixOmin1,ixOmax1
 
@@ -309,7 +313,7 @@ module mod_usr
    end subroutine specialbound_usr
 
    pure real(dp) function gravity_field(wCT, x, idim) result(field)
-     !$acc routine seq
+     ${GPU_ROUTINE_SEQ()}$
      real(dp), intent(in)    :: wCT(nw_phys)
      real(dp), intent(in)    :: x(1:ndim)
      integer, value, intent(in)     :: idim

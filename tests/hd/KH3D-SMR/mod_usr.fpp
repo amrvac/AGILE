@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
   use mod_amrvac
   use mod_physics
@@ -107,16 +111,12 @@ contains
   subroutine usr_refine_grid(igrid,level,ixGmin1,ixGmin2,ixGmin3,&
     ixGmax1,ixGmax2,ixGmax3,ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,&
     qt,w,x,refine,coarsen)
-#ifdef _CRAYFTN
-#ifdef _OPENACC
-    ! The Cray compiler fails when trying to inline this routine, for now
+#if defined(_CRAYFTN) && (defined(_OPENACC) || defined(_OPENMP))
     ! disable inlining for Cray
     !dir$ inlinenever usr_refine_grid
 #endif
-#endif
-    !$acc routine vector
-
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
 
     ! Enforce additional refinement or coarsening
     ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.
@@ -146,7 +146,7 @@ contains
 
 
     has_interface = .false.
-    !$acc loop vector collapse(3) reduction(.or.:has_interface)
+    ${GPU_LOOP_VECTOR("collapse(3) reduction(.or.:has_interface)")}$
     do ix3 = ixmin3, ixmax3
        do ix2 = ixmin2, ixmax2
           do ix1 = ixmin1, ixmax1

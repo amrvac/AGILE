@@ -224,12 +224,10 @@ contains
     integer :: iigrid, igrid
 
     ! Just copy in nul state
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        psa(igrid)%w = 0.0d0*psa(igrid)%w
        if(stagger_grid) psa(igrid)%ws = 0.0d0*psa(igrid)%ws
     end do
-    !$OMP END PARALLEL DO
 
   end subroutine dummy_evaluate_implicit
 
@@ -243,12 +241,10 @@ contains
     integer :: iigrid, igrid
 
     ! Just copy in psb state when using the scheme without implicit part
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        psa(igrid)%w = psb(igrid)%w
        if(stagger_grid) psa(igrid)%ws = psb(igrid)%ws
     end do
-    !$OMP END PARALLEL DO
 
   end subroutine dummy_implicit_update
 

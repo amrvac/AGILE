@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
   use mod_amrvac
   use mod_physics
@@ -6,7 +10,7 @@ module mod_usr
 
   double precision :: rhodens  = 10.0d0
   double precision :: rholight = 1.0d0
-  !$acc declare copyin(rhodens, rholight)
+  ${GPU_DECLARE_COPYIN('rhodens, rholight')}$
   double precision :: p        = 10.0d0
   double precision :: rsphere  = 0.25d0
   double precision :: v1 = 1.0d0, v2 = 1.0d0, v3 = 1.0d0
@@ -69,7 +73,7 @@ contains
     qt,w,x,refine,coarsen)
 
     use mod_global_parameters
-    !$acc routine vector
+    ${GPU_ROUTINE_VECTOR()}$
     ! Enforce additional refinement or coarsening
     ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.
 
@@ -96,7 +100,7 @@ contains
     logical                         :: has_sphere
 
     has_sphere = .false.
-    !$acc loop collapse(3) reduction(.or.:has_sphere)
+    ${GPU_LOOP_VECTOR("collapse(3) reduction(.or.:has_sphere)")}$
     do ix3 = ixmin3, ixmax3
        do ix2 = ixmin2, ixmax2
           do ix1 = ixmin1, ixmax1

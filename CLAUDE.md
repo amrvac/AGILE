@@ -6,8 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AGILE is a GPU-enabled fork of MPI-AMRVAC, a Fortran finite-volume code for
 solving hyperbolic PDEs (HD, MHD, FFHD, SRHD) with adaptive mesh refinement.
-Master currently only supports 3D Cartesian grids. Domain decomposition and
-GPU offload use MPI + OpenACC (`!$acc` directives throughout the hot loops).
+Master currently only supports 3D Cartesian grids. Domain decomposition uses
+MPI; GPU offload supports two selectable backends, OpenACC and OpenMP target
+offload. Every offload site in the hot loops is written once as a call to a
+macro from `src/mod_gpu_directives.fpp` (e.g. `${GPU_PARALLEL_LOOP(...)}$`),
+which fypp expands to the matching `!$acc ...` or `!$omp target ...`
+directive depending on which backend is selected at build time (see
+`OPENACC=1`/`OPENMP=1` below) — don't write raw `!$acc`/`!$omp` directives
+directly in hot-loop code, add a macro call instead.
 
 Source is written as `.fpp` files (Fortran + `fypp` preprocessor directives,
 e.g. `#:if PHYS == 'hd'`) which get preprocessed into `.f90` before
@@ -38,7 +44,8 @@ parameter file. Build from inside such a directory:
 ```bash
 cd tests/hd/KH3D
 make arch=gnu              # compiles and links ./agile executable
-make arch=gnu OPENACC=1    # enable GPU/OpenACC build
+make arch=gnu OPENACC=1    # enable GPU build with the OpenACC backend
+make arch=gnu OPENMP=1     # enable GPU build with the OpenMP target-offload backend
 make arch=gnu DEBUG=1      # debug flags (-g -O0 -fcheck=all, etc.)
 make clean                 # remove this case's build products
 ```
@@ -46,6 +53,9 @@ make clean                 # remove this case's build products
 - `arch` selects a file from `arch/*.mk` (`gnu`, `ifx`, `nvidia`, `cray`,
   `llvm`) which sets the compiler/linker and flags. Default is `gnu`
   (`mpif90`/gfortran).
+- `OPENACC` and `OPENMP` are mutually exclusive GPU offload backend switches
+  (`make` errors out if both are given); neither flag gives a plain CPU
+  build, where every `GPU_*` directive macro expands to nothing.
 - Physics-relevant compile-time options (which physics module, tracers,
   gravity, cooling, thermal conduction, etc.) are declared in `agile.par` and
   turned into `config.mk`/fypp defines by `make/config_reader.py`, validated
@@ -110,16 +120,24 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
 
 ## Code architecture
 
-- `src/agile.fpp` — program entry point (`program agile`): MPI init, OpenACC
-  device selection, then `main()` which reads parameters, calls
+- `src/agile.fpp` — program entry point (`program agile`): MPI init, GPU
+  device selection (`set_openacc_device`/`set_openmp_device`, whichever
+  backend is active), then `main()` which reads parameters, calls
   `usr_init()`, initializes the AMR tree, and runs `timeintegration()` (the
   main time-stepping loop: `setdt` → optional user process hooks → I/O →
   `advance` → AMR regrid → loop).
 - `src/mod_global_parameters.fpp` — the large module of shared global state
   (grid geometry, ghost cells, timers, I/O settings) used throughout.
+- `src/mod_gpu_directives.fpp` — fypp macro definitions (`GPU_PARALLEL_LOOP`,
+  `GPU_ROUTINE_SEQ`, `GPU_ENTER_DATA_COPYIN`, `GPU_HOST_DATA_USE_DEVICE`,
+  etc.) that expand to OpenACC or OpenMP-target directives depending on the
+  active backend; `src/mod_gpu_utils.fpp` (module `gpu_utils`) provides the
+  `copy_or_update`/`copy_or_update_pointer`/`copy_or_update_alloc` helpers
+  used when re-allocating AMR grid data on the device.
 - `src/mod_advance.fpp`, `src/mod_finite_volume.fpp` — the finite-volume
-  update step; these contain the performance-critical OpenACC-annotated
-  loops (`!$acc parallel loop`, `!$acc routine seq`, etc.).
+  update step; these contain the performance-critical GPU-offloaded loops,
+  written via the `GPU_*` directive macros (`GPU_PARALLEL_LOOP`,
+  `GPU_ROUTINE_SEQ`, etc.) rather than raw `!$acc`/`!$omp` directives.
 - `src/amr/` — the block-based octree AMR machinery: forest/tree bookkeeping
   (`mod_forest.fpp`), refinement/coarsening, load balancing, space-filling
   curve ordering, flux correction at refinement boundaries

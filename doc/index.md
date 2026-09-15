@@ -25,7 +25,7 @@ included; the hydrodynamics and the magnetohydrodynamics module are most
 frequently used. Users can add their own physics module or modify existing ones.
 At present, the framework supports only 3D simulations in Cartesian grid geometries.  
 
-AGILE is written in Fortran 2003, uses OpenACC for GPU offloading and MPI for parallelization.
+AGILE is written in Fortran 2003, uses OpenACC or OpenMP target offloading (selectable at build time) for GPU offloading, and MPI for parallelization.
 
 The philosophy behind AGILE is to use a single versatile code with options
 and switches for various problems. The advantage of such a general approach is

@@ -10,16 +10,26 @@ f90_flags += -DNVTX
 link_flags += -lnvToolsExt
 endif
 
-ifdef OPENMP
-$(info Enabling OpenMP)
-enabled += OPENMP
-f90_flags += -fopenmp
-endif
-
 ifdef OPENACC
 $(info Enabling OpenACC)
 f90_flags += -Wall -acc=gpu
 enabled += OPENACC
+ifdef NOGPUDIRECT
+$(info Disabling direct GPU-GPU copies)
+f90_flags += -DNOGPUDIRECT
+enabled += NOGPUDIRECT
+endif
+ifdef DEBUG
+f90_flags += -gpu=debug -Mvect=levels:0 -Mnoinline
+else
+f90_flags += -Mvect=levels:5 -Minline
+endif
+endif
+
+ifdef OPENMP
+$(info Enabling OpenMP)
+f90_flags += -Wall -mp=gpu
+enabled += OPENMP
 ifdef NOGPUDIRECT
 $(info Disabling direct GPU-GPU copies)
 f90_flags += -DNOGPUDIRECT

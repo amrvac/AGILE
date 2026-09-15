@@ -1,11 +1,15 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
   use mod_amrvac
   use mod_physics
-  
+
   implicit none
-  
+
   double precision  :: beta, eta_jet, ca, mach, rc
-  !$acc declare create( beta, eta_jet, ca, mach, rc )
+  ${GPU_DECLARE_CREATE('beta, eta_jet, ca, mach, rc')}$
 
 contains
   
@@ -35,7 +39,7 @@ contains
     ! cloud to jet radii ratio
     rc      = 1.5d0
 
-    !$acc update device( beta, eta_jet, ca, mach, rc )
+    ${GPU_UPDATE_DEVICE('beta, eta_jet, ca, mach, rc')}$
     
   end subroutine initglobaldata_usr
 
@@ -117,7 +121,7 @@ contains
 
   subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-    !$acc routine vector
+    ${GPU_ROUTINE_VECTOR()}$
 
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB
@@ -138,7 +142,7 @@ contains
 
         inv_gamma_m1 = 1.0d0/(hd_gamma - 1.0d0)
         
-        !$acc loop collapse(3) vector
+        ${GPU_LOOP_VECTOR("collapse(3)")}$
         do ix3=ixOmin3,ixOmax3
            do ix2=ixOmin2,ixOmax2
               do ix1=ixOmin1,ixOmax1

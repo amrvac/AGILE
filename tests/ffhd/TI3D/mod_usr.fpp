@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 !> thermal instability test problem copied from amrvac/tests/demo/thermal_instability_HD/
 module mod_usr
   use mod_amrvac
@@ -6,7 +10,7 @@ module mod_usr
   implicit none
 
   double precision :: scale, radius
-  !$acc declare create(scale, radius)
+  ${GPU_DECLARE_CREATE('scale, radius')}$
 
 contains
 
@@ -103,7 +107,7 @@ contains
 
 
   pure real(dp) function gravity_field(wCT, x, idim) result(field)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)    :: wCT(nw_phys)
     real(dp), intent(in)    :: x(1:ndim)
     integer, value, intent(in)     :: idim
@@ -115,10 +119,10 @@ contains
   end function gravity_field
 
   subroutine addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, qsourcesplit)
-    !$acc routine seq
     #:if defined('COOLING')
     use mod_radiative_cooling, only: rc_fl, getvar_cooling_exact
     #:endif
+    ${GPU_ROUTINE_SEQ()}$
 
     double precision, intent(in) :: qdt, qt
     double precision, intent(in) :: wCT(nw_phys), wCTprim(nw_phys) 

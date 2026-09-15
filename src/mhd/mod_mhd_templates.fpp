@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 #:if PHYS == 'mhd'
 
 #:if defined('N_TRACER')
@@ -29,72 +32,72 @@
 
   !> Whether an energy equation is used
   logical, public                         :: mhd_energy = .true.
-  !$acc declare copyin(mhd_energy)
+  ${GPU_DECLARE_COPYIN('mhd_energy')}$
 
   !> Index of the density (in the w array)
   integer, public                         :: rho_
-  !$acc declare create(rho_)
+  ${GPU_DECLARE_CREATE('rho_')}$
 
   !> Indices of the momentum density
   integer, allocatable, public            :: mom(:)
-  !$acc declare create(mom)
+  ${GPU_DECLARE_CREATE('mom')}$
 
 #:if defined('N_TRACER')
   !> Indices of the tracers
   integer, public                         :: tracer(${N_TRACER_}$)
-  !$acc declare create(tracer)
+  ${GPU_DECLARE_CREATE('tracer')}$
 #:endif
 
   !> Index of the energy density (-1 if not present)
   integer, public                         :: e_
-  !$acc declare create(e_)
+  ${GPU_DECLARE_CREATE('e_')}$
 
   !> Indices of the magnetic field
   integer, allocatable, public            :: mag(:)
-  !$acc declare create(mag)
+  ${GPU_DECLARE_CREATE('mag')}$
 
   !> Index of the gas pressure (-1 if not present) should equal e_
   integer, public                         :: p_
-  !$acc declare create(p_)
+  ${GPU_DECLARE_CREATE('p_')}$
 
   !> Indices of the GLM psi
   integer, public :: psi_
-  !$acc declare create(psi_)
+  ${GPU_DECLARE_CREATE('psi_')}$
 
   !> Number of tracer species
   integer, public                         :: mhd_n_tracer = 0
-  !$acc declare copyin(mhd_n_tracer)
+  ${GPU_DECLARE_COPYIN('mhd_n_tracer')}$
 
   !> The adiabatic index
   double precision, public                :: mhd_gamma = 5.d0/3.0d0
   double precision, public                :: gamma_1, inv_gamma_1
-  !$acc declare copyin(mhd_gamma)
-  !$acc declare create(gamma_1, inv_gamma_1)
+  ${GPU_DECLARE_COPYIN('mhd_gamma')}$
+  ${GPU_DECLARE_CREATE('gamma_1, inv_gamma_1')}$
 
   !> Helium abundance over Hydrogen
   double precision, public  :: He_abundance=0.1d0
-  !$acc declare copyin(He_abundance)
+  ${GPU_DECLARE_COPYIN('He_abundance')}$
   !> Ionization fraction of H
   !> H_ion_fr = H+/(H+ + H)
   double precision, public  :: H_ion_fr=1d0
-  !$acc declare copyin(H_ion_fr)
+  ${GPU_DECLARE_COPYIN('H_ion_fr')}$
   !> Ionization fraction of He
   !> He_ion_fr = (He2+ + He+)/(He2+ + He+ + He)
   double precision, public  :: He_ion_fr=1d0
-  !$acc declare copyin(He_ion_fr)
+  ${GPU_DECLARE_COPYIN('He_ion_fr')}$
   !> Ratio of number He2+ / number He+ + He2+
   !> He_ion_fr2 = He2+/(He2+ + He+)
   double precision, public  :: He_ion_fr2=1d0
-  !$acc declare copyin(He_ion_fr2)
+  ${GPU_DECLARE_COPYIN('He_ion_fr2')}$
   ! used for eq of state when it is not defined by units,
   ! the units do not contain terms related to ionization fraction
   ! and it is p = RR * rho * T
   double precision, public  :: RR=1d0
-  !$acc declare copyin(RR)
+  ${GPU_DECLARE_COPYIN('RR')}$
 
   !> Switch for hyperbolic thermal conduction
   logical, public                         :: mhd_hyperbolic_thermal_conduction = .false.
-  !$acc declare copyin(mhd_hyperbolic_thermal_conduction)
+  ${GPU_DECLARE_COPYIN('mhd_hyperbolic_thermal_conduction')}$
 
   !> Compile-time selector for anisotropic HTC
   logical, public                         :: mhd_hyperbolic_thermal_conduction_anisotropic = .false.
@@ -104,65 +107,65 @@
 
   !> sig_par = tc_kappa_par (constant, no T^2.5); takes precedence over tc_kappa0_par when > 0
   double precision, public                :: tc_kappa_par = -1.0d0
-  !$acc declare copyin(tc_kappa_par)
+  ${GPU_DECLARE_COPYIN('tc_kappa_par')}$
 
   !> sig_perp = tc_kappa_perp (constant, no T^2.5); takes precedence over the Braginskii closure when > 0
   double precision, public                :: tc_kappa_perp = -1.0d0
-  !$acc declare copyin(tc_kappa_perp)
+  ${GPU_DECLARE_COPYIN('tc_kappa_perp')}$
 
   ! HYPERTC_ANISO implies HYPERTC (enforced in config_schema.toml)
 #:if defined('HYPERTC')
   !> sig_par = tc_kappa0_par * Te^2.5; if <= 0 and tc_kappa_par <= 0, set from Spitzer in phys_units()
   double precision, public                :: tc_kappa0_par = -1.0d0
-  !$acc declare copyin(tc_kappa0_par)
+  ${GPU_DECLARE_COPYIN('tc_kappa0_par')}$
 
 #:if defined('HYPERTC_ANISO')
   !> Indices of the heat-flux vector components q_(1:ndir); this is the full Cartesian heat-flux vector
   integer, allocatable, public            :: q_(:)
-  !$acc declare create(q_)
+  ${GPU_DECLARE_CREATE('q_')}$
 
   !> Magnetisation chi prefactor: chi = htc_Cchi * B * Te^1.5 / n
   double precision, public                :: htc_Cchi = 0.0d0
-  !$acc declare copyin(htc_Cchi)
+  ${GPU_DECLARE_COPYIN('htc_Cchi')}$
 #:else
   !> Index of the field-aligned heat flux scalar q_ (isotropic HTC only)
   integer, public                         :: q_ = -1
-  !$acc declare create(q_)
+  ${GPU_DECLARE_CREATE('q_')}$
 #:endif
 #:endif
 
   !> GLM-MHD parameter: ratio of the diffusive and advective time scales for div b
   !> taking values within [0, 1]
   double precision, public                :: mhd_glm_alpha = 0.5d0
-  !$acc declare copyin(mhd_glm_alpha)
+  ${GPU_DECLARE_COPYIN('mhd_glm_alpha')}$
 
   !> Whether to use gravity
   logical, public                         :: mhd_gravity = .false.
-  !$acc declare copyin(mhd_gravity)
+  ${GPU_DECLARE_COPYIN('mhd_gravity')}$
 
   !> The resistivity
   double precision, public                :: mhd_eta = 0.0d0
-  !$acc declare copyin(mhd_eta)
+  ${GPU_DECLARE_COPYIN('mhd_eta')}$
 
   !> switch for adding resistive terms
   logical, public                         :: mhd_resistivity = .false.
-  !$acc declare copyin(mhd_resistivity)
+  ${GPU_DECLARE_COPYIN('mhd_resistivity')}$
 
   !> Whether plasma is partially ionized
   logical, public                         :: mhd_partial_ionization = .false.
-  !$acc declare copyin(mhd_partial_ionization)
+  ${GPU_DECLARE_COPYIN('mhd_partial_ionization')}$
 
   !> switch for radiative cooling
   logical, public                         :: mhd_radiative_cooling = .false.
-  !$acc declare copyin(mhd_radiative_cooling)
+  ${GPU_DECLARE_COPYIN('mhd_radiative_cooling')}$
 
   !> Whether particles module is added
   logical, public                         :: mhd_particles = .false.
-  !$acc declare copyin(mhd_particles)
+  ${GPU_DECLARE_COPYIN('mhd_particles')}$
 
   !> switch for source user
   logical, public                         :: mhd_source_usr = .false.
-  !$acc declare copyin(mhd_source_usr)
+  ${GPU_DECLARE_COPYIN('mhd_source_usr')}$
 
 #:enddef
 
@@ -186,13 +189,8 @@
 111    close(unitpar)
     end do
 
-#ifdef _OPENACC
-    !$acc update device(mhd_energy, &
-    !$acc&     mhd_gamma, mhd_glm_alpha, &
-    !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, &
-    !$acc&     He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity)
-    !$acc update device(tc_kappa_par, tc_kappa_perp)
-#endif
+    ${GPU_UPDATE_DEVICE('mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity')}$
+    ${GPU_UPDATE_DEVICE('tc_kappa_par, tc_kappa_perp')}$
 
   end subroutine read_params
 #:enddef
@@ -282,20 +280,20 @@
     end if
     unit_mass=unit_density*unit_length**3
 
-    !$acc update device(unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass)
+    ${GPU_UPDATE_DEVICE('unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass')}$
 
 #:if defined('HYPERTC')
     if (tc_kappa0_par <= 0.0d0 .and. tc_kappa_par <= 0.0d0) &
       tc_kappa0_par = 8.0d-7 * unit_temperature**3.5d0 &
                     / (unit_length * unit_density * unit_velocity**3.0d0)
-    !$acc update device(tc_kappa0_par)
-    !$acc update device(tc_kappa_par)
+    ${GPU_UPDATE_DEVICE('tc_kappa0_par')}$
+    ${GPU_UPDATE_DEVICE('tc_kappa_par')}$
 #:endif
 #:if defined('HYPERTC_ANISO')
     htc_Cchi = 0.823d0 * (4.753567596681522d6 / 20.0d0) &
              * unit_magneticfield * unit_temperature**1.5d0 / unit_numberdensity
-    !$acc update device(htc_Cchi)
-    !$acc update device(tc_kappa_perp)
+    ${GPU_UPDATE_DEVICE('htc_Cchi')}$
+    ${GPU_UPDATE_DEVICE('tc_kappa_perp')}$
 #:endif
   end subroutine phys_units
 #:enddef
@@ -321,17 +319,17 @@
     need_global_cmax=.true.
     gamma_1=mhd_gamma-1.0_dp
     inv_gamma_1=1.0_dp/gamma_1
- !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,gamma_1,inv_gamma_1)
+ ${GPU_UPDATE_DEVICE('physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,gamma_1,inv_gamma_1')}$
 
     use_particles = mhd_particles
 
     ! Determine flux variables
     rho_ = var_set_rho()
-    !$acc update device(rho_)
+    ${GPU_UPDATE_DEVICE('rho_')}$
 
     allocate(mom(ndir))
     mom(:) = var_set_momentum(ndir)
-    !$acc update device(mom)
+    ${GPU_UPDATE_DEVICE('mom')}$
 
     ! Set index of energy variable
     if (mhd_energy) then
@@ -341,28 +339,28 @@
        e_ = -1
        p_ = -1
     end if
-    !$acc update device(e_,p_)
+    ${GPU_UPDATE_DEVICE('e_,p_')}$
 
     ! Set index for heat flux variable(s)
 #:if defined('HYPERTC_ANISO')
     allocate(q_(ndir))
     q_ = var_set_qvec(ndir, need_bc=.false.)
-    !$acc update device(q_)
+    ${GPU_UPDATE_DEVICE('q_')}$
 #:elif defined('HYPERTC')
     q_ = var_set_q(need_bc=.false.)
-    !$acc update device(q_)
+    ${GPU_UPDATE_DEVICE('q_')}$
 #:endif
 
     allocate(mag(ndir))
     mag(:) = var_set_bfield(ndir)
-    !$acc update device(mag)
+    ${GPU_UPDATE_DEVICE('mag')}$
 
     psi_ = var_set_fluxvar('psi', 'psi', need_bc=.false.)
-    !$acc update device(psi_)
+    ${GPU_UPDATE_DEVICE('psi_')}$
 
     !> GLM MHD uses split source addition in psi:
     any_source_split = .true.
-    !$acc update device(any_source_split)
+    ${GPU_UPDATE_DEVICE('any_source_split')}$
 
     ! Whether diagonal ghost cells are required for the physics
     phys_req_diagonal = .true.
@@ -372,12 +370,12 @@
     #:for i in range(1, N_TRACER_+1)
         tracer(${i}$) = var_set_fluxvar("trc", "trp", ${i}$, need_bc=.false.)
     #:endfor
-    !$acc update device(tracer)
+    ${GPU_UPDATE_DEVICE('tracer')}$
 #:endif
 
     ! set number of variables which need update ghostcells
     nwgc=nwflux
-    !$acc update device(nwgc)
+    ${GPU_UPDATE_DEVICE('nwgc')}$
 
     ! Define custom flux types:
     if (.not. allocated(flux_type)) then
@@ -392,7 +390,7 @@
     do idir=1,ndir
        flux_type(idir,mag(idir))=flux_tvdlf
     end do
-    !$acc update device(flux_type)
+    ${GPU_UPDATE_DEVICE('flux_type')}$
 
     
 ! use cycle, needs to be dealt with:    
@@ -405,8 +403,8 @@
 #:if defined('COOLING')
     call radiative_cooling_init_params(phys_gamma,He_abundance)
     call radiative_cooling_init(rc_fl)
-    !$acc update device(rc_fl)
-    !$acc enter data copyin(rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc)
+    ${GPU_UPDATE_DEVICE('rc_fl')}$
+    ${GPU_ENTER_DATA_COPYIN('rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc')}$
 #:endif
 
   end subroutine phys_init
@@ -414,18 +412,18 @@
 
 #:def phys_get_dt()
   subroutine phys_get_dt(w, x, dx, dtnew)
-  !$acc routine seq
 #:if defined('GRAVITY')
   use mod_usr, only: gravity_field
 #:endif    
 #:if defined('RESISTIVE')
   use mod_global_parameters, only: dtdiffpar
 #:endif    
-    real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
-    real(dp), intent(out)  :: dtnew
-    ! .. local ..
-    integer                :: idim
-    real(dp)               :: field
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
+  real(dp), intent(out)  :: dtnew
+  ! .. local ..
+  integer                :: idim
+  real(dp)               :: field
 
     dtnew = huge(1.0d0)
     
@@ -449,7 +447,6 @@
 #:def addsource_local()
 subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
     qsourcesplit)
-  !$acc routine seq
 #:if defined('SOURCE_USR')
   use mod_usr, only: addsource_usr
 #:endif
@@ -459,8 +456,8 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 #:if defined('COOLING')
   use mod_radiative_cooling, only: rc_fl, radiative_cooling_add_source
 #:endif
-
   use mod_global_parameters, only:cmax_global
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCT(nw_phys), wCTprim(nw_phys)
   real(dp), intent(in)     :: x(1:ndim), dr(ndim)
@@ -507,10 +504,10 @@ end subroutine addsource_local
 #:def addsource_compact()
 subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, x, dx, &
      qsourcesplit)
-  !$acc routine seq
 #:if defined('HYPERTC')
   use mod_global_parameters, only: dt, ndir, smalldouble, courantpar
 #:endif
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim1(nw_phys,3),wCTprim2(nw_phys,3),wCTprim3(nw_phys,3)
@@ -705,7 +702,7 @@ end subroutine addsource_compact
 
 #:def to_primitive()
   pure subroutine to_primitive(u)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
 
     u(iw_mom(1))=u(iw_mom(1))/u(iw_rho)
@@ -720,7 +717,7 @@ end subroutine addsource_compact
 
 #:def to_conservative()  
   pure subroutine to_conservative(u)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
 
     ! Compute energy from pressure and kinetic energy
@@ -741,7 +738,7 @@ end subroutine addsource_compact
 #:if defined('HYPERTC')
     use mod_global_parameters, only: smalldouble
 #:endif
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys)
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim
@@ -821,7 +818,7 @@ end subroutine addsource_compact
 !> Returns maximum local signal speed |v_n| + c_f (fast magnetosonic) from primitive state u in direction flux_dim;
 !> used in LLF/TVDLF flux estimation.
 pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: u(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
   integer, intent(in)   :: flux_dim
@@ -840,7 +837,7 @@ end function get_cmax
 
 #:def get_rho()
   pure real(dp) function get_rho(w, x) result(rho)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: w(nw_phys)
     real(dp), intent(in)  :: x(1:ndim)
 
@@ -850,7 +847,7 @@ end function get_cmax
 
 #:def get_pthermal()
 pure real(dp) function get_pthermal(w, x) result(pth)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: w(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
 
@@ -861,7 +858,7 @@ end function get_pthermal
 
 #:def get_Rfactor()
 pure real(dp) function get_Rfactor() result(Rfactor)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   Rfactor = 1.0d0
 end function get_Rfactor
 #:enddef
@@ -870,7 +867,7 @@ end function get_Rfactor
 !> Davis (1988) min/max wave speed estimates wL = min(v_n - c_f), wR = max(v_n + c_f) (fast magnetosonic) over left/right states;
 !> used in HLL flux estimation.
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim

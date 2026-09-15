@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
 
     use mod_amrvac
@@ -6,14 +10,14 @@ module mod_usr
     implicit none
 
     double precision, allocatable :: pbc(:),rbc(:)
-    !$acc declare create(pbc,rbc)
+    ${GPU_DECLARE_CREATE('pbc,rbc')}$
     double precision :: usr_grav
     double precision :: heatunit,gzone,SRadius,dya
     double precision, allocatable :: pa(:),ra(:)
     integer, parameter :: jmax=5000
-    !$acc declare create(usr_grav,SRadius,pbc,rbc)
+    ${GPU_DECLARE_CREATE('usr_grav,SRadius,pbc,rbc')}$
     double precision :: B0,kx,y0,lQ0,bQ0
-    !$acc declare create(lQ0,bQ0)
+    ${GPU_DECLARE_CREATE('lQ0,bQ0')}$
   
   contains
 
@@ -58,17 +62,17 @@ module mod_usr
       dya=(2.d0*gzone+xprobmax3-xprobmin3)/dble(jmax) !< cells size of high-resolution 1D solar atmosphere
 
       usr_grav=-2.74d4*unit_length/unit_velocity**2 !< solar gravity
-      !$acc update device(usr_grav)
+      ${GPU_UPDATE_DEVICE('usr_grav')}$
 
       SRadius=69.61d0 !< Solar radius
-      !$acc update device(SRadius)
+      ${GPU_UPDATE_DEVICE('SRadius')}$
 
       lQ0=lQ0/heatunit
-      !$acc update device(lQ0)
+      ${GPU_UPDATE_DEVICE('lQ0')}$
       bQ0=bQ0/heatunit
-      !$acc update device(bQ0)
+      ${GPU_UPDATE_DEVICE('bQ0')}$
 
-      !$acc update device(xprobmin1,xprobmax1,xprobmin2,xprobmax2,xprobmin3,xprobmax3)
+      ${GPU_UPDATE_DEVICE('xprobmin1,xprobmax1,xprobmin2,xprobmax2,xprobmin3,xprobmax3')}$
 
       call generateTV()
       call inithdstatic()
@@ -157,7 +161,7 @@ module mod_usr
         pbc(ibc)=pa(na)+(one-cos(dpi*res/dya))/two*(pa(na+1)-pa(na))
       end do
       deallocate(ya,gg,Ta)
-      !$acc update device(rbc,pbc)
+      ${GPU_UPDATE_DEVICE('rbc,pbc')}$
     end subroutine inithdstatic
 
     subroutine initonegrid_usr(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
@@ -215,7 +219,7 @@ module mod_usr
 
     subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-        !$acc routine vector
+        ${GPU_ROUTINE_VECTOR()}$
 
         integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB
@@ -233,7 +237,7 @@ module mod_usr
         select case(iB)
         case(5)
 
-        !$acc loop collapse(3) vector
+        ${GPU_LOOP_VECTOR("collapse(3)")}$
         do ix3=ixOmin3,ixOmax3
             do ix2=ixOmin2,ixOmax2
             do ix1=ixOmin1,ixOmax1
@@ -258,7 +262,7 @@ module mod_usr
         ! case(6)
 
         ! ! to include ix3 into loop, perhaps precompute?
-        ! !$acc loop collapse(2) vector
+        ! ${GPU_LOOP_VECTOR("collapse(2)")}$
         !   do ix2=ixOmin2,ixOmax2
         !     do ix1=ixOmin1,ixOmax1
 
@@ -293,7 +297,7 @@ module mod_usr
    end subroutine specialbound_usr
 
    pure real(dp) function gravity_field(wCT, x, idim) result(field)
-     !$acc routine seq
+     ${GPU_ROUTINE_SEQ()}$
      real(dp), intent(in)    :: wCT(nw_phys)
      real(dp), intent(in)    :: x(1:ndim)
      integer, value, intent(in)     :: idim
@@ -307,8 +311,8 @@ module mod_usr
    end function gravity_field
 
   subroutine addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, qsourcesplit)
-    !$acc routine seq
     use mod_random_heating, only: rh_source
+    ${GPU_ROUTINE_SEQ()}$
 
     double precision, intent(in) :: qdt, qt
     double precision, intent(in) :: wCT(nw_phys), wCTprim(nw_phys) 

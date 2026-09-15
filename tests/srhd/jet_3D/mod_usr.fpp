@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
 
   use mod_amrvac
@@ -9,8 +13,8 @@ module mod_usr
   double precision :: rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet
   double precision :: Qjet, Mdotjet, p0val, t0val, tcross, vhead
 
-!$acc declare create(rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet)
-!$acc declare create(Qjet,Mdotjet,p0val,t0val,tcross,vhead)
+  ${GPU_DECLARE_CREATE('rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet')}$
+  ${GPU_DECLARE_CREATE('Qjet,Mdotjet,p0val,t0val,tcross,vhead')}$
 
 contains
 
@@ -46,13 +50,13 @@ contains
 111    close(unitpar)
     end do
 
-!$acc update device(rjet,zjet,rhob,etarho,pb,zetap,lfacjet)
+    ${GPU_UPDATE_DEVICE('rjet,zjet,rhob,etarho,pb,zetap,lfacjet')}$
 
     rhojet=etarho*rhob
     pjet=zetap*pb
     vjet=dsqrt(1.0d0-1.0d0/lfacjet**2)
 
-!$acc update device(rhojet,pjet,vjet)
+    ${GPU_UPDATE_DEVICE('rhojet,pjet,vjet')}$
 
   end subroutine usr_params_read
 
@@ -213,9 +217,9 @@ contains
        ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3,&
        ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3,&
        iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
     use mod_physics_vars
+    ${GPU_ROUTINE_VECTOR()}$
     implicit none
     integer, intent(in) :: ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3
     integer, intent(in) :: ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3
@@ -231,7 +235,7 @@ contains
     select case(iB)
     case(5)
        ! select the first grid-internal layer above the boundary
-      !$acc loop collapse(3) vector
+      ${GPU_LOOP_VECTOR("collapse(3)")}$
       do ix3 = ixOmin3, ixOmax3
          do ix2 = ixOmin2, ixOmax2
             do ix1 = ixOmin1, ixOmax1
@@ -268,7 +272,7 @@ contains
 
       if(srhd_n_tracer>0)then
          do iw=1,srhd_n_tracer
-            !$acc loop collapse(3) vector
+            ${GPU_LOOP_VECTOR("collapse(3)")}$
             do ix3 = ixOmin3, ixOmax3
                do ix2 = ixOmin2, ixOmax2
                   do ix1 = ixOmin1, ixOmax1
@@ -285,7 +289,7 @@ contains
 
 ! Curently broken, cannot call anything here.      
       ! ! switch to conserved in ghost cells
-      ! !$acc loop collapse(3) vector
+      ! ${GPU_LOOP_VECTOR("collapse(3)")}$
       ! do ix3 = ixOmin3, ixOmax3
       !    do ix2 = ixOmin2, ixOmax2
       !       do ix1 = ixOmin1, ixOmax1
@@ -346,13 +350,12 @@ contains
     ixGmin1, ixGmin2, ixGmin3, ixGmax1, ixGmax2, ixGmax3,&
     ixmin1,  ixmin2,  ixmin3,  ixmax1,  ixmax2,  ixmax3,&
     qt, w, x, refine, coarsen)
-#ifdef _OPENACC
-! NOTE: The Cray compiler fails when trying to inline this routine, for now
-!   disable inlining for Cray.
+#if defined(_CRAYFTN) && (defined(_OPENACC) || defined(_OPENMP))
+    ! disable inlining for Cray
     !dir$ inlinenever usr_refine_grid
 #endif
-    !$acc routine seq
     use mod_global_parameters
+    ${GPU_ROUTINE_SEQ()}$
     implicit none
     integer, intent(in) :: igrid, level
     integer, intent(in) :: ixGmin1, ixGmin2, ixGmin3, ixGmax1, ixGmax2, ixGmax3

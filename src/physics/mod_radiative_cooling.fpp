@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 module mod_radiative_cooling
 
 #:if defined('COOLING')
@@ -34,7 +37,7 @@ module mod_radiative_cooling
   !> inverse of the adiabatic index minus 1
   double precision, private :: invgam
 
-  !$acc declare create(rc_gamma_1, invgam)
+  ${GPU_DECLARE_CREATE('rc_gamma_1, invgam')}$
 
   type rc_fluid
 
@@ -77,7 +80,7 @@ module mod_radiative_cooling
   end type rc_fluid
 
   type(rc_fluid)   :: rc_fl
-  !$acc declare create(rc_fl)
+  ${GPU_DECLARE_CREATE('rc_fl')}$
 
   ! Interpolatable tables
 
@@ -454,7 +457,7 @@ module mod_radiative_cooling
 
       rc_gamma_1=rc_gamma-1.d0
       invgam = 1.d0/rc_gamma_1
-      !$acc update device(rc_gamma_1, invgam)
+      ${GPU_UPDATE_DEVICE('rc_gamma_1, invgam')}$
 
     contains
 
@@ -507,7 +510,7 @@ module mod_radiative_cooling
     end subroutine radiative_cooling_init
 
     subroutine radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
-      !$acc routine seq
+      ${GPU_ROUTINE_SEQ()}$
 
     ! w[iw]=w[iw]+qdt*S[wCT,x] where S is the source based on wCT within ixO
       double precision, intent(in) :: qdt, wCT(nw_phys), wCTprim(nw_phys)
@@ -520,7 +523,7 @@ module mod_radiative_cooling
     end subroutine radiative_cooling_add_source
 
     subroutine floortemperature(qdt,wCT,wnew,x,fl)
-      !$acc routine seq
+      ${GPU_ROUTINE_SEQ()}$
     !  Force minimum temperature to a fixed temperature
       double precision, intent(in)    :: qdt, wCT(nw_phys)
       double precision, intent(inout) :: wnew(nw_phys)
@@ -538,7 +541,7 @@ module mod_radiative_cooling
     end subroutine floortemperature
 
     subroutine cool_exact(qdt,wCT,wCTprim,wnew,x,fl)
-      !$acc routine seq
+      ${GPU_ROUTINE_SEQ()}$
     !  Cooling routine using exact integration method from Townsend 2009
       double precision, intent(in)    :: qdt, wCT(nw_phys), wCTprim(nw_phys), x(1:ndim)
       double precision, intent(inout) :: wnew(nw_phys)
@@ -594,7 +597,7 @@ module mod_radiative_cooling
     end subroutine cool_exact
 
     subroutine calc_l_extended (tpoint, lpoint,fl)
-      !$acc routine seq
+      ${GPU_ROUTINE_SEQ()}$
     !  Calculate l for t beyond tcoolmax
     !  Assumes Bremsstrahlung for the interpolated tables
     !  Uses the power law for piecewise power laws
@@ -609,7 +612,7 @@ module mod_radiative_cooling
     subroutine findL (tpoint,Lpoint,fl)
     !  Fast search option to find correct point 
     !  in cooling curve
-      !$acc routine seq
+      ${GPU_ROUTINE_SEQ()}$
 
       double precision,intent(IN)   :: tpoint
       double precision, intent(OUT) :: Lpoint
@@ -628,7 +631,7 @@ module mod_radiative_cooling
 
     subroutine findY (tpoint,Ypoint,fl)
     !  Fast search option to find correct point in cooling time (TEF)
-      !$acc routine seq
+      ${GPU_ROUTINE_SEQ()}$
 
       double precision,intent(IN)   :: tpoint
       double precision, intent(OUT) :: Ypoint
@@ -651,7 +654,7 @@ module mod_radiative_cooling
     !  from temporal evolution function. Only possible this way because T is a monotonously
     !  decreasing function for the interpolated tables
     !  Uses eq. A7 from Townsend 2009 for piecewise power laws
-      !$acc routine seq
+      ${GPU_ROUTINE_SEQ()}$
 
       double precision,intent(OUT)   :: tpoint
       double precision, intent(IN) :: Ypoint
@@ -685,7 +688,7 @@ module mod_radiative_cooling
     end subroutine findT
 
     subroutine getvar_cooling_exact(qdt, wCT, w, x, coolrate, fl)
-      !$acc routine seq
+      ${GPU_ROUTINE_SEQ()}$
       ! Calculates cooling rate using the exact cooling method,
       ! for usage in eg. source_terms subroutine.
       ! The TEF must be known, so this routine can only be used

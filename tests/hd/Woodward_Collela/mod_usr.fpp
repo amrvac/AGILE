@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
 
   use mod_amrvac
@@ -11,8 +15,8 @@ module mod_usr
   double precision :: mx_post,my_post,epost,epre
   double precision :: rho_3,xpos_3,zpos_3,rad_3
 
-!$acc declare create(rho_1,rho_2,p_1,p_2,angle_frac,x_offset,mx_post,my_post,epost,epre)
-!$acc declare create(rho_3,xpos_3,zpos_3,rad_3)
+  ${GPU_DECLARE_CREATE('rho_1,rho_2,p_1,p_2,angle_frac,x_offset,mx_post,my_post,epost,epre')}$
+  ${GPU_DECLARE_CREATE('rho_3,xpos_3,zpos_3,rad_3')}$
 
 contains
 
@@ -70,8 +74,8 @@ contains
     my_post=-rho_2*8.25d0*dcos(dpi*angle_frac)
     epre=p_1/(hd_gamma-1.0d0)
     epost=p_2/(hd_gamma-1.0d0)+(mx_post**2+my_post**2)/(2.0d0*rho_2)
-!$acc update device(hd_gamma,angle_frac,x_offset,rho_1,rho_2,p_1,p_2,mx_post,my_post,epre,epost)
-!$acc update device(rad_3,rho_3,xpos_3,zpos_3)
+    ${GPU_UPDATE_DEVICE('hd_gamma,angle_frac,x_offset,rho_1,rho_2,p_1,p_2,mx_post,my_post,epre,epost')}$
+    ${GPU_UPDATE_DEVICE('rad_3,rho_3,xpos_3,zpos_3')}$
 
     if (mype == 0) call print_params()
   end subroutine set_parameters_usr
@@ -123,10 +127,10 @@ contains
       ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3,&
       ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3,&
       iB, w, x)
-!$acc routine vector
     ! use mod_physics, only: to_conservative, to_primitive
     use mod_global_parameters
     use mod_physics
+    ${GPU_ROUTINE_VECTOR()}$
     implicit none
     integer, intent(in) :: ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3
     integer, intent(in) :: ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3
@@ -141,7 +145,7 @@ contains
     select case(iB)
     case(1)
       ! implementation of fixed postshock state at left boundary
-!$acc loop collapse(3) vector
+      ${GPU_LOOP_VECTOR("collapse(3)")}$
       do ix3 = ixOmin3, ixOmax3
       do ix2 = ixOmin2, ixOmax2
       do ix1 = ixOmin1, ixOmax1
@@ -155,7 +159,7 @@ contains
       end do
     case(3)
       ! implementation of bottom boundary: fixed before x<1/6, solid wall x>=1/6
-!$acc loop collapse(3) vector
+      ${GPU_LOOP_VECTOR("collapse(3)")}$
       do ix3 = ixOmin3, ixOmax3
       do ix2 = ixOmin2, ixOmax2
       do ix1 = ixOmin1, ixOmax1
@@ -177,7 +181,7 @@ contains
       end do
     case(4)
       ! implementation of top: pre and post shock states, time dependent
-!$acc loop collapse(3) vector
+      ${GPU_LOOP_VECTOR("collapse(3)")}$
       do ix3 = ixOmin3, ixOmax3
       do ix2 = ixOmin2, ixOmax2
       do ix1 = ixOmin1, ixOmax1
