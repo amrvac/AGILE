@@ -1,4 +1,8 @@
 !> Module for flux conservation near refinement boundaries
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
+
 module mod_fix_conserve
 #ifdef USE_MPIWRAPPERS
   use mod_mpi_wrapper
@@ -40,8 +44,8 @@ module mod_fix_conserve
   integer, save                      :: n_fc_comm = 1
   integer, allocatable, save         :: icomm_fc(:)
   integer, save                      :: nwflux_fc
-  integer, dimension(3,3), save      :: nxCo_fc
-  !$acc declare create(isize, nxCo_fc, nwflux_fc)
+  integer, dimension(3,3), save      :: nxCo_fc  
+  ${GPU_DECLARE_CREATE('isize, nxCo_fc, nwflux_fc')}$
 
   integer                              :: ibuf, ibuf_send
   ! ct for corner total
@@ -190,14 +194,14 @@ module mod_fix_conserve
      ! Reallocate buffers when size differs
      if (allocated(recvbuffer)) then
        if (recvsize /= size(recvbuffer)) then
-         !$acc exit data delete(recvbuffer)
+         ${GPU_EXIT_DATA_DELETE('recvbuffer')}$
          deallocate(recvbuffer)
          allocate(recvbuffer(recvsize))
-         !$acc enter data create(recvbuffer)
+         ${GPU_ENTER_DATA_CREATE('recvbuffer')}$
        end if
      else
        allocate(recvbuffer(recvsize))
-       !$acc enter data create(recvbuffer)
+       ${GPU_ENTER_DATA_CREATE('recvbuffer')}$
      end if
 
      ! Offset table, sized by the tag space.  Allocated once, max_blocks is fixed.
@@ -225,19 +229,19 @@ module mod_fix_conserve
        end do
        allocate(ibuf_offset(4**3*max_blocks))
        ibuf_offset = -1
-       !$acc enter data copyin(ibuf_offset)
+       ${GPU_ENTER_DATA_COPYIN('ibuf_offset')}$
      end if
 
      if (allocated(sendbuffer)) then
        if (sendsize /= size(sendbuffer)) then
-         !$acc exit data delete(sendbuffer)
+         ${GPU_EXIT_DATA_DELETE('sendbuffer')}$
          deallocate(sendbuffer)
          allocate(sendbuffer(sendsize))
-         !$acc enter data create(sendbuffer)
+         ${GPU_ENTER_DATA_CREATE('sendbuffer')}$
        end if
      else
        allocate(sendbuffer(sendsize))
-       !$acc enter data create(sendbuffer)
+       ${GPU_ENTER_DATA_CREATE('sendbuffer')}$
      end if
 
      if (allocated(fc_recvreq)) then
@@ -299,7 +303,7 @@ module mod_fix_conserve
        end if
      end if
 
-     !$acc update device(isize, nxCo_fc, nwflux_fc)
+     ${GPU_UPDATE_DEVICE('isize, nxCo_fc, nwflux_fc')}$
 
    end subroutine init_comm_fix_conserve
 
@@ -345,13 +349,13 @@ module mod_fix_conserve
                  itag=4**3*((igrid-1)/n_fc_comm)+inc1*4**(1-1)+inc2*4**(2-1)+&
                     inc3*4**(3-1)
 #ifndef NOGPUDIRECT
-                 !$acc host_data use_device(recvbuffer)
+                 ${GPU_HOST_DATA_USE_DEVICE('recvbuffer')}$
 #endif
                  call mpi_irecv_wrapper(recvbuffer(ibuf),isize(idims),&
                      MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
                     icomm_fc(i_fc_comm),fc_recvreq(irecv),ierrmpi)
 #ifndef NOGPUDIRECT
-                 !$acc end host_data
+                 ${GPU_END_HOST_DATA()}$
 #endif
                  ibuf=ibuf+isize(idims)
                end if
@@ -364,7 +368,7 @@ module mod_fix_conserve
        ! check for recvbuffer out of bounds errors
        if (irecv /= nrecv) call mpistop(&
           "recvflux: posted receives do not match nrecv from init_comm")
-       !$acc update device(ibuf_offset)
+       ${GPU_UPDATE_DEVICE('ibuf_offset')}$
      end if
 
      if(stagger_grid) then
@@ -514,7 +518,7 @@ module mod_fix_conserve
                  !!  ibuf_send=ibuf_send_next
                  else
 
-                   !$acc parallel loop collapse(3) default(present)
+                   ${GPU_PARALLEL_LOOP('collapse(3)')}$ ${GPU_DEFAULT_PRESENT()}$
                    do iw=1,nwflux_fc
                      do ix3=1,nxCo_fc(3,1)
                        do ix2=1,nxCo_fc(2,1)
@@ -525,15 +529,15 @@ module mod_fix_conserve
                      end do
                    end do
 #ifdef NOGPUDIRECT
-                   !$acc update host(sendbuffer)
+                   ${GPU_UPDATE_HOST('sendbuffer')}$
 #else
-                   !$acc host_data use_device(sendbuffer)
+                   ${GPU_HOST_DATA_USE_DEVICE('sendbuffer')}$
 #endif
                    call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(1),&
                        MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
                       icomm_fc(i_fc_comm),fc_sendreq(isend),ierrmpi)
 #ifndef NOGPUDIRECT
-                   !$acc end host_data
+                   ${GPU_END_HOST_DATA()}$
 #endif
                    ibuf_send=ibuf_send+isize(1)
                  end if
@@ -641,7 +645,7 @@ module mod_fix_conserve
                  !!  ibuf_send=ibuf_send_next
                  else
 
-                   !$acc parallel loop collapse(3) default(present)
+                   ${GPU_PARALLEL_LOOP('collapse(3)')}$ ${GPU_DEFAULT_PRESENT()}$
                    do iw=1,nwflux_fc
                      do ix3=1,nxCo_fc(3,2)
                        do ix1=1,nxCo_fc(1,2)
@@ -652,15 +656,15 @@ module mod_fix_conserve
                      end do
                    end do
 #ifdef NOGPUDIRECT
-                   !$acc update host(sendbuffer)
+                   ${GPU_UPDATE_HOST('sendbuffer')}$
 #else
-                   !$acc host_data use_device(sendbuffer)
+                   ${GPU_HOST_DATA_USE_DEVICE('sendbuffer')}$
 #endif
                    call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(2),&
                        MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
                       icomm_fc(i_fc_comm),fc_sendreq(isend),ierrmpi)
 #ifndef NOGPUDIRECT
-                   !$acc end host_data
+                   ${GPU_END_HOST_DATA()}$
 #endif
                    ibuf_send=ibuf_send+isize(2)
                  end if
@@ -768,7 +772,7 @@ module mod_fix_conserve
                  !!  ibuf_send=ibuf_send_next
                  else
 
-                   !$acc parallel loop collapse(3) default(present)
+                   ${GPU_PARALLEL_LOOP('collapse(3)')}$ ${GPU_DEFAULT_PRESENT()}$
                    do iw=1,nwflux_fc
                      do ix2=1,nxCo_fc(2,3)
                        do ix1=1,nxCo_fc(1,3)
@@ -779,15 +783,15 @@ module mod_fix_conserve
                      end do
                    end do
 #ifdef NOGPUDIRECT
-                   !$acc update host(sendbuffer)
+                   ${GPU_UPDATE_HOST('sendbuffer')}$
 #else
-                   !$acc host_data use_device(sendbuffer)
+                   ${GPU_HOST_DATA_USE_DEVICE('sendbuffer')}$
 #endif
                    call mpi_isend_wrapper(sendbuffer(ibuf_send),isize(3),&
                        MPI_DOUBLE_PRECISION,ipe_neighbor,itag,&
                       icomm_fc(i_fc_comm),fc_sendreq(isend),ierrmpi)
 #ifndef NOGPUDIRECT
-                   !$acc end host_data
+                   ${GPU_END_HOST_DATA()}$
 #endif
                    ibuf_send=ibuf_send+isize(3)
                  end if
@@ -890,7 +894,7 @@ module mod_fix_conserve
 #ifdef NOGPUDIRECT
        ! Without GPU-direct the IRECVs landed in host memory; the unpack below
        ! runs on the device, so push the payload across.
-       !$acc update device(recvbuffer)
+       ${GPU_UPDATE_DEVICE('recvbuffer')}$
 #endif
      end if
 
@@ -899,7 +903,7 @@ module mod_fix_conserve
      nxCo3=(ixMhi3-ixMlo3+1)/2
 
      ! for all grids: perform flux update at Coarse-Fine interfaces
-     !$acc parallel loop gang private(i1,i2,i3,ic1,ic2,ic3,ix1,ix2,ix3) default(present)
+     ${GPU_PARALLEL_LOOP_GANG('private(i1,i2,i3,ic1,ic2,ic3,ix1,ix2,ix3)')}$ ${GPU_DEFAULT_PRESENT()}$
      do iigrid=1,igridstail
        igrid=igrids(iigrid)
 
@@ -946,8 +950,7 @@ module mod_fix_conserve
 
              ! remove coarse flux
              if (slab_uniform) then
-                !TODO do I need to add "private(ix2,ix3)"?
-                !$acc loop collapse(ndim-1) vector
+                ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                 do ix3=ixMlo3,ixMhi3
                   do ix2=ixMlo2,ixMhi2 
                     psb(igrid)%w(ix,ix2,ix3,nw0:nw1) = &
@@ -990,7 +993,7 @@ module mod_fix_conserve
                  iotherside=3-iside
                  if (slab_uniform) then
                      ! Direction 1, so loop runs over directions 2 and 3
-                     !$acc loop collapse(ndim-1) vector
+                     ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                      do ix3=1,nxCo3 
                         do ix2=1,nxCo2 
                            psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0:nw1) = &
@@ -1103,7 +1106,7 @@ module mod_fix_conserve
 
              ! remove coarse flux
              if (slab_uniform) then
-                !$acc loop collapse(ndim-1) vector
+                ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                 do ix3=ixMlo3,ixMhi3
                   do ix1=ixMlo1,ixMhi1 
                     psb(igrid)%w(ix1,ix,ix3,nw0:nw1) = &
@@ -1146,7 +1149,7 @@ module mod_fix_conserve
                  iotherside=3-iside
 
                  if (slab_uniform) then
-                   !$acc loop collapse(ndim-1) vector
+                   ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                    do ix3=1,nxCo3 
                      do ix1=1,nxCo1 
                        psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0:nw1) = &
@@ -1259,7 +1262,7 @@ module mod_fix_conserve
 
              ! remove coarse flux
              if (slab_uniform) then
-               !$acc loop collapse(ndim-1) vector
+               ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                do ix2=ixMlo2,ixMhi2
                  do ix1=ixMlo1,ixMhi1 
                    psb(igrid)%w(ix1,ix2,ix,nw0:nw1) = &
@@ -1300,7 +1303,7 @@ module mod_fix_conserve
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
                  if (slab_uniform) then
-                   !$acc loop collapse(ndim-1) vector
+                   ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                    do ix2=1,nxCo2 
                      do ix1=1,nxCo1 
                        psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0:nw1) = &

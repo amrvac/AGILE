@@ -53,7 +53,7 @@ contains
     if(use_particles) call handle_particles
 
     ! do iigrid=1,igridstail; igrid=igrids(iigrid);
-    !    !$acc exit data delete(ps(igrid)%x, ps1(igrid)%w, ps2(igrid)%w) copyout(ps(igrid)%w)
+    !    ${GPU_EXIT_DATA_DELETE('ps(igrid)%x, ps1(igrid)%w, ps2(igrid)%w) copyout(ps(igrid)%w')}$
     ! end do
     
   end subroutine advance

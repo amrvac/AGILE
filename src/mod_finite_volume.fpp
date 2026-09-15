@@ -127,7 +127,7 @@ end subroutine finite_volume_local
     nxCo2=nx2/2
     nxCo3=nx3/2
 
-    !$acc enter data copyin(nxCo1,nxCo2,nxCo3)
+    ${GPU_ENTER_DATA_COPYIN('nxCo1,nxCo2,nxCo3')}$
     ! batch-launch the kernels (oom issue when many ~30000 blocks):
     nbatches = (igridstail_active + max_batch - 1) / max_batch ! ceiling division
     
@@ -305,7 +305,7 @@ end subroutine finite_volume_local
           ! Direction 1
           select case (neighbor_type_1m)
               case (neighbor_coarse)
-                  !$acc loop vector collapse(ndim-1) 
+                  ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                   do ix3=1,nxCo3 
                     do ix2=1,nxCo2 
                   pflux(1,1)%flux(1,ix2,ix3,1:nw_flux,n) = &
@@ -319,7 +319,7 @@ end subroutine finite_volume_local
 
           select case (neighbor_type_1p)
               case (neighbor_coarse)
-                  !$acc loop vector collapse(ndim-1)
+                  ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                   do ix3=1,nxCo3 
                      do ix2=1,nxCo2 
                   pflux(2,1)%flux(1,ix2,ix3,1:nw_flux,n) = &
@@ -334,7 +334,7 @@ end subroutine finite_volume_local
           ! Direction 2
           select case (neighbor_type_2m)
               case (neighbor_coarse)
-                  !$acc loop vector collapse(ndim-1) 
+                  ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                   do ix3=1,nxCo3 
                     do ix1=1,nxCo1 
                   pflux(1,2)%flux(ix1,1,ix3,1:nw_flux,n) = &
@@ -348,7 +348,7 @@ end subroutine finite_volume_local
 
           select case (neighbor_type_2p)
               case (neighbor_coarse)
-                  !$acc loop vector collapse(ndim-1)
+                  ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                   do ix3=1,nxCo3 
                      do ix1=1,nxCo1 
                   pflux(2,2)%flux(ix1,1,ix3,1:nw_flux,n) = &
@@ -363,7 +363,7 @@ end subroutine finite_volume_local
           ! Direction 3
           select case (neighbor_type_3m)
               case (neighbor_coarse)
-                  !$acc loop vector collapse(ndim-1) 
+                  ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                   do ix2=1,nxCo2 
                     do ix1=1,nxCo1 
                   pflux(1,3)%flux(ix1,ix2,1,1:nw_flux,n) = &
@@ -377,7 +377,7 @@ end subroutine finite_volume_local
 
           select case (neighbor_type_3p)
               case (neighbor_coarse)
-                  !$acc loop vector collapse(ndim-1)
+                  ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
                   do ix2=1,nxCo2 
                      do ix1=1,nxCo1 
                   pflux(2,3)%flux(ix1,ix2,1,1:nw_flux,n) = &
