@@ -2117,9 +2117,7 @@ contains
       call getbc(global_time,0.d0,ps,iwstart,nwgc)
     end if
 
-    do iigrid=1,igridstail; igrid=igrids(iigrid);
-       ${GPU_UPDATE_HOST('ps(igrid)%w')}$
-    end do
+    ${GPU_UPDATE_HOST('bg(1)%w')}$
 
     select case (ifile)
     case (fileout_)
