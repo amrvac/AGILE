@@ -148,6 +148,8 @@ contains
     integer :: level
     integer :: my_refine, my_coarsen
     double precision :: qt
+    integer :: ix1, ix2, ix3
+    logical :: force_refine, force_coarsen, implies
 
     ${GPU_PARALLEL_LOOP_GANG("private(igrid,level,my_refine,my_coarsen,qt)")}$
     do iigrid=1,igridstail; igrid=igrids(iigrid);
@@ -165,10 +167,28 @@ contains
        end if
 
 #:if defined('REFINE_USR')
-       call usr_refine_grid(igrid,level,ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2, &
-            ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,qt, &
-            bg(1)%w(:,:,:,:, igrid), ps(igrid)%x, &
-            my_refine,my_coarsen)
+       force_refine = .false.
+       force_coarsen = .false.
+       implies = .false.
+       ${GPU_LOOP_VECTOR("collapse(3) reduction(.or.:force_refine) reduction(.or.:force_coarsen) reduction(.or.:implies)")}$
+       do ix3 = ixMlo3, ixMhi3
+          do ix2 = ixMlo2, ixMhi2
+             do ix1 = ixMlo1, ixMhi1
+                call usr_refine_grid(level,qt, &
+                     bg(1)%w(ix1, ix2, ix3, :, igrid), ps(igrid)%x(ix1, ix2, ix3, :), &
+                     force_refine, force_coarsen, implies)
+             end do
+          end do
+       end do
+
+       ! up to the user to ensure consistency
+       if (force_refine) then
+         my_refine = 1
+         if (implies) my_coarsen = -1
+       else if (force_coarsen) then
+          my_coarsen = 1
+          if (implies) my_refine = -1
+       end if
 #:endif
    
        if (my_coarsen==1) then
