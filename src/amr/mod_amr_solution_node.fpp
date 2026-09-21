@@ -1602,6 +1602,8 @@ contains
 
    ${GPU_UPDATE_DEVICE('phyboundblock(igrid)')}$
 #if defined(_OPENACC) || defined(_OPENMP)
+   ${GPU_UPDATE_DEVICE('ps(igrid), ps1(igrid), ps2(igrid), psc(igrid)')}$
+
    call copy_or_update(ps(igrid)%igrid)
    call copy_or_update(ps1(igrid)%igrid) 
    call copy_or_update(ps2(igrid)%igrid)

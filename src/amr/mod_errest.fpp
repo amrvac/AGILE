@@ -146,19 +146,14 @@ contains
 
     integer :: igrid, iigrid
     integer :: level
-    integer :: my_refine, my_coarsen
+    logical :: refineflag, coarsenflag, norefineflag, nocoarsenflag
     double precision :: qt
     integer :: ix1, ix2, ix3
-    logical :: force_refine, force_coarsen, implies
 
-    ${GPU_PARALLEL_LOOP_GANG("private(igrid,level,my_refine,my_coarsen,qt)")}$
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid,level,refineflag,coarsenflag,norefineflag,nocoarsenflag,qt)")}$
     do iigrid=1,igridstail; igrid=igrids(iigrid);
 
        level=node(plevel_,igrid)
-
-       ! initialize to 0
-       my_refine   = 0
-       my_coarsen  = 0
    
        if (time_advance) then
           qt=global_time+dt
@@ -166,32 +161,25 @@ contains
           qt=global_time
        end if
 
+       refineflag = .false.
+       coarsenflag = .true.
+       norefineflag = .true.
+       nocoarsenflag = .false.
+
 #:if defined('REFINE_USR')
-       force_refine = .false.
-       force_coarsen = .false.
-       implies = .false.
-       ${GPU_LOOP_VECTOR("collapse(3) reduction(.or.:force_refine) reduction(.or.:force_coarsen) reduction(.or.:implies)")}$
+       ${GPU_LOOP_VECTOR("collapse(3) reduction(.or.:refineflag) reduction(.and.:coarsenflag) reduction(.and.:norefineflag) reduction(.or.:nocoarsenflag)")}$
        do ix3 = ixMlo3, ixMhi3
           do ix2 = ixMlo2, ixMhi2
              do ix1 = ixMlo1, ixMhi1
                 call usr_refine_grid(level,qt, &
                      bg(1)%w(ix1, ix2, ix3, :, igrid), ps(igrid)%x(ix1, ix2, ix3, :), &
-                     force_refine, force_coarsen, implies)
+                     refineflag, coarsenflag, norefineflag, nocoarsenflag)
              end do
           end do
        end do
-
-       ! up to the user to ensure consistency
-       if (force_refine) then
-         my_refine = 1
-         if (implies) my_coarsen = -1
-       else if (force_coarsen) then
-          my_coarsen = 1
-          if (implies) my_refine = -1
-       end if
 #:endif
-   
-       if (my_coarsen==1) then
+
+       if (coarsenflag) then
           if (level>1) then
              refine(igrid,mype)=.false.
              coarsen(igrid,mype)=.true.
@@ -200,12 +188,12 @@ contains
              coarsen(igrid,mype)=.false.
           end if
        end if
-   
-       if (my_coarsen==-1)then
+
+       if (nocoarsenflag)then
           coarsen(igrid,mype)=.false.
        end if
-   
-       if (my_refine==1) then
+
+       if (refineflag) then
           if (level<refine_max_level) then
              refine(igrid,mype)=.true.
              coarsen(igrid,mype)=.false.
@@ -214,11 +202,11 @@ contains
              coarsen(igrid,mype)=.false.
           end if
        end if
-   
-       if (my_refine==-1) then
+
+       if (norefineflag) then
          refine(igrid,mype)=.false.
        end if
-       
+
     end do
   end subroutine forcedrefine_grid
 

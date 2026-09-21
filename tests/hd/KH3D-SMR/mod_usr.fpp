@@ -108,7 +108,7 @@ contains
 
   end subroutine initonegrid_usr
 
-  subroutine usr_refine_grid(level,qt,w,x,force_refine,force_coarsen,implies)
+  subroutine usr_refine_grid(level,qt,w,x,refineflag,coarsenflag,norefineflag,nocoarsenflag)
     use mod_global_parameters
     ${GPU_ROUTINE_SEQ()}$
 
@@ -122,19 +122,16 @@ contains
     double precision, intent(in)    :: qt
     double precision, intent(in)    :: x(1:3)
     double precision, intent(in)    :: w(1:nw)
-    logical, intent(inout) :: force_refine,force_coarsen,implies
-    ! .. local ..
-    logical :: has_interface
+    logical, intent(inout) :: refineflag, coarsenflag, norefineflag, nocoarsenflag
 
-    ! force refine if has_interface; force coarsen if not
+    ! refine if has_interface, coarsen if not
     if ( abs(x(2) - 0.75d0) < 1.0d-1 .or. &
        abs(x(2) - 0.25d0) < 1.0d-1 ) then
-       force_refine = .true.
-    else
-       force_coarsen = .true.
+       refineflag = .true.
+       norefineflag = .false.
+       coarsenflag = .false.
+       nocoarsenflag = .true.
     end if
-
-    implies = .true.
 
   end subroutine usr_refine_grid
 
