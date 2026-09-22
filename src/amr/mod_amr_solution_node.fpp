@@ -303,7 +303,7 @@ contains
 ! ---------------------------------------------------------------------------
 ! Per-cell geometry helpers, shared by the three kernels of
 ! fill_geometry_device below.  They are fypp macros rather than
-! `!$acc routine seq` procedures deliberately: an inlined call inside those
+! `GPU_ROUTINE_SEQ` procedures deliberately: an inlined call inside those
 ! kernels is what nvfortran's -Minline previously mis-hoisted, giving every
 ! cell of a block the position of the first one.
 ! ---------------------------------------------------------------------------
@@ -330,7 +330,7 @@ contains
              fR = ${s}$ + half*${d}$
 #:if defined('LOG_RADIUS')
              ! r_of_s, written out because this has to be a macro rather than
-             ! an !$acc routine (see above).  The odd form is what makes the
+             ! a GPU routine (see above).  The odd form is what makes the
              ! mesh beyond a cylindrical axis the exact mirror of the mesh
              ! inside it, which is what the pole copy in getbc assumes; it is
              ! taken only for log_r0 > 0, where s = 0 is r = 0.  With
@@ -477,7 +477,7 @@ contains
     ! mesh, and from its upper corner in the outer ghost layer, so that the
     ! overlapping ghost cells of two neighbouring blocks come out identical to
     ! the last bit.
-    !$acc parallel loop collapse(3) default(present) private(p1,p2,p3#{if GEOM != 'Cartesian'}#, fL,fR,rc,ds1,rbar#{endif}##{if GEOM == 'spherical'}#, uu,tbar#{endif}#)
+    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$ ${GPU_DEFAULT_PRESENT()}$
     do ix3=ixGlo3,ixGhi3
        do ix2=ixGlo2,ixGhi2
           do ix1=ixGlo1,ixGhi1
@@ -562,7 +562,7 @@ contains
     ! sits dtheta/6 further out than the midpoint and sin(theta_bar) runs about
     ! a third above sin(theta_c) in the first cell - which is exactly the cell
     ! whose vanishing ds(3) sets dt for the whole run.
-    !$acc parallel loop collapse(3) default(present) private(e1,e2,fL,fR,rc,ds1,rbar)
+    ${GPU_PARALLEL_LOOP("collapse(3) private(e1,e2,fL,fR,rc,ds1,rbar)")}$ ${GPU_DEFAULT_PRESENT()}$
     do ix3=ixGextmin3,ixGextmax3
        do ix2=ixGextmin2,ixGextmax2
           do ix1=ixGextmin1,ixGextmax1
@@ -596,7 +596,7 @@ contains
     ! neighbouring coarse block whose ghost cells have to match - and its
     ! spacing is doubled, so one loop covers positions, volumes and areas.
     ! As above, only the positions exist in a Cartesian build.
-    !$acc parallel loop collapse(3) default(present) private(p1,p2,p3#{if GEOM != 'Cartesian'}#, fL,fR,rc,ds1,rbar#{endif}##{if GEOM == 'spherical'}#, uu,tbar#{endif}#)
+    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$ ${GPU_DEFAULT_PRESENT()}$
     do ix3=1,ixCoGmax3
        do ix2=1,ixCoGmax2
           do ix1=1,ixCoGmax1
@@ -699,11 +699,11 @@ contains
 
     integer          :: ix1, ix2, ix3, iwx
     ! wx is sized by the compile-time max_nw, not the runtime nwextra: a
-    ! variable-length private array in an !$acc parallel loop is a fragile
+    ! variable-length private array in a GPU parallel loop is a fragile
     ! corner across OpenACC compilers. Only wx(1:nwextra) is passed and used.
     double precision :: xloc(1:ndim), wx(max_nw)
 
-    !$acc parallel loop collapse(3) default(present) private(xloc, wx)
+    ${GPU_PARALLEL_LOOP("collapse(3) private(xloc, wx, iwx)")}$ ${GPU_DEFAULT_PRESENT()}$
     do ix3 = ixGlo3, ixGhi3
        do ix2 = ixGlo2, ixGhi2
           do ix1 = ixGlo1, ixGhi1

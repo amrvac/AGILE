@@ -78,7 +78,7 @@ contains
             n = igrids_active(iigrid)            
             dr  = rnode(rpdx1_:rnodehi, n)
             
-            !$acc loop collapse(ndim) vector private(xloc, dloc, wprim, wnew, wCT)
+            ${GPU_LOOP_VECTOR("collapse(ndim) private(xloc, dloc, wprim, wnew, wCT)")}$
             do ix3=ixOmin3,ixOmax3 
                do ix2=ixOmin2,ixOmax2 
                   do ix1=ixOmin1,ixOmax1

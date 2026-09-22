@@ -155,7 +155,7 @@ module mod_physicaldata
   !> one geometry to rule them all: bgeo for the blocks themselves, bgeoc for
   !> their one-level-coarser representatives
   type(geo_t), target                                     :: bgeo, bgeoc
-  !$acc declare create(bgeo, bgeoc)
+  ${GPU_DECLARE_CREATE('bgeo, bgeoc')}$
 
   !> array of physical blocks in reduced dimension
   type(state_sub), dimension(:), allocatable, target :: ps_sub

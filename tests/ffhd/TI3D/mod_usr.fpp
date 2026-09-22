@@ -107,7 +107,7 @@ contains
   !> Uniform vertical frozen field, b-hat = -z-hat everywhere (Cartesian).
   !> Called by name from fill_nwextra_device; see mod_usr_methods.
   pure subroutine usr_set_nwextra(x, bhat)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(out) :: bhat(1:3)
 

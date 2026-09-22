@@ -17,7 +17,7 @@ module mod_usr
     integer, parameter :: jmax=5000
     ${GPU_DECLARE_CREATE('usr_grav,SRadius,pbc,rbc')}$
     double precision :: B0,kx,y0,lQ0,bQ0
-    !$acc declare create(lQ0,bQ0,B0,kx,y0)
+    ${GPU_DECLARE_CREATE('lQ0,bQ0,B0,kx,y0')}$
   
   contains
 
@@ -72,9 +72,9 @@ module mod_usr
       ${GPU_UPDATE_DEVICE('bQ0')}$
 
       ! twoarcades (called from usr_set_nwextra on the device) reads these
-      !$acc update device(B0,kx,y0)
+      ${GPU_UPDATE_DEVICE('B0,kx,y0')}$
 
-      !$acc update device(xprobmin1,xprobmax1,xprobmin2,xprobmax2,xprobmin3,xprobmax3)
+      ${GPU_UPDATE_DEVICE('xprobmin1,xprobmax1,xprobmin2,xprobmax2,xprobmin3,xprobmax3')}$
 
       call generateTV()
       call inithdstatic()
@@ -205,7 +205,7 @@ module mod_usr
     !> analytic field, in Cartesian components, normalised. Called by name from
     !> fill_nwextra_device; see mod_usr_methods.
     pure subroutine usr_set_nwextra(x, bhat)
-      !$acc routine seq
+      ${GPU_ROUTINE_SEQ()}$
       double precision, intent(in)  :: x(1:ndim)
       double precision, intent(out) :: bhat(1:3)
 
@@ -371,7 +371,7 @@ module mod_usr
   end subroutine quadrupolar_field
   
   pure subroutine twoarcades(x, ba)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     double precision, intent(in) :: x(1:ndim)
     double precision, intent(out) :: ba(1:ndir)
     

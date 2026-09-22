@@ -41,7 +41,7 @@ module mod_coarsen_refine
   !> Aggregation gives up MPI's own mismatch detection, so the arrival lengths
   !> are checked against the layout in exchange_coarsened_blocks.
   double precision, allocatable, dimension(:) :: snd_buff_cf, rcv_buff_cf
-  !$acc declare create(snd_buff_cf,rcv_buff_cf)
+  ${GPU_DECLARE_CREATE('snd_buff_cf,rcv_buff_cf')}$
 
   !> Per outgoing / incoming chunk, appended by coarsen_grid_siblings during
   !> the walk and turned into per-peer runs by exchange_coarsened_blocks.
@@ -55,8 +55,7 @@ module mod_coarsen_refine
   integer, allocatable, dimension(:) :: cf_rcv_igrid, cf_rcv_ibuf
   integer, allocatable, dimension(:) :: cf_rcv_src, cf_rcv_key
   integer, allocatable, dimension(:,:) :: cf_rcv_ic
-  !$acc declare create(cf_snd_igrid,cf_snd_ibuf,cf_rcv_igrid,cf_rcv_ibuf,&
-  !$acc&               cf_rcv_ic)
+  ${GPU_DECLARE_CREATE('cf_snd_igrid,cf_snd_ibuf,cf_rcv_igrid,cf_rcv_ibuf, cf_rcv_ic')}$
 
   !> The peers themselves, ascending, with the extent of each one's run.  Host
   !> only: these drive the MPI calls and nothing else.
@@ -146,7 +145,7 @@ contains
             cf_snd_dest(max_buff), cf_snd_key(max_buff), &
             cf_rcv_igrid(max_buff), cf_rcv_ibuf(max_buff), &
             cf_rcv_src(max_buff), cf_rcv_key(max_buff), cf_rcv_ic(3,max_buff) )
-       !$acc update device(snd_buff_cf, rcv_buff_cf)
+       ${GPU_UPDATE_DEVICE('snd_buff_cf, rcv_buff_cf')}$
     end if
 
     do ipe=0,npe-1
@@ -628,11 +627,10 @@ contains
     deallocate(chunksize)
 
     if (n_cf_snd > 0) then
-      !$acc update device(cf_snd_igrid(1:n_cf_snd), cf_snd_ibuf(1:n_cf_snd))
+      ${GPU_UPDATE_DEVICE('cf_snd_igrid(1:n_cf_snd), cf_snd_ibuf(1:n_cf_snd)')}$
     end if
     if (n_cf_rcv > 0) then
-      !$acc update device(cf_rcv_igrid(1:n_cf_rcv), cf_rcv_ibuf(1:n_cf_rcv),&
-      !$acc&              cf_rcv_ic(:,1:n_cf_rcv))
+      ${GPU_UPDATE_DEVICE('cf_rcv_igrid(1:n_cf_rcv), cf_rcv_ibuf(1:n_cf_rcv), cf_rcv_ic(:,1:n_cf_rcv)')}$
     end if
 
     ! One Irecv per peer, straight into that peer's run.  A peer sends exactly
@@ -641,7 +639,7 @@ contains
     itag = 0
     if (n_cf_recv_pe > 0) then
 #ifndef NOGPUDIRECT
-      !$acc host_data use_device(rcv_buff_cf)
+      ${GPU_HOST_DATA_USE_DEVICE('rcv_buff_cf')}$
 #endif
       do k = 1, n_cf_recv_pe
         call mpi_irecv_wrapper(rcv_buff_cf(cf_recv_pe_off(k)),&
@@ -649,18 +647,18 @@ contains
            recvrequest(k),ierrmpi)
       end do
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end if
 
     ! Pack every outgoing chunk in one kernel.  bgc(1)%w carries the grid index
     ! last, so the block can be selected by a device-side index.
     if (n_cf_snd > 0) then
-      !$acc parallel loop gang default(present) private(igrid,ibuf)
+      ${GPU_PARALLEL_LOOP_GANG("private(igrid,ibuf)")}$ ${GPU_DEFAULT_PRESENT()}$
       do k = 1, n_cf_snd
          igrid = cf_snd_igrid(k)
          ibuf  = cf_snd_ibuf(k)
-         !$acc loop collapse(4) vector
+         ${GPU_LOOP_VECTOR("collapse(4)")}$
          do iw = 1, nwgc
             do ix3 = 1, nxCo3
                do ix2 = 1, nxCo2
@@ -679,9 +677,9 @@ contains
 
     if (n_cf_send_pe > 0) then
 #ifdef NOGPUDIRECT
-      !$acc update host(snd_buff_cf(1:n_cf_snd*nchunk))
+      ${GPU_UPDATE_HOST('snd_buff_cf(1:n_cf_snd*nchunk)')}$
 #else
-      !$acc host_data use_device(snd_buff_cf)
+      ${GPU_HOST_DATA_USE_DEVICE('snd_buff_cf')}$
 #endif
       do k = 1, n_cf_send_pe
         call mpi_isend_wrapper(snd_buff_cf(cf_send_pe_off(k)),&
@@ -689,7 +687,7 @@ contains
            sendrequest(k),ierrmpi)
       end do
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end if
 
@@ -705,20 +703,20 @@ contains
            "exchange_coarsened_blocks: message length disagrees with the layout")
       end do
 #ifdef NOGPUDIRECT
-      !$acc update device(rcv_buff_cf(1:n_cf_rcv*nchunk))
+      ${GPU_UPDATE_DEVICE('rcv_buff_cf(1:n_cf_rcv*nchunk)')}$
 #endif
     end if
 
     ! Apply every incoming chunk in one kernel.
     if (n_cf_rcv > 0) then
-      !$acc parallel loop gang default(present) private(igrid,ibuf,ic1,ic2,ic3)
+      ${GPU_PARALLEL_LOOP_GANG("private(igrid,ibuf,ic1,ic2,ic3)")}$ ${GPU_DEFAULT_PRESENT()}$
       do k = 1, n_cf_rcv
          igrid = cf_rcv_igrid(k)
          ibuf  = cf_rcv_ibuf(k)
          ic1   = cf_rcv_ic(1,k)
          ic2   = cf_rcv_ic(2,k)
          ic3   = cf_rcv_ic(3,k)
-         !$acc loop collapse(4) vector
+         ${GPU_LOOP_VECTOR("collapse(4)")}$
          do iw = 1, nwgc  ! analytic extras past nwgc are set in alloc_node
             do ix3 = 1, nxCo3
                do ix2 = 1, nxCo2

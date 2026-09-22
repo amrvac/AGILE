@@ -412,11 +412,11 @@ contains
 
     if (srhd_small_density <= 0.0d0 .and. srhd_small_pressure <= 0.0d0) return
 
-    !$acc parallel loop private(igrid) gang
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
     do iigrid = 1, igridstail_active
        igrid = igrids_active(iigrid)
 
-       !$acc loop vector collapse(3) private(u)
+       ${GPU_LOOP_VECTOR("collapse(3) private(u)")}$
        do ix3 = ixGlo3, ixGhi3
           do ix2 = ixGlo2, ixGhi2
              do ix1 = ixGlo1, ixGhi1

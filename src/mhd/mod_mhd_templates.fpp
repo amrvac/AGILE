@@ -396,7 +396,7 @@
     allocate(iw_vector(nvector))
     iw_vector(1) = mom(1) - 1
     iw_vector(2) = mag(1) - 1
-    !$acc update device(nvector, iw_vector)
+    ${GPU_UPDATE_DEVICE('nvector, iw_vector')}$
 
 
 ! use cycle, needs to be dealt with:
@@ -719,7 +719,7 @@ end subroutine addsource_compact
 !> faces.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt
   !> primitive variables (rho, velocity, pressure, B, psi) at the current stage
@@ -790,7 +790,7 @@ end subroutine addsource_geometry
 !> cylindrical annulus sits outside the midpoint.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt
   !> primitive variables (rho, velocity, pressure, B, psi) at the current stage

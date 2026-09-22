@@ -1261,7 +1261,7 @@ contains
 
     ! fill the SRL send buffers on GPU
     do inb = 1, nbprocs_info%nbprocs_srl
-       !$acc parallel loop default(present) gang private(igrid, ienc, ibuf_start, i1, i2, i3, ixSmin1, ixSmin2, ixSmin3, Nx1, ipole, iB_pole, n_i1, n_i2, n_i3, sbase1, sbase2, sbase3, sstep1, sstep2, sstep3)
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, iib2, iib3, ixSmin1, ixSmin2, ixSmin3, ixSmax1, ixSmax2, ixSmax3, Nx1, Nx2, Nx3, ipole, iB_pole, n_i1, n_i2, n_i3, sbase1, sbase2, sbase3, sstep1, sstep2, sstep3)")}$ ${GPU_DEFAULT_PRESENT()}$
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
              igrid = nbprocs_info%srl_nb(inb)%info%igrid(i)
              ienc = nbprocs_info%srl_nb(inb)%info%iencode(i)
@@ -1292,7 +1292,7 @@ contains
                 n_i3=i3; sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
              end if
 
-             !$acc loop collapse(4) vector independent
+             ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
              do iw = nwhead, nwtail
                 do ix3 = ixSmin3, ixSmax3
                    do ix2 = ixSmin2, ixSmax2
@@ -1320,7 +1320,7 @@ contains
 
     ! fill the C send buffers on GPU (send_restrict)
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc parallel loop gang default(present) private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3)
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3,igrid,ibuf_start,iib1,iib2,iib3,ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3)")}$ ${GPU_DEFAULT_PRESENT()}$
        do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%course_nb(inb)%info%igrid(i)
@@ -1373,7 +1373,7 @@ contains
              sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
           end if
 
-          !$acc loop collapse(4) vector independent
+          ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixSmin3, ixSmax3
                 do ix2 = ixSmin2, ixSmax2
@@ -1450,7 +1450,7 @@ contains
 
     ! fill ghost-cell values of sibling blocks and if neighbor is coarser (f2c)
     ! same process case
-    ${GPU_PARALLEL_LOOP_GANG("collapse(2) private(i1,i2,i3, igrid, iib1,iib2,iib3, ipe_neighbor, ineighbor, n_i1,n_i2,n_i3, ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3, ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3, ic1,ic2,ic3, n_inc1,n_inc2,n_inc3)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP_GANG("collapse(2) private(i1,i2,i3, igrid, iib1,iib2,iib3, ipe_neighbor, ineighbor, n_i1,n_i2,n_i3, ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3, ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3, ic1,ic2,ic3, n_inc1,n_inc2,n_inc3, ipole,iB_pole, sbase1,sbase2,sbase3, sstep1,sstep2,sstep3)")}$ ${GPU_DEFAULT_PRESENT()}$
     do iigrid = 1, igridstail
        do i = 1, 27
           call idecode( i1, i2, i3, i)
@@ -1490,7 +1490,7 @@ contains
                       sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
                    end if
 
-                   !$acc loop collapse(ndim+1) independent vector
+                   ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$ ${GPU_INDEPENDENT()}$
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
@@ -1539,7 +1539,7 @@ contains
                       sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
                    end if
 
-                   !$acc loop collapse(ndim+1) independent vector
+                   ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$ ${GPU_INDEPENDENT()}$
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
@@ -1687,7 +1687,7 @@ contains
 
     ! fill the F (neighbor is finer) send buffer on GPU (send_prolong)
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3,i1,i2,i3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3) default(present)
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3,i1,i2,i3,igrid,ibuf_start,iib1,iib2,iib3,ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3)")}$ ${GPU_INDEPENDENT()}$ ${GPU_DEFAULT_PRESENT()}$
        do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%fine_nb(inb)%info%igrid(i)
@@ -1722,7 +1722,7 @@ contains
              sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
           end if
 
-          !$acc loop collapse(4) vector independent
+          ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixSmin3, ixSmax3
                 do ix2 = ixSmin2, ixSmax2
@@ -1788,7 +1788,7 @@ contains
 
 
     ! fill coarse ghost-cell values of finer neighbors in the same processor
-    !$acc parallel loop gang collapse(4) private(iib1,iib2,iib3,igrid,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3) default(present)
+    ${GPU_PARALLEL_LOOP_GANG("collapse(4) private(iib1,iib2,iib3,igrid,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3, inc1,inc2,inc3, ineighbor,ipe_neighbor, n_i1,n_i2,n_i3, n_inc1,n_inc2,n_inc3, ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3, ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3)")}$ ${GPU_DEFAULT_PRESENT()}$
     do iigrid=1,igridstail
        do i3=-1,1
           do i2=-1,1
@@ -1846,7 +1846,7 @@ contains
                                   sbase3=ixSmax3; sstep3=-1
                                end if
 
-                               !$acc loop collapse(4) vector independent
+                               ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
                                do iw = nwhead, nwtail
                                   do ix3 =0, ixRmax3-ixRmin3
                                      do ix2 = 0, ixRmax2-ixRmin2
@@ -2029,7 +2029,7 @@ contains
     ! this second pass, but it keeps corner-ghost handling complete and
     ! matches upstream for setups this fork does not yet exercise.
     if(bcphys.and. .not.stagger_grid) then
-       !$acc parallel loop gang default(present)
+       ${GPU_PARALLEL_LOOP_GANG()}$ ${GPU_DEFAULT_PRESENT()}$
        do iigrid = 1, igridstail; igrid=igrids(iigrid);
           if (.not.phyboundblock(igrid)) cycle
           call fill_boundary_after_gc(psb(igrid),igrid,time,qdt)

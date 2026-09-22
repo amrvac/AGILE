@@ -384,7 +384,7 @@ end subroutine addsource_local
 !> See "The polar axis" in CLAUDE.md.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt
   !> primitive variables (density, velocity, pressure) at the current stage
@@ -433,7 +433,7 @@ end subroutine addsource_geometry
 !> the midpoint.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt
   !> primitive variables (density, velocity, pressure) at the current stage

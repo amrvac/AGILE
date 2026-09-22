@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 !> Uniform Cartesian MHD flow on a spherical mesh through both poles.
 !>
 !> A constant density, constant pressure gas moving with a constant Cartesian
@@ -28,7 +32,7 @@ module mod_usr
   double precision :: v0(3) = [1.0d0, 0.5d0, -0.3d0]
   !> the uniform magnetic field, in Cartesian components
   double precision :: b0(3) = [0.2d0, -0.4d0, 0.1d0]
-  !$acc declare copyin(rho0, p0, v0, b0)
+  ${GPU_DECLARE_COPYIN('rho0, p0, v0, b0')}$
 
 contains
 
@@ -51,7 +55,7 @@ contains
   !> result needs a temporary that not every OpenACC compiler handles inside
   !> a device routine.
   pure subroutine to_spherical_vector(x, vec0, vec)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(in)  :: vec0(1:3)
     double precision, intent(out) :: vec(1:3)
@@ -107,8 +111,8 @@ contains
   !> discretisation is under test
   subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
      ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3
     integer, intent(in)             :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
@@ -130,7 +134,11 @@ contains
     ! (hd's wpt(1:nw)). mhd's privates (v, b, x_loc) are all compile-time
     ! sized, so there is nothing to miscompile. See CLAUDE.md ("Bug-hunting
     ! notes") and issue #154.
-    !$acc loop collapse(3) vector private(v, b, x_loc)
+#ifndef _OPENMP
+    ! Vector-level parallelization within a subroutine does not work with OpenMP.
+    ! TBD if this routine can be made seq (i.e. cell-based).
+    ${GPU_LOOP_VECTOR("collapse(3) private(v, b, x_loc)")}$
+#endif
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1
@@ -212,7 +220,7 @@ contains
     if (it /= 0) return
     ! process() runs before the solution is pulled back for output, so the
     ! host copy of w is stale unless we fetch this block ourselves
-    !$acc update host(ps(igrid)%w)
+    ${GPU_UPDATE_HOST('ps(igrid)%w')}$
 
     err = 0.0d0
     do iside = 1, 2

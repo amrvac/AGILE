@@ -461,11 +461,10 @@ contains
     integer :: iigrid
 
     if (present(igrid)) then
-       !$acc update self(bgeo%x(:,:,:,:,igrid), bgeoc%x(:,:,:,:,igrid))
+       ${GPU_UPDATE_HOST('bgeo%x(:,:,:,:,igrid), bgeoc%x(:,:,:,:,igrid)')}$
     else
        do iigrid = 1, igridstail
-          !$acc update self(bgeo%x(:,:,:,:,igrids(iigrid)), &
-          !$acc             bgeoc%x(:,:,:,:,igrids(iigrid)))
+          ${GPU_UPDATE_HOST('bgeo%x(:,:,:,:,igrids(iigrid)), bgeoc%x(:,:,:,:,igrids(iigrid))')}$
        end do
     end if
 
@@ -493,24 +492,18 @@ contains
     integer :: iigrid
 
     ! Index igrids(iigrid) directly rather than through a local igrid: a
-    ! variable whose only uses are inside !$acc directives looks dead to the
+    ! variable whose only uses are inside GPU directives looks dead to the
     ! Fortran front end, the assignment to it is dropped, and the update then
     ! silently targets the wrong block.  sync_positions_host below is written
     ! the same way for the same reason.
     do iigrid = 1, igridstail
-       !$acc update self(bgeo%x(:,:,:,:,igrids(iigrid)))
-       !$acc update self(bgeoc%x(:,:,:,:,igrids(iigrid)))
+       ${GPU_UPDATE_HOST('bgeo%x(:,:,:,:,igrids(iigrid))')}$
+       ${GPU_UPDATE_HOST('bgeoc%x(:,:,:,:,igrids(iigrid))')}$
 #:if GEOM != 'Cartesian'
        ! A Cartesian build has no metrics to fetch - they are not allocated -
        ! so there this reduces to exactly sync_positions_host.
-       !$acc update self(bgeo%dvolume(:,:,:,igrids(iigrid)), &
-       !$acc             bgeo%surfaceC(:,:,:,:,igrids(iigrid)), &
-       !$acc             bgeo%ds(:,:,:,:,igrids(iigrid)), &
-       !$acc             bgeo%dx(:,:,:,:,igrids(iigrid)))
-       !$acc update self(bgeoc%dvolume(:,:,:,igrids(iigrid)), &
-       !$acc             bgeoc%surfaceC(:,:,:,:,igrids(iigrid)), &
-       !$acc             bgeoc%ds(:,:,:,:,igrids(iigrid)), &
-       !$acc             bgeoc%dx(:,:,:,:,igrids(iigrid)))
+       ${GPU_UPDATE_HOST('bgeo%dvolume(:,:,:,igrids(iigrid)), bgeo%surfaceC(:,:,:,:,igrids(iigrid)), bgeo%ds(:,:,:,:,igrids(iigrid)), bgeo%dx(:,:,:,:,igrids(iigrid))')}$
+       ${GPU_UPDATE_HOST('bgeoc%dvolume(:,:,:,igrids(iigrid)), bgeoc%surfaceC(:,:,:,:,igrids(iigrid)), bgeoc%ds(:,:,:,:,igrids(iigrid)), bgeoc%dx(:,:,:,:,igrids(iigrid))')}$
 #:endif
     end do
 

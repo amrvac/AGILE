@@ -152,9 +152,7 @@ end subroutine finite_volume_local
        igrid_beg = (ibatch-1) * max_batch + 1
        igrid_end = min(ibatch * max_batch, igridstail_active)
 
-       !$acc parallel loop gang private(uprim, inv_dr, dr, n, xlo, ix1, ix2, ix3, fC1, fC2, fC3, &
-       !$acc& neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, &
-       !$acc& neighbor_type_3p) default(present)
+       ${GPU_PARALLEL_LOOP_GANG("private(uprim, inv_dr, dr, n, xlo, typelim, ix1, ix2, ix3, fC1, fC2, fC3, neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, neighbor_type_3p)")}$ ${GPU_DEFAULT_PRESENT()}$
        do iigrid = igrid_beg, igrid_end
           n = igrids_active(iigrid)
 
@@ -185,7 +183,7 @@ end subroutine finite_volume_local
              end do
           end do
 
-       !$acc loop vector collapse(ndim) private(f, wnew, tmp, xlocC, xloc#{if defined('SOURCE_LOCAL')}#, wCT #{endif}##{if defined('SOURCE_LOCAL') or GEOM != 'Cartesian'}#, wprim #{endif}##{if GEOM != 'Cartesian'}#, inv_dvol, dAdV #{endif}##{if defined('SOURCE_COMPACT')}#, tmp1,tmp2,tmp3 #{endif}##{if defined('SOURCE_LOCAL') or defined('SOURCE_NONLOCAL') or defined('SOURCE_COMPACT')}#, dloc #{endif}#)
+       ${GPU_LOOP_VECTOR("collapse(ndim) private(f, wnew, tmp, xlocC, xloc" + (", wCT" if defined('SOURCE_LOCAL') else "") + (", wprim" if defined('SOURCE_LOCAL') or GEOM != 'Cartesian' else "") + (", inv_dvol, dAdV" if GEOM != 'Cartesian' else "") + (", tmp1,tmp2,tmp3" if defined('SOURCE_COMPACT') else "") + (", dloc" if defined('SOURCE_LOCAL') or defined('SOURCE_NONLOCAL') or defined('SOURCE_COMPACT') else "") + ")")}$
        do ix3=ixOmin3,ixOmax3 
           do ix2=ixOmin2,ixOmax2 
              do ix1=ixOmin1,ixOmax1 

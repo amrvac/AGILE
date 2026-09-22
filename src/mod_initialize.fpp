@@ -115,16 +115,16 @@ contains
     call alloc_geometry(bgeoc, ixCoGmin1,ixCoGmin2,ixCoGmin3, ixCoGmax1,&
          ixCoGmax2,ixCoGmax3, ixCoGmin1,ixCoGmin2,ixCoGmin3, ixCoGmax1,&
          ixCoGmax2,ixCoGmax3)
-    !$acc update device(bgeo, bgeoc)
+    ${GPU_UPDATE_DEVICE('bgeo, bgeoc')}$
     ! What exists is device-resident, because the device is what produces it:
     ! fill_geometry_device builds every allocated member of geo_t there, dx
     ! included even though no kernel reads it - it has to live where it is
     ! written, and is pulled back only on demand.
-    !$acc enter data copyin(bgeo%x)
-    !$acc enter data copyin(bgeoc%x)
+    ${GPU_ENTER_DATA_COPYIN('bgeo%x')}$
+    ${GPU_ENTER_DATA_COPYIN('bgeoc%x')}$
 #:if GEOM != 'Cartesian'
-    !$acc enter data copyin(bgeo%ds, bgeo%dvolume, bgeo%surfaceC, bgeo%dx)
-    !$acc enter data copyin(bgeoc%ds, bgeoc%dvolume, bgeoc%surfaceC, bgeoc%dx)
+    ${GPU_ENTER_DATA_COPYIN('bgeo%ds, bgeo%dvolume, bgeo%surfaceC, bgeo%dx')}$
+    ${GPU_ENTER_DATA_COPYIN('bgeoc%ds, bgeoc%dvolume, bgeoc%surfaceC, bgeoc%dx')}$
 #:endif
 
     do igrid = 1, max_blocks
@@ -231,7 +231,7 @@ contains
     call check_pole_setup
     ! poleB is declare create'd but had no device copy; nothing on the device
     ! reads it today, and an uninitialised one is a trap for whoever first does
-    !$acc update device(poleB)
+    ${GPU_UPDATE_DEVICE('poleB')}$
 
     ! number of grid blocks at level 1 along a dimension, which does not have a pole or periodic boundary, 
     ! must be larger than 1 for a rectangular AMR mesh

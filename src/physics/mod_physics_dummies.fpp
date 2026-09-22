@@ -80,10 +80,10 @@ end subroutine addsource_compact
 
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
-  !$acc routine seq
 #ifndef _CRAYFTN
   use mod_comm_lib, only: mpistop
 #endif
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)     :: qdt
   real(dp), intent(in)     :: wprim(nw_phys)
   real(dp), intent(in)     :: x(1:ndim)
@@ -104,7 +104,7 @@ end subroutine addsource_geometry
 !> auxiliary variables and without a floor of its own needs nothing here, and
 !> the call is inlined away.
 pure subroutine fix_prim_state(u)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(inout) :: u(nw_phys)
 
 end subroutine fix_prim_state

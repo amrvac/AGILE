@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 !> Polar-axis tests on a cylindrical mesh: three runs from one build.
 !>
 !> The cylindrical counterpart of tests/hd/spherical_pole, and organised the
@@ -67,7 +71,7 @@ module mod_usr
   !> the device-side form of `setup`: specialbound_usr and analytic_state run
   !> on the GPU, where comparing a character string is awkward
   logical :: is_blast = .false.
-  !$acc declare copyin(rho0, p0, v0, pblast, rblast, rc, zc, phic, is_blast)
+  ${GPU_DECLARE_COPYIN('rho0, p0, v0, pblast, rblast, rc, zc, phic, is_blast')}$
 
 contains
 
@@ -88,7 +92,7 @@ contains
     case default
        call mpistop("&usr_list setup must be 'uniform' or 'blast'")
     end select
-    !$acc update device(is_blast, v0)
+    ${GPU_UPDATE_DEVICE('is_blast, v0')}$
 
     usr_init_one_grid => initonegrid_usr
     usr_special_bc    => specialbound_usr
@@ -125,7 +129,7 @@ contains
   !> initial condition, the boundary condition and the reference the pole ghost
   !> cells are checked against.
   pure subroutine analytic_state(x_loc, wpt)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     double precision, intent(in)  :: x_loc(1:ndim)
     double precision, intent(out) :: wpt(1:nw)
     ! .. local ..
@@ -218,8 +222,8 @@ contains
   !> the uniform setups; the blast leaves them open with 'cont' instead.
   subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
      ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3
     integer, intent(in)             :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
@@ -237,13 +241,17 @@ contains
 
     ! nvfortran's OpenACC miscompiles a collapsed vector loop whose body has a
     ! call AND a runtime-sized private automatic array, reached through this
-    ! !$acc routine vector from the gang loops in fill_boundary_before_gc /
+    ! GPU_ROUTINE_VECTOR from the gang loops in fill_boundary_before_gc /
     ! fill_boundary_after_gc: it gets the array's per-lane stride wrong and the
     ! ghost layer comes back index-rotated. Sizing wpt with the compile-time
     ! nw_phys is the minimal fix (dropping the collapse also works but still
     ! reorders the short vector loop). It bit the hd curvilinear pole cases via
     ! analytic_state. See CLAUDE.md ("Bug-hunting notes") and issue #154.
-    !$acc loop collapse(3) vector private(wpt, x_loc)
+#ifndef _OPENMP
+    ! Vector-level parallelization within a subroutine does not work with OpenMP.
+    ! TBD if this routine can be made seq (i.e. cell-based).
+    ${GPU_LOOP_VECTOR("collapse(3) private(wpt, x_loc)")}$
+#endif
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1
@@ -269,24 +277,28 @@ contains
   !> reaches it from inside an OpenACC kernel, so it is a compile-time
   !> dependency, which is why refine_usr is .true. in agile.par even though
   !> only one of the three par files switches it on at run time.
-  subroutine usr_refine_grid(igrid,level,ixGmin1,ixGmin2,ixGmin3,ixGmax1,&
-     ixGmax2,ixGmax3,ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,qt,w,x,refine,&
-     coarsen)
-    !$acc routine vector
+  subroutine usr_refine_grid(level,qt,w,x,refineflag,coarsenflag,norefineflag,&
+     nocoarsenflag)
     use mod_global_parameters
-    integer, intent(in)          :: igrid, level, ixGmin1,ixGmin2,ixGmin3,&
-       ixGmax1,ixGmax2,ixGmax3, ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3
-    double precision, intent(in) :: qt, w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-       ixGmin3:ixGmax3,1:nw), x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
-       ixGmin3:ixGmax3,1:ndim)
-    integer, intent(inout)       :: refine, coarsen
+    ${GPU_ROUTINE_SEQ()}$
 
-    if (x(ixmin1,ixmin2,ixmin3,3) < dpi) then
-       refine  =  1
-       coarsen = -1
-    else
-       refine  = -1
-       coarsen =  1
+    integer, intent(in)          :: level
+    double precision, intent(in) :: qt
+    double precision, intent(in) :: w(1:nw)
+    double precision, intent(in) :: x(1:3)
+    logical, intent(inout)       :: refineflag, coarsenflag, norefineflag,&
+       nocoarsenflag
+
+    ! Refine the half of the domain below phi=pi and coarsen the other half, so
+    ! that the pole is crossed by a resolution jump. The block-based form this
+    ! replaces tested x(ixmin1,ixmin2,ixmin3,3), the lowest-phi cell of the
+    ! block; because phi increases with the third index, "any cell below pi"
+    ! selects exactly the same blocks.
+    if (x(3) < dpi) then
+       refineflag    = .true.
+       norefineflag  = .false.
+       coarsenflag   = .false.
+       nocoarsenflag = .true.
     end if
 
   end subroutine usr_refine_grid
@@ -341,7 +353,7 @@ contains
     end if
     ! process() runs before the solution is pulled back for output, so the
     ! host copy of w is stale unless we fetch this block ourselves
-    !$acc update host(ps(igrid)%w)
+    ${GPU_UPDATE_HOST('ps(igrid)%w')}$
 
     ! err: the interior-transverse face, held to `tol` (round-off for a
     ! same-level pole copy). errc: the edge/corner cells the widening added,

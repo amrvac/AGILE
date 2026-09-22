@@ -42,7 +42,7 @@ contains
 
           dxinv(1)=one/dx1;dxinv(2)=one/dx2;dxinv(3)=one/dx3;
 
-          !$acc loop vector collapse(ndim) REDUCTION(min:dtmin_mype) private(u, xloc#{if GEOM != 'Cartesian'}#, dxinv#{endif}#)
+          ${GPU_LOOP_VECTOR("collapse(ndim) reduction(min:dtmin_mype) private(u, xloc, cmaxtot, cmax, idims, qdtnew" + (", dxinv" if GEOM != 'Cartesian' else "") + ")")}$
           do ix3=ixMlo3,ixMhi3 
              do ix2=ixMlo2,ixMhi2 
                 do ix1=ixMlo1,ixMhi1 
@@ -97,7 +97,7 @@ contains
                    u(1:nw_phys) = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
                    call to_primitive(u)
                    xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, igrid)
-                   !$acc loop seq
+                   ${GPU_LOOP_SEQ()}$
                    do idims = 1, ndim
                       cmax = get_cmax(u, xloc, idims)
                       cmax_mype = max( cmax_mype, cmax )

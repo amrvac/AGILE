@@ -84,7 +84,7 @@ contains
       ! only the machinery-carried variables (1:nwgc); any analytic extras past
       ! nwgc are device-resident from alloc_node and must not be clobbered by
       ! this host-to-device push
-      !$acc update device(bg(1)%w(:,:,:,1:nwgc,igrid))
+      ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
     end subroutine initial_condition
 
     !> modify initial condition
@@ -113,7 +113,7 @@ contains
        end if
        ! 1:nwgc only - analytic extras past nwgc stay as read_snapshot and
        ! alloc_node left them (see initial_condition)
-       !$acc update device(bg(1)%w(:,:,:,1:nwgc,igrid))
+       ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
     end do
 
   end subroutine modify_IC

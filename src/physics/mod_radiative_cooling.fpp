@@ -688,13 +688,13 @@ module mod_radiative_cooling
     end subroutine findT
 
     subroutine getvar_cooling_exact(qdt, wCT, w, x, coolrate, fl)
-      ${GPU_ROUTINE_SEQ()}$
       ! Calculates cooling rate using the exact cooling method,
       ! for usage in eg. source_terms subroutine.
       ! The TEF must be known, so this routine can only be used
       ! together with the "exact" cooling method.
   
       use mod_global_parameters
+      ${GPU_ROUTINE_SEQ()}$
       double precision, intent(in)    :: qdt, wCT(nw_phys), w(nw_phys), x(1:ndim)
       double precision, intent(inout) :: coolrate
       type(rc_fluid), intent(in) :: fl

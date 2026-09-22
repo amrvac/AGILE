@@ -189,7 +189,7 @@ module mod_usr
     !> vertical dipole solar field, in Cartesian components, normalised. Called
     !> by name from fill_nwextra_device; see mod_usr_methods.
     pure subroutine usr_set_nwextra(x, bhat)
-      !$acc routine seq
+      ${GPU_ROUTINE_SEQ()}$
       double precision, intent(in)  :: x(1:ndim)
       double precision, intent(out) :: bhat(1:3)
       double precision :: xh, yh, zh, yv, zv, dh_r5, dh_r3, dv_r5, dv_r3

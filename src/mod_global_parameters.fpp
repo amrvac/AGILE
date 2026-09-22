@@ -74,7 +74,7 @@ module mod_global_parameters
   !> code evaluates where s >= 0 is guaranteed. log_ra = 1, log_rb = 0 for
   !> log_r0 = 0, so a plain logarithmic build gets bit-for-bit exp(s).
   double precision :: log_ra = 1.0d0, log_rb = 0.0d0
-  !$acc declare create(log_r0, log_ra, log_rb)
+  ${GPU_DECLARE_CREATE('log_r0, log_ra, log_rb')}$
 
   !> Indices for cylindrical coordinates FOR TESTS, negative value when not used:
   integer :: r_ = -1

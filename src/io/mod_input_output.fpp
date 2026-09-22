@@ -1626,7 +1626,7 @@ contains
 
     xprobmin1 = s_of_r(xprobmin1)
     xprobmax1 = s_of_r(xprobmax1)
-    !$acc update device(log_r0, log_ra, log_rb)
+    ${GPU_UPDATE_DEVICE('log_r0, log_ra, log_rb')}$
 
 #:else
     if (log_r0 /= zero) call mpistop("log_r0 offsets the logarithmic radial &

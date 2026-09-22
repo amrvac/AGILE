@@ -287,7 +287,7 @@
     else if (any(shape(flux_type) /= [ndir, nw_flux])) then
        call mpistop("phys_check error: flux_type has wrong shape")
     end if
-    !$acc update device(flux_type)
+    ${GPU_UPDATE_DEVICE('flux_type')}$
 
     ! Only the frozen field (b1,b2,b3) is a genuine vector here: mom(1) is a
     ! scalar (the field-aligned momentum m_par), not 3 consecutive slots, so
@@ -295,7 +295,7 @@
     nvector      = 1 ! No. vector vars
     allocate(iw_vector(nvector))
     iw_vector(1) = iw_b1 - 1
-    !$acc update device(nvector, iw_vector)
+    ${GPU_UPDATE_DEVICE('nvector, iw_vector')}$
 
 #:if defined('COOLING')
     call radiative_cooling_init_params(phys_gamma,He_abundance)
@@ -464,7 +464,7 @@ end subroutine addsource_nonlocal
 !> for spherical, r for cylindrical). PDIVB defaults off and is untouched here.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt
   real(dp), intent(in)     :: wprim(nw_phys)

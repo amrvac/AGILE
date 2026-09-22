@@ -60,7 +60,7 @@ module mod_load_balance
   integer, allocatable, dimension(:) :: lb_snd_dest, lb_snd_key
   integer, allocatable, dimension(:) :: lb_rcv_igrid, lb_rcv_ibuf
   integer, allocatable, dimension(:) :: lb_rcv_src, lb_rcv_key
-  !$acc declare create(lb_snd_igrid,lb_snd_ibuf,lb_rcv_igrid,lb_rcv_ibuf)
+  ${GPU_DECLARE_CREATE('lb_snd_igrid,lb_snd_ibuf,lb_rcv_igrid,lb_rcv_ibuf')}$
 
   !> The peers themselves, ascending, with the extent of each one's run.  Host
   !> only: these drive the MPI calls and nothing else.
@@ -224,20 +224,20 @@ contains
     nneed = max(n_lb_snd, n_lb_rcv)
     if (nneed > max_buff) then
       if (allocated(snd_buff_lb)) then
-        !$acc exit data delete(snd_buff_lb, rcv_buff_lb)
+        ${GPU_EXIT_DATA_DELETE('snd_buff_lb, rcv_buff_lb')}$
         deallocate(snd_buff_lb, rcv_buff_lb)
       end if
       max_buff = nneed
       allocate(snd_buff_lb(max_buff*nchunk), rcv_buff_lb(max_buff*nchunk))
-      !$acc enter data create(snd_buff_lb, rcv_buff_lb)
+      ${GPU_ENTER_DATA_CREATE('snd_buff_lb, rcv_buff_lb')}$
     end if
     if (n_lb_snd == 0 .and. n_lb_rcv == 0) return
 
     if (n_lb_snd > 0) then
-      !$acc update device(lb_snd_igrid(1:n_lb_snd), lb_snd_ibuf(1:n_lb_snd))
+      ${GPU_UPDATE_DEVICE('lb_snd_igrid(1:n_lb_snd), lb_snd_ibuf(1:n_lb_snd)')}$
     end if
     if (n_lb_rcv > 0) then
-      !$acc update device(lb_rcv_igrid(1:n_lb_rcv), lb_rcv_ibuf(1:n_lb_rcv))
+      ${GPU_UPDATE_DEVICE('lb_rcv_igrid(1:n_lb_rcv), lb_rcv_ibuf(1:n_lb_rcv)')}$
     end if
 
     ! One Irecv per peer, straight into that peer's run. A peer sends exactly
@@ -246,7 +246,7 @@ contains
     itag = 0
     if (n_lb_recv_pe > 0) then
 #ifndef NOGPUDIRECT
-      !$acc host_data use_device(rcv_buff_lb)
+      ${GPU_HOST_DATA_USE_DEVICE('rcv_buff_lb')}$
 #endif
       do k = 1, n_lb_recv_pe
         call mpi_irecv_wrapper(rcv_buff_lb(lb_recv_pe_off(k)),&
@@ -254,18 +254,18 @@ contains
            recvrequest(k),ierrmpi)
       end do
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end if
 
     ! Pack every departing block in one kernel. bg(1)%w carries the grid index
     ! last, so the block can be selected by a device-side index.
     if (n_lb_snd > 0) then
-      !$acc parallel loop gang default(present) private(igrid,ibuf)
+      ${GPU_PARALLEL_LOOP_GANG("private(igrid,ibuf)")}$ ${GPU_DEFAULT_PRESENT()}$
       do k = 1, n_lb_snd
          igrid = lb_snd_igrid(k)
          ibuf  = lb_snd_ibuf(k)
-         !$acc loop collapse(4) vector
+         ${GPU_LOOP_VECTOR("collapse(4)")}$
          do iw = 1, nwgc
             do ix3 = 1, block_nx3
                do ix2 = 1, block_nx2
@@ -284,9 +284,9 @@ contains
 
     if (n_lb_send_pe > 0) then
 #ifdef NOGPUDIRECT
-      !$acc update host(snd_buff_lb(1:n_lb_snd*nchunk))
+      ${GPU_UPDATE_HOST('snd_buff_lb(1:n_lb_snd*nchunk)')}$
 #else
-      !$acc host_data use_device(snd_buff_lb)
+      ${GPU_HOST_DATA_USE_DEVICE('snd_buff_lb')}$
 #endif
       do k = 1, n_lb_send_pe
         call mpi_isend_wrapper(snd_buff_lb(lb_send_pe_off(k)),&
@@ -294,7 +294,7 @@ contains
            sendrequest(k),ierrmpi)
       end do
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end if
 
@@ -310,17 +310,17 @@ contains
            "exchange_migrated_blocks: message length disagrees with the layout")
       end do
 #ifdef NOGPUDIRECT
-      !$acc update device(rcv_buff_lb(1:n_lb_rcv*nchunk))
+      ${GPU_UPDATE_DEVICE('rcv_buff_lb(1:n_lb_rcv*nchunk)')}$
 #endif
     end if
 
     ! Apply every arriving block in one kernel.
     if (n_lb_rcv > 0) then
-      !$acc parallel loop gang default(present) private(igrid,ibuf)
+      ${GPU_PARALLEL_LOOP_GANG("private(igrid,ibuf)")}$ ${GPU_DEFAULT_PRESENT()}$
       do k = 1, n_lb_rcv
          igrid = lb_rcv_igrid(k)
          ibuf  = lb_rcv_ibuf(k)
-         !$acc loop collapse(4) vector
+         ${GPU_LOOP_VECTOR("collapse(4)")}$
          do iw = 1, nwgc
             do ix3 = 1, block_nx3
                do ix2 = 1, block_nx2

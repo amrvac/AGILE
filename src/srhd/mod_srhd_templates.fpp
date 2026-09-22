@@ -72,7 +72,7 @@
   double precision, public                :: srhd_small_pressure = 0.0d0
   !> Smallest rest-mass density allowed
   double precision, public                :: srhd_small_density  = 0.0d0
-  !$acc declare copyin(srhd_small_pressure,srhd_small_density)
+  ${GPU_DECLARE_COPYIN('srhd_small_pressure,srhd_small_density')}$
 
   !> Whether particles module is added
   logical, public                         :: srhd_particles = .false.
@@ -106,12 +106,8 @@
     if (srhd_small_density < 0.0d0) call mpistop(&
        "srhd_small_density should be positive.")
 
-#ifdef _OPENACC
-    !$acc update device(srhd_eos, &
-    !$acc&     srhd_gamma, srhd_n_tracer, &
-    !$acc&     He_abundance, srhd_source_usr)
-    !$acc update device(srhd_small_pressure, srhd_small_density)
-#endif
+    ${GPU_UPDATE_DEVICE('srhd_eos, srhd_gamma, srhd_n_tracer, He_abundance, srhd_source_usr')}$
+    ${GPU_UPDATE_DEVICE('srhd_small_pressure, srhd_small_density')}$
 
   end subroutine read_params
 #:enddef
@@ -217,7 +213,7 @@
     nvector      = 1 ! No. vector vars
     allocate(iw_vector(nvector))
     iw_vector(1) = mom(1) - 1
-    !$acc update device(nvector, iw_vector)
+    ${GPU_UPDATE_DEVICE('nvector, iw_vector')}$
 
 ! use cycle, needs to be dealt with:
 !    ! Initialize particles module
@@ -295,7 +291,7 @@ end subroutine addsource_local
 !> matters, since bgeo%x is the volume barycentre, not the face midpoint.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt
   !> primitive variables (rho, spatial four-velocity, pressure, xi, lfac)
@@ -344,7 +340,7 @@ end subroutine addsource_geometry
 !> as well. It is *not* 1/x(1): bgeo%x holds the volume barycentre.
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt
   !> primitive variables (rho, spatial four-velocity, pressure, xi, lfac)
@@ -474,7 +470,7 @@ end subroutine addsource_geometry
   !> an actual floor, which is the useful configuration -- a state floored to
   !> exactly zero still gives csound2 = gamma*p/(rho*h) a zero denominator.
   pure subroutine fix_prim_state(u)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
 
     real(dp) :: rho, pth, rhoh, E, E_th

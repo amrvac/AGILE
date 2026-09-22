@@ -15,7 +15,7 @@ implicit none
   double precision, public         :: tolernr   = 1.0d-9
   double precision, public         :: dmaxvel   = 1.0d-7
 
-  !$acc declare copyin(maxitnr,absaccnr,tolernr,dmaxvel)
+  ${GPU_DECLARE_COPYIN('maxitnr,absaccnr,tolernr,dmaxvel')}$
 
 
 contains 
