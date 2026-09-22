@@ -150,16 +150,16 @@ contains
     double precision :: qt
     integer :: ix1, ix2, ix3
 
-    ${GPU_PARALLEL_LOOP_GANG("private(igrid,level,refineflag,coarsenflag,norefineflag,nocoarsenflag,qt)")}$
+    if (time_advance) then
+       qt=global_time+dt
+    else
+       qt=global_time
+    end if
+
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid,level,refineflag,coarsenflag,norefineflag,nocoarsenflag)")}$
     do iigrid=1,igridstail; igrid=igrids(iigrid);
 
        level=node(plevel_,igrid)
-   
-       if (time_advance) then
-          qt=global_time+dt
-       else
-          qt=global_time
-       end if
 
        refineflag = .false.
        coarsenflag = .true.
@@ -189,7 +189,7 @@ contains
           end if
        end if
 
-       if (nocoarsenflag)then
+       if (nocoarsenflag) then
           coarsen(igrid,mype)=.false.
        end if
 

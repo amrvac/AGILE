@@ -68,57 +68,26 @@ contains
 
   end subroutine initonegrid_usr
 
-  subroutine usr_refine_grid(igrid,level,ixGmin1,ixGmin2,ixGmin3,&
-    ixGmax1,ixGmax2,ixGmax3,ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,&
-    qt,w,x,refine,coarsen)
-
+  subroutine usr_refine_grid(level,qt,w,x,refineflag,coarsenflag,norefineflag,nocoarsenflag)
     use mod_global_parameters
-    ${GPU_ROUTINE_VECTOR()}$
+    ${GPU_ROUTINE_SEQ()}$
+
     ! Enforce additional refinement or coarsening
     ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.
 
-    ! you must set consistent values for integers refine/coarsen:
+    integer, intent(in)             :: level
+    double precision, intent(in)    :: qt
+    double precision, intent(in)    :: x(1:3)
+    double precision, intent(in)    :: w(1:nw)
+    logical, intent(inout) :: refineflag, coarsenflag, norefineflag, nocoarsenflag
 
-    ! refine = -1 enforce to not refine
-    ! refine =  0 doesn't enforce anything
-    ! refine =  1 enforce refinement
 
-    ! coarsen = -1 enforce to not coarsen
-    ! coarsen =  0 doesn't enforce anything
-    ! coarsen =  1 enforce coarsen
-
-    integer, intent(in)             :: igrid, level, ixGmin1,ixGmin2,&
-        ixGmin3,ixGmax1,ixGmax2,ixGmax3, ixmin1,ixmin2,ixmin3,ixmax1,&
-        ixmax2,ixmax3
-    double precision, intent(in)    :: qt, x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:ndim)
-    double precision, intent(in)    :: w(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:nw)
-    integer, intent(inout) :: refine, coarsen
-    ! .. local ..
-    integer                         :: ix1, ix2, ix3
-    logical                         :: has_sphere
-
-    has_sphere = .false.
-    ${GPU_LOOP_VECTOR("collapse(3) reduction(.or.:has_sphere)")}$
-    do ix3 = ixmin3, ixmax3
-       do ix2 = ixmin2, ixmax2
-          do ix1 = ixmin1, ixmax1
-             if ( w(ix1, ix2, ix3, rho_) > (rhodens-rholight)/2.0d0 ) then
-                has_sphere = .true.
-             end if
-          end do
-       end do
-    end do
-
-    if (has_sphere) then
-       coarsen = -1
-       refine  = 1
-    else 
-       coarsen = 1
-       refine  = -1
+    if ( w(rho_) > (rhodens-rholight)/2.0d0 ) then
+       refineflag = .true.
+       norefineflag = .false.
+       coarsenflag = .false.
+       nocoarsenflag = .true.
     end if
-
   end subroutine usr_refine_grid
 
     subroutine special_output(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&

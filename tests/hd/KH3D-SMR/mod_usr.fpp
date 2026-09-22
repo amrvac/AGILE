@@ -115,9 +115,6 @@ contains
     ! Enforce additional refinement or coarsening
     ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.
 
-    ! you must set consistent values for booleans force_refine/force_coarsen
-    ! implies = true sets force_no_coarsen when force_refine=.true. and similar for force_coarsen
-
     integer, intent(in)             :: level
     double precision, intent(in)    :: qt
     double precision, intent(in)    :: x(1:3)

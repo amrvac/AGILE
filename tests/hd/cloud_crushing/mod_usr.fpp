@@ -278,54 +278,26 @@ contains
   end subroutine specialbound_usr
 
 
-  subroutine usr_refine_grid(igrid,level,ixGmin1,ixGmin2,ixGmin3,&
-    ixGmax1,ixGmax2,ixGmax3,ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,&
-    qt,w,x,refine,coarsen)
-#if defined(_CRAYFTN) && (defined(_OPENACC) || defined(_OPENMP))
-    ! disable inlining for Cray
-    !dir$ inlinenever usr_refine_grid
-#endif
+  subroutine usr_refine_grid(level,qt,w,x,refineflag,coarsenflag,norefineflag,nocoarsenflag)
     use mod_global_parameters
     ${GPU_ROUTINE_SEQ()}$
 
     ! Enforce additional refinement or coarsening
     ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.
 
-    ! you must set consistent values for integers refine/coarsen:
+    integer, intent(in)             :: level
+    double precision, intent(in)    :: qt
+    double precision, intent(in)    :: x(1:3)
+    double precision, intent(in)    :: w(1:nw)
+    logical, intent(inout) :: refineflag, coarsenflag, norefineflag, nocoarsenflag
 
-    ! refine = -1 enforce to not refine
-    ! refine =  0 doesn't enforce anything
-    ! refine =  1 enforce refinement
-
-    ! coarsen = -1 enforce to not coarsen
-    ! coarsen =  0 doesn't enforce anything
-    ! coarsen =  1 enforce coarsen
-
-    integer, intent(in)             :: igrid, level, ixGmin1,ixGmin2,&
-        ixGmin3,ixGmax1,ixGmax2,ixGmax3, ixmin1,ixmin2,ixmin3,ixmax1,&
-        ixmax2,ixmax3
-    double precision, intent(in)    :: qt, x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:ndim)
-    double precision, intent(in)    :: w(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:nw)
-    integer, intent(inout) :: refine, coarsen
-
-    integer          :: ix1, ix2, ix3
-
-    do ix3 = ixGmin3, ixGmax3
-      do ix2 = ixGmin2, ixGmax2
-        do ix1 = ixGmin1, ixGmax1
-          if (x(ix1,ix2,ix3,1) < 2) then  ! within 100 pc of left bdry
-            coarsen = 1
-            refine  = -1
-          else
-            coarsen = 0
-            refine  = 0
-          end if
-        end do
-      end do
-    end do
-
+    if (x(1) < 2) then  ! within 100 pc of left bdry
+       coarsenflag = .true.
+       norefineflag = .true.
+    else
+       coarsenflag = .false.
+       norefineflag = .false.
+    end if
 
   end subroutine usr_refine_grid
 

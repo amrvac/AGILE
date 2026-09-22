@@ -345,39 +345,25 @@ contains
    end subroutine specialvarnames_output
 
 
-  subroutine usr_refine_grid(&
-    igrid, level,&
-    ixGmin1, ixGmin2, ixGmin3, ixGmax1, ixGmax2, ixGmax3,&
-    ixmin1,  ixmin2,  ixmin3,  ixmax1,  ixmax2,  ixmax3,&
-    qt, w, x, refine, coarsen)
-#if defined(_CRAYFTN) && (defined(_OPENACC) || defined(_OPENMP))
-    ! disable inlining for Cray
-    !dir$ inlinenever usr_refine_grid
-#endif
+  subroutine usr_refine_grid(level,qt,w,x,refineflag,coarsenflag,norefineflag,nocoarsenflag)
     use mod_global_parameters
     ${GPU_ROUTINE_SEQ()}$
-    implicit none
-    integer, intent(in) :: igrid, level
-    integer, intent(in) :: ixGmin1, ixGmin2, ixGmin3, ixGmax1, ixGmax2, ixGmax3
-    integer, intent(in) :: ixmin1,  ixmin2,  ixmin3,  ixmax1,  ixmax2,  ixmax3
-    double precision, intent(in) :: qt
-    double precision, intent(in),&
-      dimension(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, 1:nw) :: w
-    double precision, intent(in),&
-      dimension(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, 1:ndim) :: x
-    integer, intent(inout) :: refine, coarsen
 
-    associate(&
-      w_ => w(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :),&
-      x_ => x(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :))
+    ! Enforce additional refinement or coarsening
+    ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.
 
-        if (any(x_(:,:,:,3) < 1.1d0*zjet)  .and.&
-            any((x_(:,:,:,1)**2+x_(:,:,:,2)**2) < rjet**2)) then
-          coarsen = -1
-          refine = 1
-        end if
+    integer, intent(in)             :: level
+    double precision, intent(in)    :: qt
+    double precision, intent(in)    :: x(1:3)
+    double precision, intent(in)    :: w(1:nw)
+    logical, intent(inout) :: refineflag, coarsenflag, norefineflag, nocoarsenflag
 
-    end associate
+    if (x(3) < 1.1d0*zjet .and. (x(1)+x(2)**2) < rjet**2) then
+      refineflag = .true.
+      nocoarsenflag = .true.
+      coarsenflag = .false.
+      norefineflag = .false.
+    end if
 
   end subroutine usr_refine_grid
 
