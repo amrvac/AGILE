@@ -77,3 +77,35 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
 
 end subroutine addsource_compact
 #:enddef
+
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  !$acc routine seq
+#ifndef _CRAYFTN
+  use mod_comm_lib, only: mpistop
+#endif
+  real(dp), intent(in)     :: qdt
+  real(dp), intent(in)     :: wprim(nw_phys)
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+
+#ifndef _CRAYFTN
+  call mpistop("curvilinear geometry not implemented for this physics module")
+#endif
+
+end subroutine addsource_geometry
+#:enddef
+
+#:def fix_prim_state()
+!> Make a reconstructed primitive face state admissible before it is handed to
+!> the Riemann solver. Genuinely empty by default: a physics module without
+!> auxiliary variables and without a floor of its own needs nothing here, and
+!> the call is inlined away.
+pure subroutine fix_prim_state(u)
+  !$acc routine seq
+  real(dp), intent(inout) :: u(nw_phys)
+
+end subroutine fix_prim_state
+#:enddef

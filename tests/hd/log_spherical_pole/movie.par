@@ -1,0 +1,143 @@
+! A longer, visualisable run of the same blast-across-the-pole setup as
+! agile.par, on a logarithmically stretched radius, for making a movie and for watching conservation.
+!
+! Two things differ from agile.par and test.par on purpose:
+!
+!  * the radial domain is much wider, r in [0.4, 2.8] rather than [0.5, 1.5],
+!    so the shell has room to expand for the whole run without reaching
+!    either boundary. The hot spot still starts at r = 1.0, so the outer
+!    boundary is now 1.55 away from its outer edge rather than 0.25: at the
+!    roughly Mach 2 shell speed that is about t = 0.6 rather than t = 0.1.
+!
+!    Because the mesh is uniform in ln(r), the resolution is not a single
+!    number: q = (2.8/0.4)^(1/24) = 1.0845, so dr/r is 0.081 everywhere at
+!    level one, i.e. dr = 0.032 at the inner edge, 0.081 where the blast
+!    starts, and 0.227 at the outer edge. Three levels of refinement take
+!    dr/r to 0.020. Compared with the uniform-mesh run in
+!    tests/hd/spherical_pole, which has dr = 0.1 at level one and 0.025 at
+!    level three, this grid is *finer* everywhere inside r = 1.2 and pays for
+!    it only far out where the shell is weak - which is the reason to want a
+!    logarithmic radius in the first place.
+!
+!  * it runs to t = 0.6, long enough for the shell to cross the pole, wrap
+!    right around the far side and expand well out into the domain.
+!
+! The volume averages in the log are a rough conservation diagnostic. The net
+! mass flux of a *uniform* flow through a closed surface vanishes identically -
+! the background drift carries as much in through one hemisphere as it takes
+! out through the other - so they would be flat for the ambient state alone.
+! In practice the measured drift is about 1e-5 while the shell is still well
+! inside the domain and grows to 1e-4 once it reaches the inner boundary at
+! r = 0.4, around t = 0.2. Both the open boundaries and the fact that
+! fix_conserve is disabled at refinement boundaries contribute, so do not read
+! this as a tight conservation test - a sealed box on a quieter mesh holds
+! 1e-6.
+!
+! Run it with, from this directory:
+!   mkdir -p movie && mpirun -np 1 ./agile -i movie.par
+! after building for the GPU:
+!   make -j4 arch=nvidia OPENACC=1 NOGPUDIRECT=1
+!
+! The .vtu snapshots are the 3D volumes and the slice files are the movie
+! frames. Both carry Cartesian cell corners and Cartesian vector components
+! (nocartesian is .false. by default), which is what ParaView and VisIt want
+! for a full sphere.
+
+ &usr_list
+   setup = 'blast'
+ /
+
+ &filelist
+   base_filename    = 'movie/poleblast'
+   autoconvert      = T
+   convert_type     = 'vtuBCCmpi'
+   slice_type       = 'vtuCC'
+   saveprim         = T
+ /
+
+ &savelist
+   itsave(1,1)      = 0        ! also dump the initial log
+   itsave(1,2)      = 0        ! ... the initial condition
+   itsave(1,3)      = 0        ! ... and the initial slices
+   ! Every 100 steps, not every step. The log is not expensive because of the
+   ! bytes it writes - it is a handful of lines - but because each entry is a
+   ! volume average over every cell of every block, which on the GPU means a
+   ! full reduction and a device-to-host sync. At ditsave_log = 1 that
+   ! dominates the run; at 100 it is noise, and 30 or so samples still trace
+   ! the conservation history perfectly well.
+   ditsave_log      = 100
+   dtsave_dat       = 0.015d0  ! 40 snapshots
+   dtsave_slice     = 0.006d0  ! 100 movie frames
+
+   ! Four slices. The two meridional half-planes at phi_c and phi_c + pi
+   ! together make the full plane through the polar axis containing the blast
+   ! centre - that is the view in which the shell is seen to cross the pole.
+   ! The constant-r shell and the narrow cone show the same crossing from the
+   ! other two directions.
+   !
+   ! CAUTION: unlike xprobmin2/xprobmax2 in &meshlist, an *angular* slicecoord
+   ! is in code units, so the angles below are RADIANS. phi_c = 0.5*pi is the
+   ! azimuth of the hot spot set in mod_usr.fpp; keep the two in step.
+   !
+   ! A *radial* slicecoord is a physical radius, here as in the uniform case,
+   ! so slicecoord(3) = 1.0 is the r = 1.0 shell of the hot spot and this whole
+   ! block is identical to the one in tests/hd/spherical_pole/movie.par.
+   ! get_igslice takes the logarithm itself when it turns the position into a
+   ! block index; nothing about a stretched radius is visible here.
+   nslices          = 4
+   slicedir(1)      = 3
+   slicecoord(1)    = 1.5707963267948966d0   ! phi = phi_c        = pi/2
+   slicedir(2)      = 3
+   slicecoord(2)    = 4.7123889803846899d0   ! phi = phi_c + pi   = 3pi/2
+   slicedir(3)      = 1
+   slicecoord(3)    = 1.0d0                  ! r = r_c, the shell of the spot
+   slicedir(4)      = 2
+   slicecoord(4)    = 0.1570796326794897d0   ! theta = 0.05*pi, close to the axis
+ /
+
+ &stoplist
+   time_max         = 0.6d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'hll'
+   limiter         = 20*'vanleer'
+   phys            = 'hd'
+ /
+
+ &boundlist
+   ! Open (outflow) in r, as in agile.par, now that the boundaries are far
+   ! enough away that the shell does not reach them.  theta runs through both
+   ! poles and phi is periodic over a full turn.
+   typeboundary_min1 = 5*'cont'
+   typeboundary_max1 = 5*'cont'
+   typeboundary_min2 = 5*'pole'
+   typeboundary_max2 = 5*'pole'
+   typeboundary_min3 = 5*'periodic'
+   typeboundary_max3 = 5*'periodic'
+ /
+
+ &meshlist
+   geometry           = 'logSpherical'
+   max_blocks         =  2048
+   refine_max_level   =  3
+   w_refine_weight    =  0.1d0, 0.0d0, 0.0d0, 0.0d0, 0.9d0
+   block_nx1          =  8
+   block_nx2          =  8
+   block_nx3          =  8
+   domain_nx1         =  24
+   domain_nx2         =  16
+   domain_nx3         =  16
+   xprobmin1          =  0.4d0
+   xprobmax1          =  2.8d0
+   xprobmin2          =  0.0d0
+   xprobmax2          =  0.5d0
+   xprobmin3          =  0.0d0
+   xprobmax3          =  1.0d0
+ /
+
+ &paramlist
+   slowsteps        = 10
+   courantpar       = 0.4d0
+ /

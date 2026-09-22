@@ -1,9 +1,9 @@
 #:mute
 #:include "mod_gpu_directives.fpp"
 #:endmute
-!> AMRVAC solves a set of hyperbolic equations
-!> \f$\vec{u}_t + \nabla_x \cdot \vec{f}(\vec{u}) = \vec{s}\f$
-!> using adaptive mesh refinement.
+!> AGILE solves a set of hyperbolic equations
+!> \[ \vec{u}_t + \nabla_x \cdot \vec{f}(\vec{u}) = \vec{s} \]
+!> using adaptive mesh refinement on (multiple) GPUs
 program agile
   use mpi
   integer        :: ierror
@@ -63,6 +63,7 @@ contains
   end subroutine set_openmp_device
 #endif
 
+  !> The main driver, called after MPI and GPUs are initialized
   subroutine main
     use mod_global_parameters
     use mod_input_output
@@ -87,6 +88,7 @@ contains
   !  use mod_trac, only: initialize_trac_after_settree
     use mod_convert_files, only: generate_plotfile
     use mod_comm_lib, only: comm_start, comm_finalize,mpistop
+    use mod_geometry, only: set_coordinate_system_from_config, sync_geometry_host
 
 
     double precision :: time0, time_in
@@ -102,6 +104,12 @@ contains
 
     ! read command line arguments first
     call read_arguments()
+
+    ! Derive the coordinate system from the GEOM define before usr_init, so
+    ! that ndir is set before phys_activate needs it and coordinate is set
+    ! before read_par_files converts the angular domain bounds. A case may
+    ! still call set_coordinate_system itself; it need not.
+    call set_coordinate_system_from_config()
 
     ! the user_init routine should load a physics module
     call usr_init()
@@ -198,6 +206,9 @@ contains
            call phys_special_advance(global_time,ps)
          end if
 
+         ! standalone convert bypasses saveamrfile, so this is where the
+         ! device-side cell metrics have to come back to the host
+         call sync_geometry_host()
          call generate_plotfile
          call comm_finalize
          stop
@@ -268,6 +279,7 @@ contains
     use mod_dt, only: setdt
     use mod_particles
     use mod_usr_methods
+    use mod_geometry, only: sync_positions_host
 
     double precision, intent(in) :: time0
 
@@ -350,6 +362,8 @@ contains
        if (any(save_file)) then
          if(associated(usr_modify_output)) then
            ! Users can modify or set variables before output is written
+           ! (usr_modify_output reads ps(igrid)%x on the host)
+           call sync_positions_host()
            do iigrid=1,igridstail; igrid=igrids(iigrid);
              dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
              dxlevel(3)=rnode(rpdx3_,igrid);

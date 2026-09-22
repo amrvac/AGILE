@@ -31,7 +31,6 @@
    time_stepper        = 'threestep'
    flux_scheme         = 20*'hllc'
    limiter             = 20*'vanleer'
-   small_values_method = 'ignore'
    phys                = 'hd'
  /
 

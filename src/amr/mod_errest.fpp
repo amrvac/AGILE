@@ -172,7 +172,7 @@ contains
           do ix2 = ixMlo2, ixMhi2
              do ix1 = ixMlo1, ixMhi1
                 call usr_refine_grid(level,qt, &
-                     bg(1)%w(ix1, ix2, ix3, :, igrid), ps(igrid)%x(ix1, ix2, ix3, :), &
+                     bg(1)%w(ix1, ix2, ix3, :, igrid), bgeo%x(ix1, ix2, ix3, :, igrid), &
                      refineflag, coarsenflag, norefineflag, nocoarsenflag)
              end do
           end do

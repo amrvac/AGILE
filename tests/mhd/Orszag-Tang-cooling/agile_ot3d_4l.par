@@ -34,7 +34,6 @@
    time_stepper    = 'threestep'
    flux_scheme     = 20*'tvdlf'
    limiter         = 20*'minmod'
-   small_values_method = 'ignore'
    phys            = 'mhd'
  /
 

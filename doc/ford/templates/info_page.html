@@ -1,0 +1,69 @@
+<!-- -*- mode: jinja2 -*- -->
+
+{# AGILE override of FORD's stock info_page.html. Identical to upstream except
+   that the left "nav-side" table-of-contents is suppressed on the narrative
+   front page (page/index.html, where `page == pages`), which is the site's
+   landing page and reads better full-width. Every other narrative page keeps
+   the sidebar. #}
+
+{% extends "base.html" %}
+{% block title %}{{ page.title }} &ndash; {{ project }}{% endblock title %}
+{% block body %}
+  {% set show_sidebar = pages.subpages and pages != page %}
+  <div class="row">
+    <h1>{{ page.title }}</h1>
+    <div class="container p-2 mb-4 bg-light border rounded-3">
+      <div class="row align-items-center justify-content-between">
+        <div class="col">
+          <ul class="list-inline" style="margin-bottom:0px; display:inline">
+            {% if page.author %}
+              <li class="list-inline-item" id="author"><i class="fa fa-pencil"></i> {{ page.author }}</li>
+            {% endif %}
+            {% if page.date %}
+              <li class="list-inline-item" id="date"><i class="fa fa-calendar-o"></i> {{ page.date }}</li>
+            {% endif %}
+          </ul>
+        </div>
+        <div class="col">
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb justify-content-end mb-0">
+              {% for item in page.hierarchy %}
+                <li class="breadcrumb-item">{{ item | relurl(page_url) }}</li>
+              {% endfor %}
+              <li class="breadcrumb-item active" aria-current="page">{{ page.title }}</li>
+            </ol>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    {% if show_sidebar %}
+      <div class="col-3">
+        <div class="card card-body bg-light" id="sidebar-toc">
+          <ul class="nav flex-column align-items">
+            <li class="nav-item">
+              <a class="nav-link{% if pages==page %} active disabled{% endif %}" href="{{ pages.url | relurl(page_url) }}">{{ pages.title }}</a>
+            </li>
+          </ul>
+          <hr>
+          <nav class="nav nav-pills flex-column">
+            {% for subpage in pages.subpages recursive %}
+              <a class="nav-link{% if subpage==page %} active disabled{% endif %}" href="{{ subpage.url | relurl(page_url) }}">{{ subpage.title }}</a>
+              {% if subpage.subpages %}
+                <nav class="nav nav-pills flex-column">
+                  {{ loop(subpage.subpages) }}
+                </nav>
+              {% endif %}
+            {% endfor %}
+          </nav>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="{{ 'col-9' if show_sidebar else 'col-12' }}" id='text'>
+      {{ page.contents }}
+    </div>
+  </div>
+{% endblock body %}
