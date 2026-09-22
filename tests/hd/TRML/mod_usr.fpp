@@ -323,7 +323,11 @@ contains
 !   moment, we apply the boundary condition in conservative form.
     select case(iB)
     case(5)
+#ifndef _OPENMP
+      ! Vector-level parallelization within a subroutine does not work with OpenMP.
+      ! TBD if this routine can be made seq (i.e. cell-based).
       ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
       do ix3 = ixOmin3, ixOmax3
       do ix2 = ixOmin2, ixOmax2
       do ix1 = ixOmin1, ixOmax1
@@ -337,7 +341,9 @@ contains
       end do
       end do
     case(6)
+#ifndef _OPENMP
       ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
       do ix3 = ixOmin3, ixOmax3
       do ix2 = ixOmin2, ixOmax2
       do ix1 = ixOmin1, ixOmax1

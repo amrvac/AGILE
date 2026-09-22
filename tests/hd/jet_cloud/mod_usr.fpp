@@ -142,7 +142,11 @@ contains
 
         inv_gamma_m1 = 1.0d0/(hd_gamma - 1.0d0)
         
+#ifndef _OPENMP
+        ! Vector-level parallelization within a subroutine does not work with OpenMP.
+        ! TBD if this routine can be made seq (i.e. cell-based).
         ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
         do ix3=ixOmin3,ixOmax3
            do ix2=ixOmin2,ixOmax2
               do ix1=ixOmin1,ixOmax1

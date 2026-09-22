@@ -145,7 +145,11 @@ contains
     select case(iB)
     case(1)
       ! implementation of fixed postshock state at left boundary
+#ifndef _OPENMP
+      ! Vector-level parallelization within a subroutine does not work with OpenMP.
+      ! TBD if this routine can be made seq (i.e. cell-based).
       ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
       do ix3 = ixOmin3, ixOmax3
       do ix2 = ixOmin2, ixOmax2
       do ix1 = ixOmin1, ixOmax1
@@ -159,7 +163,9 @@ contains
       end do
     case(3)
       ! implementation of bottom boundary: fixed before x<1/6, solid wall x>=1/6
+#ifndef _OPENMP
       ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
       do ix3 = ixOmin3, ixOmax3
       do ix2 = ixOmin2, ixOmax2
       do ix1 = ixOmin1, ixOmax1
@@ -181,7 +187,9 @@ contains
       end do
     case(4)
       ! implementation of top: pre and post shock states, time dependent
+#ifndef _OPENMP
       ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
       do ix3 = ixOmin3, ixOmax3
       do ix2 = ixOmin2, ixOmax2
       do ix1 = ixOmin1, ixOmax1
