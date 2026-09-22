@@ -268,7 +268,7 @@ contains
     ! JESSENEW 
     call recvflux(idimmin,idimmax)
     call sendflux(idimmin,idimmax)
-    call fix_conserve(psb,idimmin,idimmax,1,nwflux)
+    call fix_conserve(bgb%istep,idimmin,idimmax,1,nwflux)
 
     !   if(stagger_grid) then
     !     call fix_edges(psb,idimmin,idimmax)

@@ -26,7 +26,7 @@ contains
     ! Do correction
     call recvflux(1,ndim)
     call sendflux(1,ndim)
-    call fix_conserve(ps,1,ndim,1,3)
+    call fix_conserve(1,1,ndim,1,3)
 
     call fix_edges(ps,1,3)
 

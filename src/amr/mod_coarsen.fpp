@@ -19,17 +19,21 @@ contains
   !> states live: the target is bgeo when a block is coarsened into a
   !> same-level parent on this rank, and bgeoc when it is coarsened into its
   !> own coarse representative for sending to another rank.
-  subroutine coarsen_grid(sFi,ixFiGmin1,ixFiGmin2,ixFiGmin3,ixFiGmax1,&
+  subroutine coarsen_grid(wFi,ixFiGmin1,ixFiGmin2,ixFiGmin3,ixFiGmax1,&
      ixFiGmax2,ixFiGmax3,ixFimin1,ixFimin2,ixFimin3,ixFimax1,ixFimax2,ixFimax3,&
-     sCo,ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3,ixComin1,&
+     wCo,ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3,ixComin1,&
      ixComin2,ixComin3,ixComax1,ixComax2,ixComax3,geoFi,igridFi,geoCo,igridCo)
 
-    type(state), intent(inout)      :: sFi, sCo
-    type(geo_t), intent(in)         :: geoFi, geoCo
+    type(geo_t), intent(in) :: geoFi, geoCo
     integer, intent(in) :: ixFiGmin1,ixFiGmin2,ixFiGmin3,ixFiGmax1,ixFiGmax2,&
        ixFiGmax3, ixFimin1,ixFimin2,ixFimin3,ixFimax1,ixFimax2,ixFimax3,&
         ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3, ixComin1,&
        ixComin2,ixComin3,ixComax1,ixComax2,ixComax3, igridFi, igridCo
+
+    double precision, intent(in)    :: wFi(ixFiGmin1:ixFiGmax1,&
+       ixFiGmin2:ixFiGmax2,ixFiGmin3:ixFiGmax3,1:nw)
+    double precision, intent(inout) :: wCo(ixCoGmin1:ixCoGmax1,&
+       ixCoGmin2:ixCoGmax2,ixCoGmin3:ixCoGmax3,1:nw)
 
     integer :: ixCo1,ixCo2,ixCo3, ixFi1,ixFi2,ixFi3, iw
     double precision :: CoFiratio
@@ -54,7 +58,7 @@ contains
                    ixFi3=2*(ixCo3-ixComin3)+ixFimin3+ixFiGmin3-1
                    ixFi2=2*(ixCo2-ixComin2)+ixFimin2+ixFiGmin2-1
                    ixFi1=2*(ixCo1-ixComin1)+ixFimin1+ixFiGmin1-1
-                   sCo%w(ixCo1+ixCoGmin1-1,ixCo2+ixCoGmin2-1,ixCo3+ixCoGmin3-1,iw)=sum(sFi%w(ixFi1:ixFi1+1,ixFi2:ixFi2+1,&
+                   wCo(ixCo1,ixCo2,ixCo3,iw)=sum(wFi(ixFi1:ixFi1+1,ixFi2:ixFi2+1,&
                         ixFi3:ixFi3+1,iw))*CoFiratio
                 end do
              end do
@@ -70,8 +74,8 @@ contains
                    ixFi3=2*(ixCo3-ixComin3)+ixFimin3+ixFiGmin3-1
                    ixFi2=2*(ixCo2-ixComin2)+ixFimin2+ixFiGmin2-1
                    ixFi1=2*(ixCo1-ixComin1)+ixFimin1+ixFiGmin1-1
-                   sCo%w(ixCo1+ixCoGmin1-1,ixCo2+ixCoGmin2-1,ixCo3+ixCoGmin3-1,iw)= sum(geoFi%dvolume(ixFi1:ixFi1+1,&
-                        ixFi2:ixFi2+1,ixFi3:ixFi3+1,igridFi)*sFi%w(ixFi1:ixFi1+1,ixFi2:ixFi2+1,&
+                   wCo(ixCo1,ixCo2,ixCo3,iw)= sum(geoFi%dvolume(ixFi1:ixFi1+1,&
+                        ixFi2:ixFi2+1,ixFi3:ixFi3+1,igridFi)*wFi(ixFi1:ixFi1+1,ixFi2:ixFi2+1,&
                         ixFi3:ixFi3+1,iw)) /geoCo%dvolume(ixCo1,ixCo2,ixCo3,igridCo)
                 end do
              end do

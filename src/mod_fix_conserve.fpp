@@ -958,12 +958,11 @@ module mod_fix_conserve
    !> CoFiratio; the curvilinear form is extensive and is divided here by the
    !> coarse cell's own volume, with no ratio, because the four fine face areas
    !> already sum to the coarse face's.
-   subroutine fix_conserve(psb,idimmin,idimmax,nw0,nwfluxin)
+   subroutine fix_conserve(bgstep,idimmin,idimmax,nw0,nwfluxin)
      use mod_global_parameters
      use mod_comm_lib, only: mpistop
 
-     integer, intent(in) :: idimmin,idimmax, nw0, nwfluxin
-     type(state) :: psb(max_blocks)
+     integer, intent(in) :: bgstep, idimmin,idimmax, nw0, nwfluxin
 
      integer :: iigrid, igrid, idims, iside, iotherside, i1,i2,i3, ic1,ic2,ic3,&
          inc1,inc2,inc3, ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3
@@ -1062,8 +1061,8 @@ module mod_fix_conserve
                 do ix3=ixMlo3,ixMhi3
                   do ix2=ixMlo2,ixMhi2 
                     do iw=1,nwfluxin
-                      psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) = &
-                        psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) - &
+                      bg(bgstep)%w(ix,ix2,ix3,nw0+iw-1,igrid) = &
+                        bg(bgstep)%w(ix,ix2,ix3,nw0+iw-1,igrid) - &
                         pflux(iside,1)%flux(1,ix2-nghostcells,ix3-nghostcells,&
                                             iw,igrid)
                     end do
@@ -1074,8 +1073,8 @@ module mod_fix_conserve
                 do ix3=ixMlo3,ixMhi3
                   do ix2=ixMlo2,ixMhi2
                     do iw=1,nwfluxin
-                      psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) = &
-                        psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) - &
+                      bg(bgstep)%w(ix,ix2,ix3,nw0+iw-1,igrid) = &
+                        bg(bgstep)%w(ix,ix2,ix3,nw0+iw-1,igrid) - &
                         pflux(iside,1)%flux(1,ix2-nghostcells,ix3-nghostcells,&
                                             iw,igrid) &
                         / bgeo%dvolume(ix,ix2,ix3,igrid)
@@ -1108,8 +1107,8 @@ module mod_fix_conserve
                      do ix3=1,nxCo3 
                         do ix2=1,nxCo2 
                           do iw=1,nwfluxin
-                             psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
-                              psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                             bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                              bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                               pflux(iotherside,1)%flux(1,ix2,ix3,iw,&
                                 ineighbor) * CoFiratio
                           end do
@@ -1121,8 +1120,8 @@ module mod_fix_conserve
                      do ix3=1,nxCo3
                         do ix2=1,nxCo2
                           do iw=1,nwfluxin
-                             psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
-                              psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                             bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                              bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                               pflux(iotherside,1)%flux(1,ix2,ix3,iw,&
                                 ineighbor) &
                               / bgeo%dvolume(ix,ixmin2+ix2-1,ixmin3+ix3-1,igrid)
@@ -1169,8 +1168,8 @@ module mod_fix_conserve
                    do ix3=1,nxCo_fc(3,1)
                      do ix2=1,nxCo_fc(2,1)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix2-1)+(ix3-1)*nxCo_fc(2,1)+(iw-1)*nxCo_fc(2,1)*nxCo_fc(3,1)) * CoFiratio
                        end do
@@ -1184,8 +1183,8 @@ module mod_fix_conserve
                    do ix3=1,nxCo_fc(3,1)
                      do ix2=1,nxCo_fc(2,1)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix2-1)+(ix3-1)*nxCo_fc(2,1)+(iw-1)*nxCo_fc(2,1)*nxCo_fc(3,1)) &
                            / bgeo%dvolume(ix,ixmin2+ix2-1,ixmin3+ix3-1,igrid)
@@ -1243,8 +1242,8 @@ module mod_fix_conserve
                 do ix3=ixMlo3,ixMhi3
                   do ix1=ixMlo1,ixMhi1 
                     do iw=1,nwfluxin
-                      psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) = &
-                       psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) - &
+                      bg(bgstep)%w(ix1,ix,ix3,nw0+iw-1,igrid) = &
+                       bg(bgstep)%w(ix1,ix,ix3,nw0+iw-1,igrid) - &
                        pflux(iside,2)%flux(ix1-nghostcells,1,ix3-nghostcells,&
                                     iw,igrid)
                     end do
@@ -1255,8 +1254,8 @@ module mod_fix_conserve
                 do ix3=ixMlo3,ixMhi3
                   do ix1=ixMlo1,ixMhi1
                     do iw=1,nwfluxin
-                      psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) = &
-                       psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) - &
+                      bg(bgstep)%w(ix1,ix,ix3,nw0+iw-1,igrid) = &
+                       bg(bgstep)%w(ix1,ix,ix3,nw0+iw-1,igrid) - &
                        pflux(iside,2)%flux(ix1-nghostcells,1,ix3-nghostcells,&
                                     iw,igrid) &
                        / bgeo%dvolume(ix1,ix,ix3,igrid)
@@ -1290,8 +1289,8 @@ module mod_fix_conserve
                    do ix3=1,nxCo3 
                      do ix1=1,nxCo1 
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            pflux(iotherside,2)%flux(ix1,1,ix3,&
                               iw,ineighbor) * CoFiratio
                        end do
@@ -1302,8 +1301,8 @@ module mod_fix_conserve
                    do ix3=1,nxCo3
                      do ix1=1,nxCo1
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            pflux(iotherside,2)%flux(ix1,1,ix3,&
                               iw,ineighbor) &
                            / bgeo%dvolume(ixmin1+ix1-1,ix,ixmin3+ix3-1,igrid)
@@ -1350,8 +1349,8 @@ module mod_fix_conserve
                    do ix3=1,nxCo_fc(3,2)
                      do ix1=1,nxCo_fc(1,2)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix1-1)+(ix3-1)*nxCo_fc(1,2)+(iw-1)*nxCo_fc(1,2)*nxCo_fc(3,2)) * CoFiratio
                        end do
@@ -1365,8 +1364,8 @@ module mod_fix_conserve
                    do ix3=1,nxCo_fc(3,2)
                      do ix1=1,nxCo_fc(1,2)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix1-1)+(ix3-1)*nxCo_fc(1,2)+(iw-1)*nxCo_fc(1,2)*nxCo_fc(3,2)) &
                            / bgeo%dvolume(ixmin1+ix1-1,ix,ixmin3+ix3-1,igrid)
@@ -1424,8 +1423,8 @@ module mod_fix_conserve
                do ix2=ixMlo2,ixMhi2
                  do ix1=ixMlo1,ixMhi1 
                    do iw=1,nwfluxin
-                     psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) = &
-                       psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) - &
+                     bg(bgstep)%w(ix1,ix2,ix,nw0+iw-1,igrid) = &
+                       bg(bgstep)%w(ix1,ix2,ix,nw0+iw-1,igrid) - &
                        pflux(iside,3)%flux(ix1-nghostcells,ix2-nghostcells,&
                           1,iw,igrid)
                    end do
@@ -1436,8 +1435,8 @@ module mod_fix_conserve
                do ix2=ixMlo2,ixMhi2
                  do ix1=ixMlo1,ixMhi1
                    do iw=1,nwfluxin
-                     psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) = &
-                       psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) - &
+                     bg(bgstep)%w(ix1,ix2,ix,nw0+iw-1,igrid) = &
+                       bg(bgstep)%w(ix1,ix2,ix,nw0+iw-1,igrid) - &
                        pflux(iside,3)%flux(ix1-nghostcells,ix2-nghostcells,&
                           1,iw,igrid) &
                        / bgeo%dvolume(ix1,ix2,ix,igrid)
@@ -1469,8 +1468,8 @@ module mod_fix_conserve
                    do ix2=1,nxCo2 
                      do ix1=1,nxCo1 
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) + &
                            pflux(iotherside,3)%flux(ix1,ix2,1,iw,&
                               ineighbor)* CoFiratio
                        end do
@@ -1481,8 +1480,8 @@ module mod_fix_conserve
                    do ix2=1,nxCo2
                      do ix1=1,nxCo1
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) + &
                            pflux(iotherside,3)%flux(ix1,ix2,1,iw,&
                               ineighbor) &
                            / bgeo%dvolume(ixmin1+ix1-1,ixmin2+ix2-1,ix,igrid)
@@ -1529,8 +1528,8 @@ module mod_fix_conserve
                    do ix2=1,nxCo_fc(2,3)
                      do ix1=1,nxCo_fc(1,3)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix1-1)+(ix2-1)*nxCo_fc(1,3)+(iw-1)*nxCo_fc(1,3)*nxCo_fc(2,3)) * CoFiratio
                        end do
@@ -1544,8 +1543,8 @@ module mod_fix_conserve
                    do ix2=1,nxCo_fc(2,3)
                      do ix1=1,nxCo_fc(1,3)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix1-1)+(ix2-1)*nxCo_fc(1,3)+(iw-1)*nxCo_fc(1,3)*nxCo_fc(2,3)) &
                            / bgeo%dvolume(ixmin1+ix1-1,ixmin2+ix2-1,ix,igrid)
