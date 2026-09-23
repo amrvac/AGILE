@@ -368,9 +368,11 @@ contains
     if (x(3) < 1.1d0*zjet .and. (x(1)+x(2)**2) < rjet**2) then
       refineflag = .true.
       nocoarsenflag = .true.
-      coarsenflag = .false.
-      norefineflag = .false.
     end if
+
+    ! Never force coarsen or block automatic refine
+    coarsenflag = .false.
+    norefineflag = .false.
 
   end subroutine usr_refine_grid
 

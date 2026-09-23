@@ -384,11 +384,12 @@ contains
           x(3) < refine_z(2)+nghostcells*dz) then
         refineflag = .true.
         nocoarsenflag = .true.
-        coarsenflag = .false.
-        norefineflag = .false.
       end if
     end if
 
+    ! Never force coarsen or block automatic refine
+    coarsenflag = .false.
+    norefineflag = .false.
 
   end subroutine usr_refine_grid
 

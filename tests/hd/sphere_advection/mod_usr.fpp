@@ -84,9 +84,9 @@ contains
 
     if ( w(rho_) > (rhodens-rholight)/2.0d0 ) then
        refineflag = .true.
+       nocoarsenflag = .true.
        norefineflag = .false.
        coarsenflag = .false.
-       nocoarsenflag = .true.
     end if
   end subroutine usr_refine_grid
 
