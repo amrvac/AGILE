@@ -510,7 +510,8 @@ contains
                    ixComax3=ixMhi3+(ic3-2)*(ixMhi3-ixMlo3+1)/2;
 
                    call coarsen_grid(bg(1)%w(:,:,:,:,igridFi),ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,&
-                        ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,bg(1)%w,&
+                        ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,&
+                        bg(1)%w(:,:,:,:,igrid),&
                         ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixComin1,ixComin2,&
                         ixComin3,ixComax1,ixComax2,ixComax3,bgeo,igridFi,bgeo,igrid)
                    ! remove solution space of child
@@ -523,7 +524,8 @@ contains
                    ixCoMmin3=ixCoGmin3+nghostcells;ixCoMmax1=ixCoGmax1-nghostcells
                    ixCoMmax2=ixCoGmax2-nghostcells;ixCoMmax3=ixCoGmax3-nghostcells;
                    call coarsen_grid(bg(1)%w(:,:,:,:,igridFi),ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,&
-                        ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,bgc(1)%w,&
+                        ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,&
+                        bgc(1)%w(:,:,:,:,igridFi),&
                         ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3,&
                         ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3,&
                         bgeo,igridFi,bgeoc,igridFi)
