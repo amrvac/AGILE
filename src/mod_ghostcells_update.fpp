@@ -2029,7 +2029,7 @@ contains
     ! this second pass, but it keeps corner-ghost handling complete and
     ! matches upstream for setups this fork does not yet exercise.
     if(bcphys.and. .not.stagger_grid) then
-       ${GPU_PARALLEL_LOOP_GANG()}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_DEFAULT_PRESENT()}$
        do iigrid = 1, igridstail; igrid=igrids(iigrid);
           if (.not.phyboundblock(igrid)) cycle
           call fill_boundary_after_gc(psb(igrid),igrid,time,qdt)
