@@ -1,3 +1,5 @@
+include $(agile)/arch/common.mk
+
 arch := nvidia
 
 compile = mpif90
@@ -12,13 +14,9 @@ endif
 
 ifdef OPENACC
 $(info Enabling OpenACC)
-f90_flags += -Wall -acc=gpu
 enabled += OPENACC
-ifdef NOGPUDIRECT
-$(info Disabling direct GPU-GPU copies)
-f90_flags += -DNOGPUDIRECT
-enabled += NOGPUDIRECT
-endif
+GPU_ARCH ?= ccnative
+f90_flags += -Wall -acc=gpu -gpu=$(GPU_ARCH)
 ifdef DEBUG
 f90_flags += -gpu=debug -Mvect=levels:0 -Mnoinline
 else
@@ -28,24 +26,14 @@ endif
 
 ifdef OPENMP
 $(info Enabling OpenMP)
-f90_flags += -Wall -mp=gpu
 enabled += OPENMP
-ifdef NOGPUDIRECT
-$(info Disabling direct GPU-GPU copies)
-f90_flags += -DNOGPUDIRECT
-enabled += NOGPUDIRECT
-endif
+GPU_ARCH ?= ccnative
+f90_flags += -Wall -mp=gpu -gpu=$(GPU_ARCH)
 ifdef DEBUG
 f90_flags += -gpu=debug -Mvect=levels:0 -Mnoinline
 else
 f90_flags += -Mvect=levels:5 -Minline
 endif
-endif
-
-ifdef USE_MPIWRAPPERS
-$(info Enabling MPI wrappers)
-f90_flags += -DUSE_MPIWRAPPERS
-enabled += USE_MPIWRAPPERS
 endif
 
 ifdef INFO
