@@ -77,6 +77,7 @@ contains
   
     integer :: level, ig1,ig2,ig3, ign1,ign2,ign3, ixCoGmin1,ixCoGmin2,&
        ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3, i1,i2,i3
+    logical :: first_alloc
 
     ixCoGmin1=1;ixCoGmin2=1;ixCoGmin3=1;
     ixCoGmax1=(ixGhi1-2*nghostcells)/2+2*nghostcells
@@ -86,7 +87,8 @@ contains
     ! set level information
     level=igrid_to_node(igrid,mype)%node%level
   
-    if(.not. associated(ps(igrid)%w)) then
+    first_alloc = .not. associated(ps(igrid)%w)
+    if(first_alloc) then
        
        ! allocate arrays for solution and space
        call alloc_state(igrid, ps(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,&
@@ -278,7 +280,13 @@ contains
 
    ${GPU_UPDATE_DEVICE('phyboundblock(igrid)')}$
 #if defined(_OPENACC) || defined(_OPENMP)
-   ${GPU_UPDATE_DEVICE('ps(igrid), ps1(igrid), ps2(igrid), psc(igrid)')}$
+   ! This differentiation is necessary for OpenMP, because it does not have the
+   ! equivalent of acc_attach as used in copy_or_update_pointer
+   if (first_alloc) then
+      ${GPU_UPDATE_DEVICE('ps(igrid), ps1(igrid), ps2(igrid), psc(igrid)')}$
+   else
+      ${GPU_UPDATE_DEVICE('ps(igrid)%level, psc(igrid)%level')}$
+   end if
 
    call copy_or_update(ps(igrid)%igrid)
    call copy_or_update(ps1(igrid)%igrid) 
