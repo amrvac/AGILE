@@ -121,7 +121,13 @@ contains
   !> function result needs a temporary that not every OpenACC compiler
   !> handles inside a device routine.
   pure subroutine uniform_velocity(x, v)
+    ! Vector parallelization is disabled for OpenMP in specialbound_usr, so this routine should
+    ! work at the vector level in that case
+#ifdef _OPENMP
+    ${GPU_ROUTINE_VECTOR()}$
+#else
     ${GPU_ROUTINE_SEQ()}$
+#endif
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(out) :: v(1:3)
     double precision              :: sinp, cosp

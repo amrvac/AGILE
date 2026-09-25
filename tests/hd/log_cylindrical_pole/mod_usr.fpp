@@ -154,7 +154,13 @@ contains
   !> initial condition, the boundary condition and the reference the pole ghost
   !> cells are checked against.
   pure subroutine analytic_state(x_loc, wpt)
+    ! Vector parallelization is disabled for OpenMP in specialbound_usr, so this routine should
+    ! work at the vector level in that case
+#ifdef _OPENMP
+    ${GPU_ROUTINE_VECTOR()}$
+#else
     ${GPU_ROUTINE_SEQ()}$
+#endif
     double precision, intent(in)  :: x_loc(1:ndim)
     double precision, intent(out) :: wpt(1:nw)
     ! .. local ..

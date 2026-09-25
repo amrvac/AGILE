@@ -55,7 +55,13 @@ contains
   !> result needs a temporary that not every OpenACC compiler handles inside
   !> a device routine.
   pure subroutine to_spherical_vector(x, vec0, vec)
+    ! Vector parallelization is disabled for OpenMP in specialbound_usr, so this routine should
+    ! work at the vector level in that case
+#ifdef _OPENMP
+    ${GPU_ROUTINE_VECTOR()}$
+#else
     ${GPU_ROUTINE_SEQ()}$
+#endif
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(in)  :: vec0(1:3)
     double precision, intent(out) :: vec(1:3)
