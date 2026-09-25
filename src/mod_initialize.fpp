@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 !> This module handles the initialization of various components of amrvac
 module mod_initialize
   use mod_comm_lib, only: mpistop
@@ -65,7 +68,7 @@ contains
     allocate(ps4(max_blocks))
     
     allocate(psc(max_blocks))
-    !$acc enter data copyin(ps,ps1,ps2,ps3,ps4,psc)
+    ${GPU_ENTER_DATA_COPYIN('ps,ps1,ps2,ps3,ps4,psc')}$
     
     allocate(ps_sub(max_blocks+1)) ! since we reserve one for communication
     allocate(neighbor(2,-1:1,-1:1,-1:1,max_blocks),neighbor_child(2,0:3,0:3,&
@@ -80,13 +83,13 @@ contains
        phyboundblock(max_blocks))
 
     allocate( bg(1:nstep) )
-    !$acc enter data copyin(bg)
+    ${GPU_ENTER_DATA_COPYIN('bg')}$
     do istep = 1 , nstep
        bg(istep)%istep = istep
        allocate( bg(istep)%w(ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3, 1:nw,&
             1:max_blocks) )
-       !$acc update device(bg(istep))
-       !$acc enter data copyin( bg(istep)%w )
+       ${GPU_UPDATE_DEVICE('bg(istep)')}$
+       ${GPU_ENTER_DATA_COPYIN('bg(istep)%w')}$
     end do
     allocate( bgc(1) )
     ixCoGmin1=1;ixCoGmin2=1;ixCoGmin3=1;
@@ -96,8 +99,8 @@ contains
 
     allocate ( bgc(1)%w(ixCoGmin1:ixCoGmax1, ixCoGmin2:ixCoGmax2, &
     ixCoGmin3:ixCoGmax3, 1:nw, 1:max_blocks) )
-     !$acc update device( bgc(1) )
-     !$acc enter data copyin( bgc(1)%w ) 
+     ${GPU_UPDATE_DEVICE('bgc(1)')}$
+     ${GPU_ENTER_DATA_COPYIN('bgc(1)%w')}$
 
     ! The cell metrics follow the same layout as bg%w: one allocation for all
     ! blocks with the grid index last. They are built per block on the device
@@ -112,16 +115,16 @@ contains
     call alloc_geometry(bgeoc, ixCoGmin1,ixCoGmin2,ixCoGmin3, ixCoGmax1,&
          ixCoGmax2,ixCoGmax3, ixCoGmin1,ixCoGmin2,ixCoGmin3, ixCoGmax1,&
          ixCoGmax2,ixCoGmax3)
-    !$acc update device(bgeo, bgeoc)
+    ${GPU_UPDATE_DEVICE('bgeo, bgeoc')}$
     ! What exists is device-resident, because the device is what produces it:
     ! fill_geometry_device builds every allocated member of geo_t there, dx
     ! included even though no kernel reads it - it has to live where it is
     ! written, and is pulled back only on demand.
-    !$acc enter data copyin(bgeo%x)
-    !$acc enter data copyin(bgeoc%x)
+    ${GPU_ENTER_DATA_COPYIN('bgeo%x')}$
+    ${GPU_ENTER_DATA_COPYIN('bgeoc%x')}$
 #:if GEOM != 'Cartesian'
-    !$acc enter data copyin(bgeo%ds, bgeo%dvolume, bgeo%surfaceC, bgeo%dx)
-    !$acc enter data copyin(bgeoc%ds, bgeoc%dvolume, bgeoc%surfaceC, bgeoc%dx)
+    ${GPU_ENTER_DATA_COPYIN('bgeo%ds, bgeo%dvolume, bgeo%surfaceC, bgeo%dx')}$
+    ${GPU_ENTER_DATA_COPYIN('bgeoc%ds, bgeoc%dvolume, bgeoc%surfaceC, bgeoc%dx')}$
 #:endif
 
     do igrid = 1, max_blocks
@@ -155,28 +158,28 @@ contains
     ixMlo1=ixGlo1+nghostcells;ixMlo2=ixGlo2+nghostcells
     ixMlo3=ixGlo3+nghostcells;ixMhi1=ixGhi1-nghostcells
     ixMhi2=ixGhi2-nghostcells;ixMhi3=ixGhi3-nghostcells;
-    !$acc update device(ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3)
+    ${GPU_UPDATE_DEVICE('ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3')}$
 
     nx1 = ixMhi1-ixMlo1+1
     nx2 = ixMhi2-ixMlo2+1
     nx3 = ixMhi3-ixMlo3+1
 
     allocate(pflux(2,3))
-    !$acc enter data copyin(pflux)
+    ${GPU_ENTER_DATA_COPYIN('pflux')}$
     
     do iside = 1, 2
        
       allocate(pflux(iside,1)%flux(1,1:nx2,1:nx3,1:nwflux,1:max_blocks))
       pflux(iside,1)%flux = 0.0d0
-      !$acc enter data copyin(pflux(iside,1)%flux)
+      ${GPU_ENTER_DATA_COPYIN('pflux(iside,1)%flux')}$
          
       allocate(pflux(iside,2)%flux(1:nx1,1,1:nx3,1:nwflux,1:max_blocks))
       pflux(iside,2)%flux = 0.0d0
-      !$acc enter data copyin(pflux(iside,2)%flux)
+      ${GPU_ENTER_DATA_COPYIN('pflux(iside,2)%flux')}$
          
       allocate(pflux(iside,3)%flux(1:nx1,1:nx2,1,1:nwflux,1:max_blocks))
       pflux(iside,3)%flux = 0.0d0
-      !$acc enter data copyin(pflux(iside,3)%flux)
+      ${GPU_ENTER_DATA_COPYIN('pflux(iside,3)%flux')}$
 
     end do
 
@@ -228,7 +231,7 @@ contains
     call check_pole_setup
     ! poleB is declare create'd but had no device copy; nothing on the device
     ! reads it today, and an uninitialised one is a trap for whoever first does
-    !$acc update device(poleB)
+    ${GPU_UPDATE_DEVICE('poleB')}$
 
     ! number of grid blocks at level 1 along a dimension, which does not have a pole or periodic boundary, 
     ! must be larger than 1 for a rectangular AMR mesh
@@ -300,7 +303,7 @@ contains
     end if
     allocate(igrid_inuse(max_blocks,0:npe-1))
     igrid_inuse=.false.
-    !$acc update device(coarsen, refine, buffer, igrid_inuse)
+    ${GPU_UPDATE_DEVICE('coarsen, refine, buffer, igrid_inuse')}$
 
     allocate(tree_root(1:ng1(1),1:ng2(1),1:ng3(1)))
     do ig3=1,ng3(1)

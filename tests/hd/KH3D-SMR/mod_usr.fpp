@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
   use mod_amrvac
   use mod_physics
@@ -104,66 +108,26 @@ contains
 
   end subroutine initonegrid_usr
 
-  subroutine usr_refine_grid(igrid,level,ixGmin1,ixGmin2,ixGmin3,&
-    ixGmax1,ixGmax2,ixGmax3,ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,&
-    qt,w,x,refine,coarsen)
-#ifdef _CRAYFTN
-#ifdef _OPENACC
-    ! The Cray compiler fails when trying to inline this routine, for now
-    ! disable inlining for Cray
-    !dir$ inlinenever usr_refine_grid
-#endif
-#endif
-    !$acc routine vector
-
+  subroutine usr_refine_grid(level,qt,w,x,refineflag,coarsenflag,norefineflag,nocoarsenflag)
     use mod_global_parameters
+    ${GPU_ROUTINE_SEQ()}$
 
     ! Enforce additional refinement or coarsening
     ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.
 
-    ! you must set consistent values for integers refine/coarsen:
-
-    ! refine = -1 enforce to not refine
-    ! refine =  0 doesn't enforce anything
-    ! refine =  1 enforce refinement
-
-    ! coarsen = -1 enforce to not coarsen
-    ! coarsen =  0 doesn't enforce anything
-    ! coarsen =  1 enforce coarsen
-
-    integer, intent(in)             :: igrid, level, ixGmin1,ixGmin2,&
-        ixGmin3,ixGmax1,ixGmax2,ixGmax3, ixmin1,ixmin2,ixmin3,ixmax1,&
-        ixmax2,ixmax3
+    integer, intent(in)             :: level
     double precision, intent(in)    :: qt
-    double precision, intent(in)    :: x(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:3)
-    double precision, intent(in)    :: w(ixGmin1:ixGmax1,&
-         ixGmin2:ixGmax2,ixGmin3:ixGmax3,1:nw)
-    integer, intent(inout) :: refine, coarsen
-    ! .. local ..
-    integer                         :: ix1, ix2, ix3
-    logical                         :: has_interface
+    double precision, intent(in)    :: x(1:3)
+    double precision, intent(in)    :: w(1:nw)
+    logical, intent(inout) :: refineflag, coarsenflag, norefineflag, nocoarsenflag
 
-
-    has_interface = .false.
-    !$acc loop vector collapse(3) reduction(.or.:has_interface)
-    do ix3 = ixmin3, ixmax3
-       do ix2 = ixmin2, ixmax2
-          do ix1 = ixmin1, ixmax1
-             if ( abs(x(ix1, ix2, ix3, 2) - 0.75d0) < 1.0d-1 .or. &
-                  abs(x(ix1, ix2, ix3, 2) - 0.25d0) < 1.0d-1 ) then
-                has_interface = .true.
-             end if
-          end do
-       end do
-    end do
-
-    if (has_interface) then
-       coarsen = -1
-       refine  = 1
-    else 
-       coarsen = 1
-       refine  = -1
+    ! refine if has_interface, coarsen if not
+    if ( abs(x(2) - 0.75d0) < 1.0d-1 .or. &
+       abs(x(2) - 0.25d0) < 1.0d-1 ) then
+       refineflag = .true.
+       norefineflag = .false.
+       coarsenflag = .false.
+       nocoarsenflag = .true.
     end if
 
   end subroutine usr_refine_grid

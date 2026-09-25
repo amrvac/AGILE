@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 !> Uniform field-aligned FFHD flow on a spherical mesh through both poles.
 !>
 !> A constant density, constant pressure gas moving at a constant speed vpar0
@@ -45,7 +49,7 @@ module mod_usr
   !> (any length: fill_nwextra_device normalises it)
   double precision :: vpar0 = 0.4d0
   double precision :: b0(3) = [1.0d0, 0.5d0, -0.3d0]
-  !$acc declare copyin(rho0, p0, vpar0, b0)
+  ${GPU_DECLARE_COPYIN('rho0, p0, vpar0, b0')}$
 
 contains
 
@@ -64,7 +68,7 @@ contains
   !> spherical (r, theta, phi) components at x of the unit vector along the
   !> Cartesian vector vec0.
   pure subroutine to_spherical_unit(x, vec0, vec)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(in)  :: vec0(1:3)
     double precision, intent(out) :: vec(1:3)
@@ -86,7 +90,7 @@ contains
   !> The frozen field, in spherical components at x. Called by name from
   !> fill_nwextra_device (device code); see mod_usr_methods.
   pure subroutine usr_set_nwextra(x, bhat)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(out) :: bhat(1:3)
 
@@ -125,8 +129,8 @@ contains
   !> that only the interior discretisation is under test.
   subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
      ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3
     integer, intent(in)             :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
@@ -144,7 +148,11 @@ contains
     ! stores. The nvfortran OpenACC miscompile that hit the hd pole cases
     ! needs a call together with a runtime-sized private automatic array in
     ! the collapsed body. See CLAUDE.md ("Bug-hunting notes") and issue #154.
-    !$acc loop collapse(3) vector
+#ifndef _OPENMP
+    ! Vector-level parallelization within a subroutine does not work with OpenMP.
+    ! TBD if this routine can be made seq (i.e. cell-based).
+    ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1
@@ -188,7 +196,7 @@ contains
     integer          :: ix1, ix2, ix3, iside, i2, jxmin2, jxmax2
 
     if (it /= 0) return
-    !$acc update host(ps(igrid)%w)
+    ${GPU_UPDATE_HOST('ps(igrid)%w')}$
 
     e0   = p0 * inv_gamma_1 + 0.5d0 * rho0 * vpar0**2
     invb = 1.0d0 / sqrt(sum(b0(1:3)**2))

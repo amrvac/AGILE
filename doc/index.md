@@ -27,7 +27,7 @@ spherical, cylindrical, or logarithmic-radius spherical/cylindrical grid
 geometries (the curvilinear ones including the polar axis) -- see [Coordinate
 systems](coordinate_systems.html).  
 
-AGILE is written in Fortran 2003, uses OpenACC for GPU offloading and MPI for parallelization.
+AGILE is written in Fortran 2003, uses OpenACC or OpenMP target offloading (selectable at build time) for GPU offloading, and MPI for parallelization.
 
 The philosophy behind AGILE is to use a single versatile code with options
 and switches for various problems. The advantage of such a general approach is

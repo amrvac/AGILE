@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
 
   use mod_amrvac
@@ -39,14 +43,16 @@ module mod_usr
   double precision :: T_C
   double precision :: T_mix
   double precision :: rho_mix
+! Level-1 cell size in z, used to widen the refinement band by the ghost layer.
+  double precision :: dz_lvl1
 
 ! Precomputed random numbers.
 ! (4, n_modes, n_modes, 2:3)
   double precision, dimension(:,:,:,:), allocatable :: rand_1
 
-!$acc declare create(P, rho_H, rho_C, z0, d_z, sig_z, v_H, v_C, v_sh, mode_root, n_modes)
-!$acc declare create(L, v_per, f_til, refine_z)
-!$acc declare create(rand_1)
+  ${GPU_DECLARE_CREATE('P, rho_H, rho_C, z0, d_z, sig_z, v_H, v_C, v_sh, mode_root, n_modes')}$
+  ${GPU_DECLARE_CREATE('L, v_per, f_til, refine_z, dz_lvl1')}$
+  ${GPU_DECLARE_CREATE('rand_1')}$
 
 contains
 
@@ -189,10 +195,11 @@ contains
     T_H = (mu*mp_cgs)/(hd_gamma*kb_cgs)*c_H**2
     T_C = T_H/chi
     T_mix = sqrt(T_C*T_H)
+    dz_lvl1 = dx(3,1)
 
-!$acc update device(P, rho_H, rho_C, z0, d_z, sig_z, v_H, v_C, v_sh, mode_root, n_modes)
-!$acc update device(L, v_per, f_til, refine_z)
-!$acc update device(rand_1)
+    ${GPU_UPDATE_DEVICE('P, rho_H, rho_C, z0, d_z, sig_z, v_H, v_C, v_sh, mode_root, n_modes')}$
+    ${GPU_UPDATE_DEVICE('L, v_per, f_til, refine_z, dz_lvl1')}$
+    ${GPU_UPDATE_DEVICE('rand_1')}$
 
     if (mype == 0) call print_params()
   end subroutine set_parameters_usr
@@ -291,10 +298,10 @@ contains
       ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3,&
       ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3,&
       iB, w, x)
-!$acc routine vector
     ! use mod_physics, only: to_conservative, to_primitive
     use mod_global_parameters
     use mod_physics
+    ${GPU_ROUTINE_VECTOR()}$
     implicit none
     integer, intent(in) :: ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3
     integer, intent(in) :: ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3
@@ -316,7 +323,11 @@ contains
 !   moment, we apply the boundary condition in conservative form.
     select case(iB)
     case(5)
-!$acc loop collapse(3) vector
+#ifndef _OPENMP
+      ! Vector-level parallelization within a subroutine does not work with OpenMP.
+      ! TBD if this routine can be made seq (i.e. cell-based).
+      ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
       do ix3 = ixOmin3, ixOmax3
       do ix2 = ixOmin2, ixOmax2
       do ix1 = ixOmin1, ixOmax1
@@ -330,7 +341,9 @@ contains
       end do
       end do
     case(6)
-!$acc loop collapse(3) vector
+#ifndef _OPENMP
+      ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
       do ix3 = ixOmin3, ixOmax3
       do ix2 = ixOmin2, ixOmax2
       do ix1 = ixOmin1, ixOmax1
@@ -347,42 +360,36 @@ contains
 
   end subroutine specialbound_usr
 
-  subroutine usr_refine_grid(&
-    igrid, level,&
-    ixGmin1, ixGmin2, ixGmin3, ixGmax1, ixGmax2, ixGmax3,&
-    ixmin1,  ixmin2,  ixmin3,  ixmax1,  ixmax2,  ixmax3,&
-    qt, w, x, refine, coarsen)
-#ifdef _OPENACC
-! NOTE: The Cray compiler fails when trying to inline this routine, for now
-!   disable inlining for Cray.
-    !dir$ inlinenever usr_refine_grid
-#endif
-    !$acc routine seq
+  subroutine usr_refine_grid(level,qt,w,x,refineflag,coarsenflag,norefineflag,nocoarsenflag)
     use mod_global_parameters
-    implicit none
-    integer, intent(in) :: igrid, level
-    integer, intent(in) :: ixGmin1, ixGmin2, ixGmin3, ixGmax1, ixGmax2, ixGmax3
-    integer, intent(in) :: ixmin1,  ixmin2,  ixmin3,  ixmax1,  ixmax2,  ixmax3
-    double precision, intent(in) :: qt
-    double precision, intent(in),&
-      dimension(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, 1:nw) :: w
-    double precision, intent(in),&
-      dimension(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, 1:ndim) :: x
-    integer, intent(inout) :: refine, coarsen
+    ${GPU_ROUTINE_SEQ()}$
 
-    associate(&
-      w_ => w(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :),&
-      x_ => x(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :))
+    ! Enforce additional refinement or coarsening
+    ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.
 
-      if (qt == 0d0) then
-        if (any(x_(:,:,:,3) > refine_z(1)) .and.&
-            any(x_(:,:,:,3) < refine_z(2))) then
-          coarsen = -1
-          refine = 1
-        end if
+    integer, intent(in)             :: level
+    double precision, intent(in)    :: qt
+    double precision, intent(in)    :: x(1:3)
+    double precision, intent(in)    :: w(1:nw)
+    logical, intent(inout) :: refineflag, coarsenflag, norefineflag, nocoarsenflag
+    double precision :: dz
+
+    if (qt == 0d0) then
+      ! Per-cell equivalent of the old block-wise check
+      !   any(x_(:,:,:,3) > refine_z(1)) .and. any(x_(:,:,:,3) < refine_z(2))
+      ! which ran over the ghost-inclusive block: widen the band by the ghost
+      ! layer so blocks whose ghost cells reach into it are refined as before.
+      dz = dz_lvl1*0.5d0**(level-1)
+      if (x(3) > refine_z(1)-nghostcells*dz .and.&
+          x(3) < refine_z(2)+nghostcells*dz) then
+        refineflag = .true.
+        nocoarsenflag = .true.
       end if
+    end if
 
-    end associate
+    ! Never force coarsen or block automatic refine
+    coarsenflag = .false.
+    norefineflag = .false.
 
   end subroutine usr_refine_grid
 

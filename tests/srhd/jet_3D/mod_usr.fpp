@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
 
   use mod_amrvac
@@ -9,8 +13,8 @@ module mod_usr
   double precision :: rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet
   double precision :: Qjet, Mdotjet, p0val, t0val, tcross, vhead
 
-!$acc declare create(rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet)
-!$acc declare create(Qjet,Mdotjet,p0val,t0val,tcross,vhead)
+  ${GPU_DECLARE_CREATE('rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet')}$
+  ${GPU_DECLARE_CREATE('Qjet,Mdotjet,p0val,t0val,tcross,vhead')}$
 
 contains
 
@@ -47,13 +51,13 @@ contains
 111    close(unitpar)
     end do
 
-!$acc update device(rjet,zjet,rhob,etarho,pb,zetap,lfacjet)
+    ${GPU_UPDATE_DEVICE('rjet,zjet,rhob,etarho,pb,zetap,lfacjet')}$
 
     rhojet=etarho*rhob
     pjet=zetap*pb
     vjet=dsqrt(1.0d0-1.0d0/lfacjet**2)
 
-!$acc update device(rhojet,pjet,vjet)
+    ${GPU_UPDATE_DEVICE('rhojet,pjet,vjet')}$
 
   end subroutine usr_params_read
 
@@ -214,9 +218,9 @@ contains
        ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3,&
        ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3,&
        iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
     use mod_physics_vars
+    ${GPU_ROUTINE_VECTOR()}$
     implicit none
     integer, intent(in) :: ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3
     integer, intent(in) :: ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3
@@ -232,7 +236,11 @@ contains
     select case(iB)
     case(5)
        ! select the first grid-internal layer above the boundary
-      !$acc loop collapse(3) vector
+#ifndef _OPENMP
+      ! Vector-level parallelization within a subroutine does not work with OpenMP.
+      ! TBD if this routine can be made seq (i.e. cell-based).
+      ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
       do ix3 = ixOmin3, ixOmax3
          do ix2 = ixOmin2, ixOmax2
             do ix1 = ixOmin1, ixOmax1
@@ -269,7 +277,9 @@ contains
 
       if(srhd_n_tracer>0)then
          do iw=1,srhd_n_tracer
-            !$acc loop collapse(3) vector
+#ifndef _OPENMP
+            ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
             do ix3 = ixOmin3, ixOmax3
                do ix2 = ixOmin2, ixOmax2
                   do ix1 = ixOmin1, ixOmax1
@@ -286,7 +296,7 @@ contains
 
 ! Curently broken, cannot call anything here.      
       ! ! switch to conserved in ghost cells
-      ! !$acc loop collapse(3) vector
+      ! ${GPU_LOOP_VECTOR("collapse(3)")}$
       ! do ix3 = ixOmin3, ixOmax3
       !    do ix2 = ixOmin2, ixOmax2
       !       do ix1 = ixOmin1, ixOmax1
@@ -342,40 +352,27 @@ contains
    end subroutine specialvarnames_output
 
 
-  subroutine usr_refine_grid(&
-    igrid, level,&
-    ixGmin1, ixGmin2, ixGmin3, ixGmax1, ixGmax2, ixGmax3,&
-    ixmin1,  ixmin2,  ixmin3,  ixmax1,  ixmax2,  ixmax3,&
-    qt, w, x, refine, coarsen)
-#ifdef _OPENACC
-! NOTE: The Cray compiler fails when trying to inline this routine, for now
-!   disable inlining for Cray.
-    !dir$ inlinenever usr_refine_grid
-#endif
-    !$acc routine seq
+  subroutine usr_refine_grid(level,qt,w,x,refineflag,coarsenflag,norefineflag,nocoarsenflag)
     use mod_global_parameters
-    implicit none
-    integer, intent(in) :: igrid, level
-    integer, intent(in) :: ixGmin1, ixGmin2, ixGmin3, ixGmax1, ixGmax2, ixGmax3
-    integer, intent(in) :: ixmin1,  ixmin2,  ixmin3,  ixmax1,  ixmax2,  ixmax3
-    double precision, intent(in) :: qt
-    double precision, intent(in),&
-      dimension(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, 1:nw) :: w
-    double precision, intent(in),&
-      dimension(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, 1:ndim) :: x
-    integer, intent(inout) :: refine, coarsen
+    ${GPU_ROUTINE_SEQ()}$
 
-    associate(&
-      w_ => w(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :),&
-      x_ => x(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :))
+    ! Enforce additional refinement or coarsening
+    ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.
 
-        if (any(x_(:,:,:,3) < 1.1d0*zjet)  .and.&
-            any((x_(:,:,:,1)**2+x_(:,:,:,2)**2) < rjet**2)) then
-          coarsen = -1
-          refine = 1
-        end if
+    integer, intent(in)             :: level
+    double precision, intent(in)    :: qt
+    double precision, intent(in)    :: x(1:3)
+    double precision, intent(in)    :: w(1:nw)
+    logical, intent(inout) :: refineflag, coarsenflag, norefineflag, nocoarsenflag
 
-    end associate
+    if (x(3) < 1.1d0*zjet .and. (x(1)+x(2)**2) < rjet**2) then
+      refineflag = .true.
+      nocoarsenflag = .true.
+    end if
+
+    ! Never force coarsen or block automatic refine
+    coarsenflag = .false.
+    norefineflag = .false.
 
   end subroutine usr_refine_grid
 
@@ -417,11 +414,11 @@ contains
 
     if (srhd_small_density <= 0.0d0 .and. srhd_small_pressure <= 0.0d0) return
 
-    !$acc parallel loop private(igrid) gang
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
     do iigrid = 1, igridstail_active
        igrid = igrids_active(iigrid)
 
-       !$acc loop vector collapse(3) private(u)
+       ${GPU_LOOP_VECTOR("collapse(3) private(u)")}$
        do ix3 = ixGlo3, ixGhi3
           do ix2 = ixGlo2, ixGhi2
              do ix1 = ixGlo1, ixGhi1

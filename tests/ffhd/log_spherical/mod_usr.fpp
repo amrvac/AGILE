@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 !> Curvilinear FFHD tests on a spherical mesh, away from the axis: two runs
 !> from one build.
 !>
@@ -75,7 +79,7 @@ module mod_usr
   !> the domain. Deriving the centre from xprob* cannot get that wrong, and
   !> check_blast_fits below verifies the whole sphere is inside.
   double precision :: fr = 0.45d0, ftheta = 0.4d0, fphi = 0.4d0
-  !$acc declare copyin(is_blast, rho0, p0, vpar0, pblast, rblast, b0, fr, ftheta, fphi)
+  ${GPU_DECLARE_COPYIN('is_blast, rho0, p0, vpar0, pblast, rblast, b0, fr, ftheta, fphi')}$
 
 contains
 
@@ -96,7 +100,7 @@ contains
     case default
        call mpistop("&usr_list setup must be 'uniform' or 'blast'")
     end select
-    !$acc update device(is_blast, vpar0)
+    ${GPU_UPDATE_DEVICE('is_blast, vpar0')}$
 
     usr_init_one_grid => initonegrid_usr
     usr_process_grid  => check_log_grid
@@ -124,7 +128,7 @@ contains
 
   !> spherical components at x of the unit vector along Cartesian vec0.
   pure subroutine to_spherical_unit(x, vec0, vec)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(in)  :: vec0(1:3)
     double precision, intent(out) :: vec(1:3)
@@ -148,7 +152,7 @@ contains
   !> fill_nwextra_device (device code) for every cell of every block after
   !> each grid change; see mod_usr_methods.
   pure subroutine usr_set_nwextra(x, bhat)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(out) :: bhat(1:3)
 
@@ -249,8 +253,8 @@ contains
   !> discretisation is under test
   subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
      ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3
     integer, intent(in)             :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
@@ -266,7 +270,11 @@ contains
 
     ! b1,b2,b3 in these ghost cells come from fill_nwextra_device, so
     ! only the fluid variables are set here
-    !$acc loop collapse(3) vector
+#ifndef _OPENMP
+    ! Vector-level parallelization within a subroutine does not work with OpenMP.
+    ! TBD if this routine can be made seq (i.e. cell-based).
+    ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1
@@ -326,7 +334,7 @@ contains
 
     if (it /= 0) return
     ! process() syncs the positions for us, but not the metrics
-    !$acc update host(ps(igrid)%ds, ps(igrid)%dvolume)
+    ${GPU_UPDATE_HOST('ps(igrid)%ds, ps(igrid)%dvolume')}$
 
     d1 = rnode(rpdx1_,igrid); d2 = rnode(rpdx2_,igrid); d3 = rnode(rpdx3_,igrid)
     xlo1 = rnode(rpxmin1_,igrid); xlo2 = rnode(rpxmin2_,igrid)
