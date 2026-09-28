@@ -246,8 +246,8 @@ contains
     pure function ideal_eos(rho,eps) result(p)
         real(dp), intent(in) :: rho, eps
         real(dp) ::p
-        real(dp) :: gamma
-        gamma=5.0_dp/3.0_dp
+
+        srmhd_gamma=5.0_dp/3.0_dp
         p=(gamma-1)*rho*eps
     end function ideal_eos
 
