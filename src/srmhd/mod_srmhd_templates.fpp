@@ -57,6 +57,10 @@
   integer, public :: psi_
   ${GPU_DECLARE_CREATE('psi_')}$
 
+  !> GLM-MHD parameter: ratio of the diffusive and advective time scales for div b
+  !> taking values within [0, 1]
+  double precision, public                :: srmhd_glm_alpha = 0.5d0
+  ${GPU_DECLARE_COPYIN('srmhd_glm_alpha')}$
 
 
 !   !> Number of tracer species
@@ -97,7 +101,7 @@
 
     namelist /srmhd_list/ srmhd_eos,srmhd_gamma,srmhd_n_tracer, &
       He_abundance, srmhd_source_usr, &
-      srmhd_small_pressure, srmhd_small_density
+      srmhd_small_pressure, srmhd_small_density, srmhd_glm_alpha
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -113,7 +117,7 @@
 #ifdef _OPENACC
     !$acc update device(srmhd_eos, &
     !$acc&     srmhd_gamma, srmhd_n_tracer, &
-    !$acc&     He_abundance, srmhd_source_usr)
+    !$acc&     He_abundance, srmhd_source_usr, srmhd_glm_alpha)
     !$acc update device(srmhd_small_pressure, srmhd_small_density)
 #endif
 
@@ -418,4 +422,41 @@ pure function get_cmax(u, x, flux_dim) result(wC)
 
 end function get_cmax
 #:enddef  
+
+
+
+#:def addsource_local()
+subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
+    qsourcesplit)
+#:if defined('SOURCE_USR')
+  use mod_usr, only: addsource_usr
+#:endif
+  ${GPU_ROUTINE_SEQ()}$
+
+  real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
+  real(dp), intent(in)     :: wCT(nw_phys), wCTprim(nw_phys)
+  real(dp), intent(in)     :: x(1:ndim), dr(ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  logical, intent(in)      :: qsourcesplit
+
+  if (.not. qsourcesplit) then 
+     !---------------------------------
+     ! unsplit sources
+     !---------------------------------
+
+#:if defined('SOURCE_USR')
+     call addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, .false.)
+#:endif
+
+  !!!else
+     !---------------------------------
+     ! split sources     
+     !---------------------------------
+        
+    wnew(psi_)=wnew(psi_)*dexp(-qdt*cmax_global*mhd_glm_alpha/minval(dr))
+    
+  end if
+
+end subroutine addsource_local
+#:enddef
 
