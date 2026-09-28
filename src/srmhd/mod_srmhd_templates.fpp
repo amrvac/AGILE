@@ -64,9 +64,9 @@
   double precision, public                :: srmhd_gamma = 5.d0/3.0d0
   !$acc declare copyin(srmhd_gamma)
 
-  !> derived values from adiabatic index 
-  double precision, public                :: gamma_1,inv_gamma_1,gamma_to_gamma_1
-  !$acc declare copyin(gamma_1,inv_gamma_1,gamma_to_gamma_1)
+  ! !> derived values from adiabatic index 
+  ! double precision, public                :: gamma_1,inv_gamma_1,gamma_to_gamma_1
+  ! !$acc declare copyin(gamma_1,inv_gamma_1,gamma_to_gamma_1)
 
   !> Helium abundance over Hydrogen
   double precision, public  :: He_abundance=0.1d0
@@ -90,13 +90,13 @@
     character(len=*), intent(in) :: files(:)
     integer                      :: n
 
-    namelist /srmhd_list/ srmhd_eos,srhd_gamma,srmhd_n_tracer, &
+    namelist /srmhd_list/ srmhd_eos,srmhd_gamma,srmhd_n_tracer, &
       He_abundance, srmhd_source_usr, &
       srmhd_small_pressure, srmhd_small_density
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
-       read(unitpar, srhd_list, end=111)
+       read(unitpar, srmhd_list, end=111)
 111    close(unitpar)
     end do
 
@@ -158,9 +158,9 @@
     phys_total_energy  = .true.
     phys_gamma = srmhd_gamma
 
-    ! gamma_1=srhd_gamma-1.0d0
+    ! gamma_1=srmhd_gamma-1.0d0
     ! inv_gamma_1=1.0d0/gamma_1
-    ! gamma_to_gamma_1=srhd_gamma/gamma_1
+    ! gamma_to_gamma_1=srmhd_gamma/gamma_1
     ! !$acc update device(gamma_1,inv_gamma_1,gamma_to_gamma_1)
 
     phys_internal_e=.false.
@@ -228,7 +228,7 @@
 
 ! use cycle, needs to be dealt with:
 !    ! Initialize particles module
-!    if (srhd_particles) then
+!    if (srmhd_particles) then
 !       call particles_init()
 !       phys_req_diagonal = .true.
 !    end if
@@ -318,7 +318,7 @@
 
     ! d=u(iw_rho)*u(lfac_)
 
-    v_sqr = -1/u(lfac_)**2 + 1
+    v_sqr = (u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2)/u(lfac_)**2
 
     b_sqr= u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
 
