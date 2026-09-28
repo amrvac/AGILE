@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
   use mod_amrvac
   use mod_physics
@@ -21,11 +25,11 @@ module mod_usr
 ! (4, n_modes, n_modes, 2:3)
   double precision, dimension(:,:,:,:), allocatable :: rand_1
 
-!$acc declare create(sheetl,rhorat,BB0,llx,lly,psi0bot,psi0top)
-!$acc declare create(llz,xmid,ymid,ysh1,ysh2,fkx,fky)
-!$acc declare create(zmid, sig_z, mode_root, n_modes)
-!$acc declare create(L, v_per, f_til)
-!$acc declare create(rand_1)
+  ${GPU_DECLARE_CREATE('sheetl,rhorat,BB0,llx,lly,psi0bot,psi0top')}$
+  ${GPU_DECLARE_CREATE('llz,xmid,ymid,ysh1,ysh2,fkx,fky')}$
+  ${GPU_DECLARE_CREATE('zmid, sig_z, mode_root, n_modes')}$
+  ${GPU_DECLARE_CREATE('L, v_per, f_til')}$
+  ${GPU_DECLARE_CREATE('rand_1')}$
 
 contains
 
@@ -53,8 +57,8 @@ contains
 111   close(unitpar) 
     end do
 
-!$acc update device(v_per,sig_z,f_til,mode_root,n_modes)
-!$acc update device(psi0bot,psi0top)
+    ${GPU_UPDATE_DEVICE('v_per,sig_z,f_til,mode_root,n_modes')}$
+    ${GPU_UPDATE_DEVICE('psi0bot,psi0top')}$
 
   end subroutine params_read_usr
 
@@ -101,9 +105,9 @@ contains
       call MPI_BCAST(rand_1, size(rand_1), MPI_DOUBLE_PRECISION, 0, icomm, ierrmpi)
     end if
 
-!$acc update device(sheetl,rhorat,BB0,llx,lly,llz,xmid,ymid,zmid,ysh1,ysh2,fkx,fky)
-!$acc update device(L)
-!$acc update device(rand_1)
+    ${GPU_UPDATE_DEVICE('sheetl,rhorat,BB0,llx,lly,llz,xmid,ymid,zmid,ysh1,ysh2,fkx,fky')}$
+    ${GPU_UPDATE_DEVICE('L')}$
+    ${GPU_UPDATE_DEVICE('rand_1')}$
 
     if (mype == 0) call print_params()
   end subroutine set_parameters_usr

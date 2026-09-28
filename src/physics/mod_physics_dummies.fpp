@@ -1,13 +1,16 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 ! Dummy routines which can be overwritten by a physics-dependent implementation
 ! On non-Cray compilers, these call mpistop with a descriptive message.
 ! On Cray, STOP cannot be inlined into OpenACC kernels, so dummies just return -1. 
 
 #:def estimate_speeds_minmax()
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
-  !$acc routine seq
 #ifndef _CRAYFTN
   use mod_comm_lib, only: mpistop
 #endif
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
@@ -25,10 +28,10 @@ end subroutine estimate_speeds_minmax
 
 #:def estimate_speeds_toro_pvrs()
 subroutine estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
-  !$acc routine seq
 #ifndef _CRAYFTN
   use mod_comm_lib, only: mpistop
 #endif
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer,  intent(in)  :: flux_dim
@@ -47,7 +50,7 @@ end subroutine estimate_speeds_toro_pvrs
 #:def addsource_nonlocal()
 subroutine addsource_nonlocal(qdt, dtfactor, qtC, wCTprim, qt, wnew, x, dx, idir, &
      qsourcesplit)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim(nw_phys,5)
@@ -63,7 +66,7 @@ end subroutine addsource_nonlocal
 #:def addsource_compact()
 subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, x, dx, &
      qsourcesplit)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim1(nw_phys,3),wCTprim2(nw_phys,3),wCTprim3(nw_phys,3)
@@ -77,10 +80,10 @@ end subroutine addsource_compact
 
 #:def addsource_geometry()
 subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
-  !$acc routine seq
 #ifndef _CRAYFTN
   use mod_comm_lib, only: mpistop
 #endif
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)     :: qdt
   real(dp), intent(in)     :: wprim(nw_phys)
   real(dp), intent(in)     :: x(1:ndim)
@@ -101,7 +104,7 @@ end subroutine addsource_geometry
 !> auxiliary variables and without a floor of its own needs nothing here, and
 !> the call is inlined away.
 pure subroutine fix_prim_state(u)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(inout) :: u(nw_phys)
 
 end subroutine fix_prim_state

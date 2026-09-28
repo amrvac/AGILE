@@ -1,13 +1,9 @@
+include $(agile)/arch/common.mk
+
 arch := ifx
 
 compile = mpiifx
 f90_flags += -fpp -free -implicitnone
-
-ifdef OPENMP
-$(info Enabling OpenMP)
-enabled += OPENMP
-f90_flags += -qopenmp
-endif
 
 ifdef DEBUG
 $(info Enable debugging symbols)

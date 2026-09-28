@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
   use mod_amrvac
   use mod_physics
@@ -6,7 +10,7 @@ module mod_usr
 
   double precision:: v0,rho0,p0,T0,pbeta0,b0,mach0
 
-!$acc declare create(v0,rho0,p0,T0,pbeta0,b0,mach0)
+  ${GPU_DECLARE_CREATE('v0,rho0,p0,T0,pbeta0,b0,mach0')}$
 
 contains
 
@@ -52,7 +56,7 @@ contains
     endif
     v0=mach0*dsqrt(mhd_gamma*p0/rho0)
 
-!$acc update device(v0,rho0,p0,T0,pbeta0,b0,mach0)
+    ${GPU_UPDATE_DEVICE('v0,rho0,p0,T0,pbeta0,b0,mach0')}$
 
   end subroutine usr_params_read
 
@@ -124,8 +128,8 @@ contains
 !   compilation it deals with this function.
 ! NOTE: This is ran on the GPU.
   subroutine addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, split)
-      !$acc routine seq
       use mod_radiative_cooling, only: rc_fl,getvar_cooling_exact
+      ${GPU_ROUTINE_SEQ()}$
       double precision, intent(in) :: qdt, qt, wCT(nw_phys), wCTprim(nw_phys)
       double precision, intent(inout) :: wnew(nw_phys)
       double precision, intent(in) :: x(1:ndim)

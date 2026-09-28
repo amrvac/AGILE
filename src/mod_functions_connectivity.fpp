@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 module mod_functions_connectivity
 
 
@@ -49,7 +52,7 @@ module mod_functions_connectivity
     end do
 
     igridstail=iigrid
-    !$acc update device(igrids, igridstail)
+    ${GPU_UPDATE_DEVICE('igrids, igridstail')}$
 
   end subroutine getigrids
 
@@ -57,10 +60,8 @@ module mod_functions_connectivity
     use mod_forest
     use mod_global_parameters
     use mod_ghostcells_update
-#ifdef _OPENACC
-    use openacc, only: acc_is_present
-#endif    
     use mod_amr_neighbors, only: find_neighbor
+    ${GPU_USE_IS_PRESENT()}$
 
     integer :: iigrid, igrid, i1,i2,i3, my_neighbor_type
     integer :: iside, idim, ic1,ic2,ic3, inc1,inc2,inc3, ih1,ih2,ih3, icdim
@@ -86,62 +87,29 @@ module mod_functions_connectivity
     if(stagger_grid) nrecv_cc=0; nsend_cc=0
     
     
-#ifdef _OPENACC
+#if defined(_OPENACC) || defined(_OPENMP)
     do inb = 1, nbprocs_info%nbprocs_srl
-       !$acc exit data delete( nbprocs_info%srl_nb(inb)%rcv%buffer,      &
-       !$acc&                    nbprocs_info%srl_nb(inb)%info_rcv%buffer, &
-       !$acc&                    nbprocs_info%srl_nb(inb)%send%buffer,     &
-       !$acc&                    nbprocs_info%srl_nb(inb)%info_send%buffer, &
-       !$acc&                    nbprocs_info%srl_nb(inb)%info%nigrids,    &
-       !$acc&                    nbprocs_info%srl_nb(inb)%info%igrid,      &
-       !$acc&                    nbprocs_info%srl_nb(inb)%info%iencode,    &
-       !$acc&                    nbprocs_info%srl_nb(inb)%info%ibuf_start, &
-       !$acc&                    nbprocs_info%srl_nb(inb)%info%isize )
+       ${GPU_EXIT_DATA_DELETE('nbprocs_info%srl_nb(inb)%rcv%buffer, nbprocs_info%srl_nb(inb)%info_rcv%buffer, nbprocs_info%srl_nb(inb)%send%buffer, nbprocs_info%srl_nb(inb)%info_send%buffer, nbprocs_info%srl_nb(inb)%info%nigrids, nbprocs_info%srl_nb(inb)%info%igrid, nbprocs_info%srl_nb(inb)%info%iencode, nbprocs_info%srl_nb(inb)%info%ibuf_start, nbprocs_info%srl_nb(inb)%info%isize')}$
     end do
 
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc exit data delete( nbprocs_info%course_nb(inb)%rcv%buffer,      &
-       !$acc&                    nbprocs_info%course_nb(inb)%info_rcv%buffer, &
-       !$acc&                    nbprocs_info%course_nb(inb)%send%buffer,     &
-       !$acc&                    nbprocs_info%course_nb(inb)%info_send%buffer, &
-       !$acc&                    nbprocs_info%course_nb(inb)%info%nigrids,    &
-       !$acc&                    nbprocs_info%course_nb(inb)%info%igrid,      &
-       !$acc&                    nbprocs_info%course_nb(inb)%info%inc1,       &
-       !$acc&                    nbprocs_info%course_nb(inb)%info%inc2,       &
-       !$acc&                    nbprocs_info%course_nb(inb)%info%inc3,       &
-       !$acc&                    nbprocs_info%course_nb(inb)%info%i1,         &
-       !$acc&                    nbprocs_info%course_nb(inb)%info%i2,         &
-       !$acc&                    nbprocs_info%course_nb(inb)%info%i3,         &
-       !$acc&                    nbprocs_info%course_nb(inb)%info%ibuf_start, &
-       !$acc&                    nbprocs_info%course_nb(inb)%info%isize )
+       ${GPU_EXIT_DATA_DELETE('nbprocs_info%course_nb(inb)%rcv%buffer, nbprocs_info%course_nb(inb)%info_rcv%buffer, nbprocs_info%course_nb(inb)%send%buffer, nbprocs_info%course_nb(inb)%info_send%buffer, nbprocs_info%course_nb(inb)%info%nigrids, nbprocs_info%course_nb(inb)%info%igrid, nbprocs_info%course_nb(inb)%info%inc1, nbprocs_info%course_nb(inb)%info%inc2, nbprocs_info%course_nb(inb)%info%inc3, nbprocs_info%course_nb(inb)%info%i1, nbprocs_info%course_nb(inb)%info%i2, nbprocs_info%course_nb(inb)%info%i3, nbprocs_info%course_nb(inb)%info%ibuf_start, nbprocs_info%course_nb(inb)%info%isize')}$
     end do
 
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc exit data delete( nbprocs_info%fine_nb(inb)%rcv%buffer,      &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info_rcv%buffer, &
-       !$acc&                    nbprocs_info%fine_nb(inb)%send%buffer,     &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info_send%buffer, &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info%nigrids,    &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info%igrid,      &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info%inc1,       &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info%inc2,       &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info%inc3,       &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info%i1,         &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info%i2,         &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info%i3,         &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info%ibuf_start, &
-       !$acc&                    nbprocs_info%fine_nb(inb)%info%isize )
+       ${GPU_EXIT_DATA_DELETE('nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%info_rcv%buffer, nbprocs_info%fine_nb(inb)%send%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer, nbprocs_info%fine_nb(inb)%info%nigrids, nbprocs_info%fine_nb(inb)%info%igrid, nbprocs_info%fine_nb(inb)%info%inc1, nbprocs_info%fine_nb(inb)%info%inc2, nbprocs_info%fine_nb(inb)%info%inc3, nbprocs_info%fine_nb(inb)%info%i1, nbprocs_info%fine_nb(inb)%info%i2, nbprocs_info%fine_nb(inb)%info%i3, nbprocs_info%fine_nb(inb)%info%ibuf_start, nbprocs_info%fine_nb(inb)%info%isize')}$
     end do
 
     ! Deallocate the top-level objects
-    !$acc exit data delete (nbprocs_info%srl_nb) if(acc_is_present(nbprocs_info%srl_nb))
-    !$acc exit data delete (nbprocs_info%course_nb) if(acc_is_present(nbprocs_info%course_nb))
-    !$acc exit data delete (nbprocs_info%fine_nb) if(acc_is_present(nbprocs_info%fine_nb))
-#ifdef _CRAYFTN ! should be a no-op, but hey, its cray...
-    !$acc exit data delete (nbprocs_info) if(acc_is_present(nbprocs_info))
-#endif
-#ifndef _CRAYFTN ! acc_is_present can only be cast on arrays with nvidia (its anyways a no-op)
-    !$acc exit data delete (nbprocs_info)
+    ${GPU_EXIT_DATA_DELETE_IF_PRESENT('nbprocs_info%srl_nb')}$
+    ${GPU_EXIT_DATA_DELETE_IF_PRESENT('nbprocs_info%course_nb')}$
+    ${GPU_EXIT_DATA_DELETE_IF_PRESENT('nbprocs_info%fine_nb')}$
+#ifdef _CRAYFTN
+    ! should be a no-op, but hey, its cray...
+    ${GPU_EXIT_DATA_DELETE_IF_PRESENT('nbprocs_info')}$
+#else
+    ! acc_is_present can only be cast on arrays with nvidia (its anyways a no-op)  
+    ${GPU_EXIT_DATA_DELETE('nbprocs_info')}$
 #endif
 #endif
 
@@ -662,60 +630,29 @@ module mod_functions_connectivity
     
     
     !update the neighbor information on the device
-    !$acc update device(neighbor, neighbor_type, neighbor_pole, neighbor_child, idphyb)
-    
-    !$acc enter data copyin (nbprocs_info)
-    !$acc enter data copyin (nbprocs_info%srl_nb, nbprocs_info%course_nb, nbprocs_info%fine_nb)
-#ifdef _OPENACC
-    do inb = 1, nbprocs_info%nbprocs_srl
-       !$acc enter data create( nbprocs_info%srl_nb(inb)%rcv%buffer, &
-       !$acc&                   nbprocs_info%srl_nb(inb)%send%buffer, &
-       !$acc&                   nbprocs_info%srl_nb(inb)%info_rcv%buffer, &
-       !$acc&                   nbprocs_info%srl_nb(inb)%info_send%buffer )
+    ${GPU_UPDATE_DEVICE('neighbor, neighbor_type, neighbor_pole, neighbor_child, idphyb')}$
 
-       !$acc enter data copyin( nbprocs_info%srl_nb(inb)%info%nigrids, &
-       !$acc&                   nbprocs_info%srl_nb(inb)%info%igrid, &
-       !$acc&                   nbprocs_info%srl_nb(inb)%info%iencode, &
-       !$acc&                   nbprocs_info%srl_nb(inb)%info%ibuf_start, &
-       !$acc&                   nbprocs_info%srl_nb(inb)%info%isize )
+    ${GPU_ENTER_DATA_COPYIN('nbprocs_info')}$
+    ${GPU_ENTER_DATA_COPYIN('nbprocs_info%srl_nb, nbprocs_info%course_nb, nbprocs_info%fine_nb')}$
+#if defined(_OPENACC) || defined(_OPENMP)
+    do inb = 1, nbprocs_info%nbprocs_srl
+       ${GPU_ENTER_DATA_CREATE('nbprocs_info%srl_nb(inb)%rcv%buffer, nbprocs_info%srl_nb(inb)%send%buffer, nbprocs_info%srl_nb(inb)%info_rcv%buffer, nbprocs_info%srl_nb(inb)%info_send%buffer')}$
+
+       ${GPU_ENTER_DATA_COPYIN('nbprocs_info%srl_nb(inb)%info%nigrids, nbprocs_info%srl_nb(inb)%info%igrid, nbprocs_info%srl_nb(inb)%info%iencode, nbprocs_info%srl_nb(inb)%info%ibuf_start, nbprocs_info%srl_nb(inb)%info%isize')}$
     end do
 
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc enter data create( nbprocs_info%course_nb(inb)%rcv%buffer, &
-       !$acc&                   nbprocs_info%course_nb(inb)%send%buffer, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info_rcv%buffer, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info_send%buffer )
+       ${GPU_ENTER_DATA_CREATE('nbprocs_info%course_nb(inb)%rcv%buffer, nbprocs_info%course_nb(inb)%send%buffer, nbprocs_info%course_nb(inb)%info_rcv%buffer, nbprocs_info%course_nb(inb)%info_send%buffer')}$
 
-       !$acc enter data copyin( nbprocs_info%course_nb(inb)%info%nigrids, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info%igrid, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info%inc1, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info%inc2, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info%inc3, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info%i1, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info%i2, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info%i3, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info%ibuf_start, &
-       !$acc&                   nbprocs_info%course_nb(inb)%info%isize )
+       ${GPU_ENTER_DATA_COPYIN('nbprocs_info%course_nb(inb)%info%nigrids, nbprocs_info%course_nb(inb)%info%igrid, nbprocs_info%course_nb(inb)%info%inc1, nbprocs_info%course_nb(inb)%info%inc2, nbprocs_info%course_nb(inb)%info%inc3, nbprocs_info%course_nb(inb)%info%i1, nbprocs_info%course_nb(inb)%info%i2, nbprocs_info%course_nb(inb)%info%i3, nbprocs_info%course_nb(inb)%info%ibuf_start, nbprocs_info%course_nb(inb)%info%isize')}$
     end do
 
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc enter data create( nbprocs_info%fine_nb(inb)%rcv%buffer, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%send%buffer, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info_rcv%buffer, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info_send%buffer )
+       ${GPU_ENTER_DATA_CREATE('nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%send%buffer, nbprocs_info%fine_nb(inb)%info_rcv%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer')}$
 
-       !$acc enter data copyin( nbprocs_info%fine_nb(inb)%info%nigrids, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info%igrid, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info%inc1, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info%inc2, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info%inc3, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info%i1, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info%i2, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info%i3, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info%ibuf_start, &
-       !$acc&                   nbprocs_info%fine_nb(inb)%info%isize )
+       ${GPU_ENTER_DATA_COPYIN('nbprocs_info%fine_nb(inb)%info%nigrids, nbprocs_info%fine_nb(inb)%info%igrid, nbprocs_info%fine_nb(inb)%info%inc1, nbprocs_info%fine_nb(inb)%info%inc2, nbprocs_info%fine_nb(inb)%info%inc3, nbprocs_info%fine_nb(inb)%info%i1, nbprocs_info%fine_nb(inb)%info%i2, nbprocs_info%fine_nb(inb)%info%i3, nbprocs_info%fine_nb(inb)%info%ibuf_start, nbprocs_info%fine_nb(inb)%info%isize')}$
     end do
-#endif 
+#endif
 
   end subroutine build_connectivity
 

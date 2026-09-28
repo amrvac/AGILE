@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 !> Curvilinear tests on a spherical mesh, away from the polar axis: three runs
 !> from one build.
 !>
@@ -85,7 +89,7 @@ module mod_usr
   !> the device-side form of `setup`: specialbound_usr runs on the GPU, where
   !> comparing a character string is awkward
   logical :: is_blast = .false.
-  !$acc declare copyin(rho0, p0, v0, is_blast)
+  ${GPU_DECLARE_COPYIN('rho0, p0, v0, is_blast')}$
 
 contains
 
@@ -105,7 +109,7 @@ contains
     case default
        call mpistop("&usr_list setup must be 'uniform' or 'blast'")
     end select
-    !$acc update device(is_blast, v0)
+    ${GPU_UPDATE_DEVICE('is_blast, v0')}$
 
     usr_init_one_grid => initonegrid_usr
     usr_process_grid  => check_log_grid
@@ -136,7 +140,13 @@ contains
   !> result needs a temporary that not every OpenACC compiler handles inside
   !> a device routine.
   pure subroutine uniform_velocity(x, v)
-    !$acc routine seq
+    ! Vector parallelization is disabled for OpenMP in specialbound_usr, so this routine should
+    ! work at the vector level in that case
+#ifdef _OPENMP
+    ${GPU_ROUTINE_VECTOR()}$
+#else
+    ${GPU_ROUTINE_SEQ()}$
+#endif
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(out) :: v(1:3)
     double precision              :: sint, cost, sinp, cosp
@@ -247,8 +257,8 @@ contains
   !> its boundaries open with 'cont' instead.
   subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
      ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3
     integer, intent(in)             :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
@@ -264,7 +274,11 @@ contains
     double precision                :: x_loc(1:ndim)
     integer                         :: ix1, ix2, ix3
 
-    !$acc loop collapse(3) vector private(v, x_loc)
+#ifndef _OPENMP
+    ! Vector-level parallelization within a subroutine does not work with OpenMP.
+    ! TBD if this routine can be made seq (i.e. cell-based).
+    ${GPU_LOOP_VECTOR("collapse(3) private(v, x_loc)")}$
+#endif
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1
@@ -329,7 +343,7 @@ contains
 
     if (it /= 0) return
     ! process() syncs the positions for us, but not the metrics
-    !$acc update host(ps(igrid)%ds, ps(igrid)%dvolume)
+    ${GPU_UPDATE_HOST('ps(igrid)%ds, ps(igrid)%dvolume')}$
 
     d1 = rnode(rpdx1_,igrid); d2 = rnode(rpdx2_,igrid); d3 = rnode(rpdx3_,igrid)
     xlo1 = rnode(rpxmin1_,igrid); xlo2 = rnode(rpxmin2_,igrid)

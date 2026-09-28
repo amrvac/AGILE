@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 !> Uniform, sub-luminal Cartesian SRHD flow on a cylindrical mesh through the
 !> axis.
 !>
@@ -42,7 +46,7 @@ module mod_usr
   double precision :: p0   = 1.0d0
   !> the uniform *ordinary* Cartesian velocity, sub-luminal
   double precision :: v0(3) = [0.3d0, 0.15d0, -0.1d0]
-  !$acc declare copyin(rho0, p0, v0)
+  ${GPU_DECLARE_COPYIN('rho0, p0, v0')}$
 
 contains
 
@@ -63,7 +67,13 @@ contains
   !> a function result needs a temporary that not every OpenACC compiler
   !> handles inside a device routine.
   pure subroutine uniform_velocity(x, v)
-    !$acc routine seq
+    ! Vector parallelization is disabled for OpenMP in specialbound_usr, so this routine should
+    ! work at the vector level in that case
+#ifdef _OPENMP
+    ${GPU_ROUTINE_VECTOR()}$
+#else
+    ${GPU_ROUTINE_SEQ()}$
+#endif
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(out) :: v(1:3)
     double precision              :: sinp, cosp
@@ -113,8 +123,8 @@ contains
   !> discretisation is under test
   subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
      ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3
     integer, intent(in)             :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
@@ -140,7 +150,11 @@ contains
     ! (hd's wpt(1:nw)). srhd's privates (v, x_loc) are all compile-time sized,
     ! so there is nothing to miscompile. See CLAUDE.md ("Bug-hunting notes")
     ! and issue #154.
-    !$acc loop collapse(3) vector private(v, x_loc)
+#ifndef _OPENMP
+    ! Vector-level parallelization within a subroutine does not work with OpenMP.
+    ! TBD if this routine can be made seq (i.e. cell-based).
+    ${GPU_LOOP_VECTOR("collapse(3) private(v, x_loc)")}$
+#endif
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1
@@ -218,7 +232,7 @@ contains
     if (neighbor_pole(-1,0,0,igrid) == 0) return
     ! process() runs before the solution is pulled back for output, so the
     ! host copy of w is stale unless we fetch this block ourselves
-    !$acc update host(ps(igrid)%w)
+    ${GPU_UPDATE_HOST('ps(igrid)%w')}$
 
     ! transverse loops run over the whole block (ixI), not just its interior
     ! (ixO), so the pole layer's edges and corners are covered - in

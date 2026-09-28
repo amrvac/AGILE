@@ -1,4 +1,8 @@
 !> Module for flux conservation near refinement boundaries
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
+
 module mod_fix_conserve
 #ifdef USE_MPIWRAPPERS
   use mod_mpi_wrapper
@@ -76,8 +80,8 @@ module mod_fix_conserve
   integer, allocatable, save         :: rcv_key(:), rcv_src(:), rcv_dims(:)
   integer, allocatable, save         :: rcv_off(:)
   integer, save                      :: nwflux_fc
-  integer, dimension(3,3), save      :: nxCo_fc
-  !$acc declare create(isize, nxCo_fc, nwflux_fc)
+  integer, dimension(3,3), save      :: nxCo_fc  
+  ${GPU_DECLARE_CREATE('isize, nxCo_fc, nwflux_fc')}$
 
   integer                              :: ibuf, ibuf_send
   ! ct for corner total
@@ -236,14 +240,14 @@ module mod_fix_conserve
      ! host/device transfers are sliced for exactly this reason.
      if (allocated(recvbuffer)) then
        if (recvsize > size(recvbuffer)) then
-         !$acc exit data delete(recvbuffer)
+         ${GPU_EXIT_DATA_DELETE('recvbuffer')}$
          deallocate(recvbuffer)
          allocate(recvbuffer(recvsize))
-         !$acc enter data create(recvbuffer)
+         ${GPU_ENTER_DATA_CREATE('recvbuffer')}$
        end if
      else
        allocate(recvbuffer(max(recvsize,1)))
-       !$acc enter data create(recvbuffer)
+       ${GPU_ENTER_DATA_CREATE('recvbuffer')}$
      end if
 
      ! Key -> offset table for the incoming chunks, read by fix_conserve.
@@ -251,19 +255,19 @@ module mod_fix_conserve
      if (.not.allocated(ibuf_offset)) then
        allocate(ibuf_offset(4**3*max_blocks))
        ibuf_offset = -1
-       !$acc enter data copyin(ibuf_offset)
+       ${GPU_ENTER_DATA_COPYIN('ibuf_offset')}$
      end if
 
      if (allocated(sendbuffer)) then
        if (sendsize > size(sendbuffer)) then
-         !$acc exit data delete(sendbuffer)
+         ${GPU_EXIT_DATA_DELETE('sendbuffer')}$
          deallocate(sendbuffer)
          allocate(sendbuffer(sendsize))
-         !$acc enter data create(sendbuffer)
+         ${GPU_ENTER_DATA_CREATE('sendbuffer')}$
        end if
      else
        allocate(sendbuffer(max(sendsize,1)))
-       !$acc enter data create(sendbuffer)
+       ${GPU_ENTER_DATA_CREATE('sendbuffer')}$
      end if
 
      ! Per-chunk working set, sized by nsend / nrecv, and grown on the same
@@ -273,7 +277,7 @@ module mod_fix_conserve
      ! trivially.
      if (allocated(snd_ibuf)) then
        if (max(nsend,1) > size(snd_ibuf)) then
-         !$acc exit data delete(snd_igrid, snd_ibuf, snd_group)
+         ${GPU_EXIT_DATA_DELETE('snd_igrid, snd_ibuf, snd_group')}$
          deallocate(snd_igrid, snd_ibuf, snd_key, snd_dest, snd_dims, snd_group)
        end if
      end if
@@ -281,7 +285,7 @@ module mod_fix_conserve
        allocate(snd_igrid(max(nsend,1)), snd_ibuf(max(nsend,1)),&
           snd_key(max(nsend,1)), snd_dest(max(nsend,1)),&
           snd_dims(max(nsend,1)), snd_group(max(nsend,1),2,3))
-       !$acc enter data create(snd_igrid, snd_ibuf, snd_group)
+       ${GPU_ENTER_DATA_CREATE('snd_igrid, snd_ibuf, snd_group')}$
      end if
 
      if (allocated(rcv_key)) then
@@ -363,7 +367,7 @@ module mod_fix_conserve
        end if
      end if
 
-     !$acc update device(isize, nxCo_fc, nwflux_fc)
+     ${GPU_UPDATE_DEVICE('isize, nxCo_fc, nwflux_fc')}$
 
 
      call build_message_layout(idimmin,idimmax)
@@ -424,7 +428,7 @@ module mod_fix_conserve
      ! above already carried idims along, so hand layout_runs the sizes directly
      call layout_runs(n, snd_dest, snd_key, isize(snd_dims(1:n)), snd_ibuf,&
         n_send_pe, send_pe, send_pe_off, send_pe_len)
-     !$acc update device(snd_igrid, snd_ibuf, snd_group)
+     ${GPU_UPDATE_DEVICE('snd_igrid, snd_ibuf, snd_group')}$
 
      ! Incoming: this rank's coarse blocks that face fine children elsewhere.
      m = 0
@@ -466,7 +470,7 @@ module mod_fix_conserve
      do k = 1, m
        ibuf_offset(rcv_key(k)+1) = rcv_off(k)
      end do
-     !$acc update device(ibuf_offset)
+     ${GPU_UPDATE_DEVICE('ibuf_offset')}$
 
    end subroutine build_message_layout
 
@@ -490,7 +494,7 @@ module mod_fix_conserve
        fc_recvreq=MPI_REQUEST_NULL
        itag=idimmin+4*idimmax
 #ifndef NOGPUDIRECT
-       !$acc host_data use_device(recvbuffer)
+       ${GPU_HOST_DATA_USE_DEVICE('recvbuffer')}$
 #endif
        do irecv=1,n_recv_pe
          call mpi_irecv_wrapper(recvbuffer(recv_pe_off(irecv)),&
@@ -498,7 +502,7 @@ module mod_fix_conserve
             fc_recvreq(irecv),ierrmpi)
        end do
 #ifndef NOGPUDIRECT
-       !$acc end host_data
+       ${GPU_END_HOST_DATA()}$
 #endif
      end if
 
@@ -612,10 +616,10 @@ module mod_fix_conserve
          if (ng == 0) cycle
          select case (idims)
          case (1)
-           !$acc parallel loop gang private(imsg) default(present)
+           ${GPU_PARALLEL_LOOP_GANG("private(imsg)")}$ ${GPU_DEFAULT_PRESENT()}$
            do k = 1,ng
              imsg = snd_group(k,iside,1)
-             !$acc loop vector collapse(3)
+             ${GPU_LOOP_VECTOR("collapse(3)")}$
              do iw=1,nwflux_fc
                do ix3=1,nxCo_fc(3,1)
                  do ix2=1,nxCo_fc(2,1)
@@ -627,10 +631,10 @@ module mod_fix_conserve
              end do
            end do
          case (2)
-           !$acc parallel loop gang private(imsg) default(present)
+           ${GPU_PARALLEL_LOOP_GANG("private(imsg)")}$ ${GPU_DEFAULT_PRESENT()}$
            do k = 1,ng
              imsg = snd_group(k,iside,2)
-             !$acc loop vector collapse(3)
+             ${GPU_LOOP_VECTOR("collapse(3)")}$
              do iw=1,nwflux_fc
                do ix3=1,nxCo_fc(3,2)
                  do ix1=1,nxCo_fc(1,2)
@@ -642,10 +646,10 @@ module mod_fix_conserve
              end do
            end do
          case (3)
-           !$acc parallel loop gang private(imsg) default(present)
+           ${GPU_PARALLEL_LOOP_GANG("private(imsg)")}$ ${GPU_DEFAULT_PRESENT()}$
            do k = 1,ng
              imsg = snd_group(k,iside,3)
-             !$acc loop vector collapse(3)
+             ${GPU_LOOP_VECTOR("collapse(3)")}$
              do iw=1,nwflux_fc
                do ix2=1,nxCo_fc(2,3)
                  do ix1=1,nxCo_fc(1,3)
@@ -667,10 +671,10 @@ module mod_fix_conserve
      if (n_send_pe > 0) then
        ! sliced, not whole-array: the buffer is grown and not shrunk, so
        ! size(sendbuffer) can exceed what this exchange actually uses
-       !$acc update host(sendbuffer(1:fc_sendsize))
+       ${GPU_UPDATE_HOST('sendbuffer(1:fc_sendsize)')}$
      end if
 #else
-     !$acc host_data use_device(sendbuffer)
+     ${GPU_HOST_DATA_USE_DEVICE('sendbuffer')}$
 #endif
      itag=idimmin+4*idimmax
      do k = 1,n_send_pe
@@ -678,7 +682,7 @@ module mod_fix_conserve
           MPI_DOUBLE_PRECISION,send_pe(k),itag,icomm,fc_sendreq(k),ierrmpi)
      end do
 #ifndef NOGPUDIRECT
-     !$acc end host_data
+     ${GPU_END_HOST_DATA()}$
 #endif
 
    end subroutine sendflux
@@ -954,12 +958,11 @@ module mod_fix_conserve
    !> CoFiratio; the curvilinear form is extensive and is divided here by the
    !> coarse cell's own volume, with no ratio, because the four fine face areas
    !> already sum to the coarse face's.
-   subroutine fix_conserve(psb,idimmin,idimmax,nw0,nwfluxin)
+   subroutine fix_conserve(bgstep,idimmin,idimmax,nw0,nwfluxin)
      use mod_global_parameters
      use mod_comm_lib, only: mpistop
 
-     integer, intent(in) :: idimmin,idimmax, nw0, nwfluxin
-     type(state) :: psb(max_blocks)
+     integer, intent(in) :: bgstep, idimmin,idimmax, nw0, nwfluxin
 
      integer :: iigrid, igrid, idims, iside, iotherside, i1,i2,i3, ic1,ic2,ic3,&
          inc1,inc2,inc3, ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3
@@ -994,7 +997,7 @@ module mod_fix_conserve
        ! Without GPU-direct the IRECVs landed in host memory; the unpack below
        ! runs on the device, so push the payload across.  Sliced, not
        ! whole-array: the buffer is grown and not shrunk.
-       !$acc update device(recvbuffer(1:fc_recvsize))
+       ${GPU_UPDATE_DEVICE('recvbuffer(1:fc_recvsize)')}$
 #endif
      end if
 
@@ -1007,11 +1010,7 @@ module mod_fix_conserve
      ! implicit firstprivate OpenACC gives an unlisted scalar in a parallel
      ! region: the rule does cover them, but a half-populated list is
      ! indistinguishable from an oversight.
-     !$acc parallel loop gang default(present) &
-     !$acc& private(igrid, idims, iside, i1,i2,i3, ix, ic1,ic2,ic3, &
-     !$acc&         inc1,inc2,inc3, ineighbor, ipe_neighbor, iotherside, &
-     !$acc&         ixmin1,ixmin2,ixmin3, ixmax1,ixmax2,ixmax3, &
-     !$acc&         ix1,ix2,ix3, iw)
+     ${GPU_PARALLEL_LOOP_GANG("private(igrid, idims, iside, i1,i2,i3, ix, ic1,ic2,ic3, inc1,inc2,inc3, ineighbor, ipe_neighbor, iotherside, ixmin1,ixmin2,ixmin3, ixmax1,ixmax2,ixmax3, ix1,ix2,ix3, iw)")}$ ${GPU_DEFAULT_PRESENT()}$
      do iigrid=1,igridstail
        igrid=igrids(iigrid)
 
@@ -1058,24 +1057,24 @@ module mod_fix_conserve
 
              ! remove coarse flux
 #:if GEOM == 'Cartesian'
-                !$acc loop vector collapse(3)
+                ${GPU_LOOP_VECTOR("collapse(3)")}$
                 do ix3=ixMlo3,ixMhi3
                   do ix2=ixMlo2,ixMhi2 
                     do iw=1,nwfluxin
-                      psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) = &
-                        psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) - &
+                      bg(bgstep)%w(ix,ix2,ix3,nw0+iw-1,igrid) = &
+                        bg(bgstep)%w(ix,ix2,ix3,nw0+iw-1,igrid) - &
                         pflux(iside,1)%flux(1,ix2-nghostcells,ix3-nghostcells,&
                                             iw,igrid)
                     end do
                   end do
                 end do
 #:else
-                !$acc loop vector collapse(3)
+                ${GPU_LOOP_VECTOR("collapse(3)")}$
                 do ix3=ixMlo3,ixMhi3
                   do ix2=ixMlo2,ixMhi2
                     do iw=1,nwfluxin
-                      psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) = &
-                        psb(igrid)%w(ix,ix2,ix3,nw0+iw-1) - &
+                      bg(bgstep)%w(ix,ix2,ix3,nw0+iw-1,igrid) = &
+                        bg(bgstep)%w(ix,ix2,ix3,nw0+iw-1,igrid) - &
                         pflux(iside,1)%flux(1,ix2-nghostcells,ix3-nghostcells,&
                                             iw,igrid) &
                         / bgeo%dvolume(ix,ix2,ix3,igrid)
@@ -1104,12 +1103,12 @@ module mod_fix_conserve
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
 #:if GEOM == 'Cartesian'
-                     !$acc loop vector collapse(3)
+                     ${GPU_LOOP_VECTOR("collapse(3)")}$
                      do ix3=1,nxCo3 
                         do ix2=1,nxCo2 
                           do iw=1,nwfluxin
-                             psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
-                              psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                             bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                              bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                               pflux(iotherside,1)%flux(1,ix2,ix3,iw,&
                                 ineighbor) * CoFiratio
                           end do
@@ -1117,12 +1116,12 @@ module mod_fix_conserve
                      end do
 #:else
                      ! Direction 1, so loop runs over directions 2 and 3
-                     !$acc loop vector collapse(3)
+                     ${GPU_LOOP_VECTOR("collapse(3)")}$
                      do ix3=1,nxCo3
                         do ix2=1,nxCo2
                           do iw=1,nwfluxin
-                             psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
-                              psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                             bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                              bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                               pflux(iotherside,1)%flux(1,ix2,ix3,iw,&
                                 ineighbor) &
                               / bgeo%dvolume(ix,ixmin2+ix2-1,ixmin3+ix3-1,igrid)
@@ -1165,12 +1164,12 @@ module mod_fix_conserve
                    ! Two transverse indices plus the variable index: every iteration
                    ! lands in a distinct cell of a distinct variable, and the buffer
                    ! offset is a pure function of the three, so all three collapse.
-                   !$acc loop vector collapse(3)
+                   ${GPU_LOOP_VECTOR("collapse(3)")}$
                    do ix3=1,nxCo_fc(3,1)
                      do ix2=1,nxCo_fc(2,1)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix2-1)+(ix3-1)*nxCo_fc(2,1)+(iw-1)*nxCo_fc(2,1)*nxCo_fc(3,1)) * CoFiratio
                        end do
@@ -1180,12 +1179,12 @@ module mod_fix_conserve
                    ! Two transverse indices plus the variable index: every iteration
                    ! lands in a distinct cell of a distinct variable, and the buffer
                    ! offset is a pure function of the three, so all three collapse.
-                   !$acc loop vector collapse(3)
+                   ${GPU_LOOP_VECTOR("collapse(3)")}$
                    do ix3=1,nxCo_fc(3,1)
                      do ix2=1,nxCo_fc(2,1)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ix,ixmin2+ix2-1,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix2-1)+(ix3-1)*nxCo_fc(2,1)+(iw-1)*nxCo_fc(2,1)*nxCo_fc(3,1)) &
                            / bgeo%dvolume(ix,ixmin2+ix2-1,ixmin3+ix3-1,igrid)
@@ -1239,24 +1238,24 @@ module mod_fix_conserve
 
              ! remove coarse flux
 #:if GEOM == 'Cartesian'
-                !$acc loop vector collapse(3)
+                ${GPU_LOOP_VECTOR("collapse(3)")}$
                 do ix3=ixMlo3,ixMhi3
                   do ix1=ixMlo1,ixMhi1 
                     do iw=1,nwfluxin
-                      psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) = &
-                       psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) - &
+                      bg(bgstep)%w(ix1,ix,ix3,nw0+iw-1,igrid) = &
+                       bg(bgstep)%w(ix1,ix,ix3,nw0+iw-1,igrid) - &
                        pflux(iside,2)%flux(ix1-nghostcells,1,ix3-nghostcells,&
                                     iw,igrid)
                     end do
                   end do
                 end do
 #:else
-                !$acc loop vector collapse(3)
+                ${GPU_LOOP_VECTOR("collapse(3)")}$
                 do ix3=ixMlo3,ixMhi3
                   do ix1=ixMlo1,ixMhi1
                     do iw=1,nwfluxin
-                      psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) = &
-                       psb(igrid)%w(ix1,ix,ix3,nw0+iw-1) - &
+                      bg(bgstep)%w(ix1,ix,ix3,nw0+iw-1,igrid) = &
+                       bg(bgstep)%w(ix1,ix,ix3,nw0+iw-1,igrid) - &
                        pflux(iside,2)%flux(ix1-nghostcells,1,ix3-nghostcells,&
                                     iw,igrid) &
                        / bgeo%dvolume(ix1,ix,ix3,igrid)
@@ -1286,24 +1285,24 @@ module mod_fix_conserve
                  iotherside=3-iside
 
 #:if GEOM == 'Cartesian'
-                   !$acc loop vector collapse(3)
+                   ${GPU_LOOP_VECTOR("collapse(3)")}$
                    do ix3=1,nxCo3 
                      do ix1=1,nxCo1 
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            pflux(iotherside,2)%flux(ix1,1,ix3,&
                               iw,ineighbor) * CoFiratio
                        end do
                      end do
                    end do
 #:else
-                   !$acc loop vector collapse(3)
+                   ${GPU_LOOP_VECTOR("collapse(3)")}$
                    do ix3=1,nxCo3
                      do ix1=1,nxCo1
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            pflux(iotherside,2)%flux(ix1,1,ix3,&
                               iw,ineighbor) &
                            / bgeo%dvolume(ixmin1+ix1-1,ix,ixmin3+ix3-1,igrid)
@@ -1346,12 +1345,12 @@ module mod_fix_conserve
                    ! Two transverse indices plus the variable index: every iteration
                    ! lands in a distinct cell of a distinct variable, and the buffer
                    ! offset is a pure function of the three, so all three collapse.
-                   !$acc loop vector collapse(3)
+                   ${GPU_LOOP_VECTOR("collapse(3)")}$
                    do ix3=1,nxCo_fc(3,2)
                      do ix1=1,nxCo_fc(1,2)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix1-1)+(ix3-1)*nxCo_fc(1,2)+(iw-1)*nxCo_fc(1,2)*nxCo_fc(3,2)) * CoFiratio
                        end do
@@ -1361,12 +1360,12 @@ module mod_fix_conserve
                    ! Two transverse indices plus the variable index: every iteration
                    ! lands in a distinct cell of a distinct variable, and the buffer
                    ! offset is a pure function of the three, so all three collapse.
-                   !$acc loop vector collapse(3)
+                   ${GPU_LOOP_VECTOR("collapse(3)")}$
                    do ix3=1,nxCo_fc(3,2)
                      do ix1=1,nxCo_fc(1,2)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ix,ixmin3+ix3-1,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix1-1)+(ix3-1)*nxCo_fc(1,2)+(iw-1)*nxCo_fc(1,2)*nxCo_fc(3,2)) &
                            / bgeo%dvolume(ixmin1+ix1-1,ix,ixmin3+ix3-1,igrid)
@@ -1420,24 +1419,24 @@ module mod_fix_conserve
 
              ! remove coarse flux
 #:if GEOM == 'Cartesian'
-               !$acc loop vector collapse(3)
+               ${GPU_LOOP_VECTOR("collapse(3)")}$
                do ix2=ixMlo2,ixMhi2
                  do ix1=ixMlo1,ixMhi1 
                    do iw=1,nwfluxin
-                     psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) = &
-                       psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) - &
+                     bg(bgstep)%w(ix1,ix2,ix,nw0+iw-1,igrid) = &
+                       bg(bgstep)%w(ix1,ix2,ix,nw0+iw-1,igrid) - &
                        pflux(iside,3)%flux(ix1-nghostcells,ix2-nghostcells,&
                           1,iw,igrid)
                    end do
                  end do
                end do
 #:else
-               !$acc loop vector collapse(3)
+               ${GPU_LOOP_VECTOR("collapse(3)")}$
                do ix2=ixMlo2,ixMhi2
                  do ix1=ixMlo1,ixMhi1
                    do iw=1,nwfluxin
-                     psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) = &
-                       psb(igrid)%w(ix1,ix2,ix,nw0+iw-1) - &
+                     bg(bgstep)%w(ix1,ix2,ix,nw0+iw-1,igrid) = &
+                       bg(bgstep)%w(ix1,ix2,ix,nw0+iw-1,igrid) - &
                        pflux(iside,3)%flux(ix1-nghostcells,ix2-nghostcells,&
                           1,iw,igrid) &
                        / bgeo%dvolume(ix1,ix2,ix,igrid)
@@ -1465,24 +1464,24 @@ module mod_fix_conserve
                if (ipe_neighbor==mype) then
                  iotherside=3-iside
 #:if GEOM == 'Cartesian'
-                   !$acc loop vector collapse(3)
+                   ${GPU_LOOP_VECTOR("collapse(3)")}$
                    do ix2=1,nxCo2 
                      do ix1=1,nxCo1 
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) + &
                            pflux(iotherside,3)%flux(ix1,ix2,1,iw,&
                               ineighbor)* CoFiratio
                        end do
                      end do
                    end do
 #:else
-                   !$acc loop vector collapse(3)
+                   ${GPU_LOOP_VECTOR("collapse(3)")}$
                    do ix2=1,nxCo2
                      do ix1=1,nxCo1
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) + &
                            pflux(iotherside,3)%flux(ix1,ix2,1,iw,&
                               ineighbor) &
                            / bgeo%dvolume(ixmin1+ix1-1,ixmin2+ix2-1,ix,igrid)
@@ -1525,12 +1524,12 @@ module mod_fix_conserve
                    ! Two transverse indices plus the variable index: every iteration
                    ! lands in a distinct cell of a distinct variable, and the buffer
                    ! offset is a pure function of the three, so all three collapse.
-                   !$acc loop vector collapse(3)
+                   ${GPU_LOOP_VECTOR("collapse(3)")}$
                    do ix2=1,nxCo_fc(2,3)
                      do ix1=1,nxCo_fc(1,3)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix1-1)+(ix2-1)*nxCo_fc(1,3)+(iw-1)*nxCo_fc(1,3)*nxCo_fc(2,3)) * CoFiratio
                        end do
@@ -1540,12 +1539,12 @@ module mod_fix_conserve
                    ! Two transverse indices plus the variable index: every iteration
                    ! lands in a distinct cell of a distinct variable, and the buffer
                    ! offset is a pure function of the three, so all three collapse.
-                   !$acc loop vector collapse(3)
+                   ${GPU_LOOP_VECTOR("collapse(3)")}$
                    do ix2=1,nxCo_fc(2,3)
                      do ix1=1,nxCo_fc(1,3)
                        do iw=1,nwfluxin
-                         psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) = &
-                           psb(igrid)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1) + &
+                         bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) = &
+                           bg(bgstep)%w(ixmin1+ix1-1,ixmin2+ix2-1,ix,nw0+iw-1,igrid) + &
                            recvbuffer(ibuf_offset(4**3*(igrid-1)+inc1+4*inc2+16*inc3+1) &
                               +(ix1-1)+(ix2-1)*nxCo_fc(1,3)+(iw-1)*nxCo_fc(1,3)*nxCo_fc(2,3)) &
                            / bgeo%dvolume(ixmin1+ix1-1,ixmin2+ix2-1,ix,igrid)
