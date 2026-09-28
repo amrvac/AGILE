@@ -1,11 +1,14 @@
-#:if PHYS == 'srmhd'
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 
+#:if PHYS == 'srmhd'
 
 #:def phys_vars()
 
   integer, parameter :: dp = kind(0.0d0)
-  integer, parameter, public              :: nw_phys=2+2*ndim+2
-  integer, parameter, public              :: nw_flux=2+2*ndim
+  integer, parameter, public              :: nw_phys=2+2*ndim+3
+  integer, parameter, public              :: nw_flux=2+2*ndim+1
   
   !> Whether synge eos is used
   logical, public                         :: srmhd_eos = .false.
@@ -26,35 +29,35 @@
 
 
   !> Index of the energy density
-  integer, public                         :: e_
-  !$acc declare create(e_)
+  integer, public                         :: tau_
+  !$acc declare create(tau_)
 
-  !> Index of the gas pressure should equal e_
+  !> Index of the gas pressure should equal tau_
   integer, public                         :: p_
   !$acc declare create(p_)
 
 
   !> Index of the auxiliary variable mu (1/(lfac*h))
-  integer, allocatable, public            :: mu_
+  integer, public            :: mu_
   !$acc declare create(mu_)
 
-  ! !> Index of the internal energy
-  ! integer, allocatable, public            :: eps_
-  ! !$acc declare create(eps_)
 
 
-  !> Index of the upper limit on mu field
-  integer, allocatable, public            :: mu_plus_
-  !$acc declare create(mu_plus_)
+  ! may add this for con2prim speedups
+  ! !> Index of the upper limit on mu field
+  ! integer, allocatable, public            :: mu_plus_
+  ! !$acc declare create(mu_plus_)
 
 
   !> Index of the Lorentz factor
   integer, public     :: lfac_
   !$acc declare create(lfac_)
 
-!   !> Index of the inertia
-!   integer, public     :: xi_
-!   !$acc declare create(xi_)
+  !> Index of GLM psi
+  integer, public :: psi_
+  ${GPU_DECLARE_CREATE('psi_')}$
+
+
 
 !   !> Number of tracer species
 !   integer, public                         :: srmhd_n_tracer = 0
@@ -79,6 +82,8 @@
   !> switch for source user
   logical, public                         :: srmhd_source_usr = .false.
   !$acc declare copyin(srmhd_source_usr)
+
+
 
 #:enddef
 
@@ -184,9 +189,9 @@
     !$acc update device(mom)
 
     ! Set index of energy variable
-    e_ = var_set_energy()
-    p_ = e_
-    !$acc update device(e_,p_)
+    tau_ = var_set_energy()
+    p_ = tau_
+    !$acc update device(tau_,p_)
 
     ! set b field indices
     allocate(mag(ndir))
@@ -205,6 +210,7 @@
     ! MUST be after the possible tracers (which have fluxes)
     mu_  = var_set_auxvar('mu','mu')
     lfac_= var_set_auxvar('lfac','lfac')
+    psi_ = var_set_auxvar('psi', 'psi')
     !$acc update device(mu_,lfac_)
 
     ! set number of variables which need update ghostcells
@@ -260,7 +266,7 @@
     real(dp) :: p, d, x, tau, lfac
     real(dp) :: mu
     real(dp) :: vel(1:ndim)
-    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b
+    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps
 
     s_sqr = u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2
 
@@ -271,9 +277,9 @@
 
     d=u(iw_rho)
 
-    tau=u(iw_e)
+    tau=u(iw_tau)
 
-    call con2prim(mu, u(iw_rho), u(iw_e), s_sqr, b_sqr, s_dot_b)
+    call con2prim(mu, u(iw_rho), u(iw_tau), s_sqr, b_sqr, s_dot_b)
 
     x=1/(1 + mu*b_sqr/d) !(26)
 
@@ -289,11 +295,11 @@
 
     q_bar=  tau/d - 0.5_dp*b_sqr/d - 0.5_dp* mu**2 * x**2 * (s_sqr*b_sqr/d**3-s_dot_b**2/d**3) !(39)
 
-    u(iw_eps)=lfac*(q_bar - mu*r_bar_sqr) + sum(vi**2)*lfac**2/(1 + lfac) !(42)
+    eps=lfac*(q_bar - mu*r_bar_sqr) + sum(vi**2)*lfac**2/(1 + lfac) !(42)
 
     u(iw_rho) = d/lfac  
 
-    u(iw_e) = ideal_eos(u(iw_rho), u(iw_eps))
+    u(iw_tau) = ideal_eos(u(iw_rho), eps)
 
     u(iw_mom(1)) = vel(1)*lfac
 
@@ -330,7 +336,7 @@
 
     u(iw_mom(3)) = (u(iw_rho)/u(mu_) + b_sqr/u(lfac_))*u(iw_mom(3)) - v_dot_b*u(iw_mag(3))
 
-    u(iw_e) = u(iw_rho) / u(mu_) * u(lfac_) - u(iw_e) + 0.5_dp*b_sqr * (1 + v_sqr)&
+    u(iw_tau) = u(iw_rho) / u(mu_) * u(lfac_) - u(iw_tau) + 0.5_dp*b_sqr * (1 + v_sqr)&
               - 0.5_dp*v_dot_b**2 - u(iw_rho)*u(lfac_) 
 
     u(iw_rho)= u(iw_rho)*u(lfac_)
@@ -341,6 +347,7 @@
 !input primitive
 #:def get_flux()
   subroutine get_flux(u, xC, flux_dim, flux)
+    use mod_global_parameters, only: cmax_global
     !$acc routine seq
     real(dp), intent(in)  :: u(nw_phys)
     real(dp), intent(in)  :: xC(1:ndim)
@@ -373,10 +380,10 @@
 
     flux(iw_mom(3)) = si*vel(1) - u(iw_mag(3)) * u(iw_mag(flux_dim)) / u(lfac_)**2 - v_dot_b* vel(flux_dim)* u(iw_mag(3))
 
-    flux(iw_mom(flux_dim)) = flux(iw_mom(flux_dim)) + u(iw_e) + 0.5_dp*(b_sqr*(1 + v_sqr) - v_dot_b**2)
+    flux(iw_mom(flux_dim)) = flux(iw_mom(flux_dim)) + u(iw_tau) + 0.5_dp*(b_sqr*(1 + v_sqr) - v_dot_b**2)
 
     ! energy flux
-    flux(iw_e) = si - vel(flux_dim)*u(iw_rho)*u(lfac_)
+    flux(iw_tau) = si - vel(flux_dim)*u(iw_rho)*u(lfac_)
 
     ! magnetic flux
     flux(iw_mag(1)) = vel(flux_dim) * u(iw_mag(1)) - vel(1) * u(iw_mag(flux_dim))
@@ -385,10 +392,30 @@
 
     flux(iw_mag(3)) = vel(flux_dim) * u(iw_mag(3)) - vel(3) * u(iw_mag(flux_dim))
 
+    !GLM psi flux
+    flux(iw_mag(flux_dim))=u(psi_)
+      !f_i[psi]=Ch^2*b_{i} Eq. 24e and Eq. 38c Dedner et al 2002 JCP, 175, 645
+    flux(psi_)=cmax_global**2*u(iw_mag(flux_dim))
+
 
     end subroutine get_flux
 
   #:enddef
 
 
+#:def get_cmax()
+!> Returns maximum local signal speed from primitive state u in direction flux_dim;
+!> used in LLF/TVDLF flux estimation.
+pure function get_cmax(u, x, flux_dim) result(wC)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: u(nw_phys)
+  real(dp), intent(in)  :: x(1:ndim)
+  integer, intent(in)   :: flux_dim
+
+  real(dp) :: wC
+
+  wC=1
+
+end function get_cmax
+#:enddef  
 

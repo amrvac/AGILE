@@ -1,9 +1,14 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
+
 module srmhd_con2prim
 
 use iso_fortran_env, only: dp => real64
 implicit none
-real(dp), parameter :: h0=1+1e-7_dp
+real(dp), parameter, public :: h0=1+1e-14_dp
 
+${GPU_DECLARE_COPYIN('h0')}$
 
 
 !this module implements a conserved to primitive variable
@@ -18,6 +23,7 @@ contains
 !
 !============================Brent Root Solver=================================
     pure function quad_inter(x1, f1, f2, f3) result(quad)
+        ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(in) :: x1, f1, f2, f3
         real(dp) :: quad
 
@@ -25,6 +31,7 @@ contains
     end function quad_inter
 
     pure subroutine swap(a,b)
+        ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(inout) :: a, b
         real(dp) :: temp
         temp = a
@@ -34,6 +41,7 @@ contains
 
     #: def brent_template(name, func)
     function ${name}$(mu_plus, params, calls) result(s)
+        ${GPU_ROUTINE_SEQ()}$
         implicit none
         real(dp)  :: s
         !real(dp), intent(in) :: d, tau
@@ -156,6 +164,7 @@ contains
 
     #:def bisection_template(name, func)
     function ${name}$(mu_plus, params, iter) result(mu)
+        ${GPU_ROUTINE_SEQ()}$
         implicit none
         !real(dp), intent(in) :: d, tau
         !real(dp), intent(in) :: s_sqr, b_sqr, s_dot_b
@@ -243,25 +252,19 @@ contains
 
 
 
-    pure function ideal_eos(rho,eps) result(p)
+    function ideal_eos(rho,eps) result(p)
+        ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(in) :: rho, eps
         real(dp) ::p
 
-        srmhd_gamma=5.0_dp/3.0_dp
-        p=(gamma-1)*rho*eps
+        !srmhd_gamma=5.0_dp/3.0_dp
+        p=(srmhd_gamma-1)*rho*eps
     end function ideal_eos
 
-    subroutine preprocessing(si, bi, s_sqr, b_sqr, s_dot_b)
-        implicit none 
-        real(dp), intent(in) :: si(3), bi(3)
-        real(dp), intent(out) :: s_sqr, b_sqr, s_dot_b
-        s_sqr=dot_product(si,si)
-        b_sqr=dot_product(bi,bi)
-        s_dot_b=dot_product(si,bi)
-    end subroutine preprocessing
-    
+
 
     function master_function(mu, params) result(f)
+        ${GPU_ROUTINE_SEQ()}$
         implicit none
         real(dp), intent(in) :: mu
         real(dp) :: d, tau, s_sqr, b_sqr, s_dot_b
@@ -342,6 +345,7 @@ contains
 
 
     function aux_f(mu, params) result(f)
+        ${GPU_ROUTINE_SEQ()}$
         implicit none
         real(dp), intent(in) :: mu
         real(dp), intent(in) :: params(4)
@@ -373,6 +377,7 @@ contains
 
     #:def con2prim_template(name, solver, aux_solver)
     subroutine ${name}$(mu, d, tau, s_sqr, b_sqr, s_dot_b)
+        ${GPU_ROUTINE_SEQ()}$
         implicit none
         !real(dp), intent(out) :: lfac
         !real(dp), intent(out), optional:: rho, eps, p, h
