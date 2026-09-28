@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 module mod_amr_solution_node
   use mod_comm_lib, only: mpistop
 
@@ -41,9 +44,9 @@ contains
     if (ipe==mype) then
        ! initialize node on host and device
        node(1:nodehi,getnode) = 0
-       !$acc update device(node(1:nodehi,getnode))
+       ${GPU_UPDATE_DEVICE('node(1:nodehi,getnode)')}$
        rnode(1:rnodehi,getnode) = zero
-       !$acc update device(rnode(1:rnodehi,getnode))
+       ${GPU_UPDATE_DEVICE('rnode(1:rnodehi,getnode)')}$
     end if
   
   end function getnode
@@ -61,9 +64,9 @@ contains
   
   !> allocate arrays on igrid node
   subroutine alloc_node(igrid)
-#ifdef _OPENACC
-    use acc_utils
-#endif    
+#if defined(_OPENACC) || defined(_OPENMP)
+    use gpu_utils
+#endif
     use mod_forest
     use mod_global_parameters
     use mod_geometry
@@ -74,6 +77,7 @@ contains
   
     integer :: level, ig1,ig2,ig3, ign1,ign2,ign3, ixCoGmin1,ixCoGmin2,&
        ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3, i1,i2,i3
+    logical :: first_alloc
 
     ixCoGmin1=1;ixCoGmin2=1;ixCoGmin3=1;
     ixCoGmax1=(ixGhi1-2*nghostcells)/2+2*nghostcells
@@ -83,7 +87,8 @@ contains
     ! set level information
     level=igrid_to_node(igrid,mype)%node%level
   
-    if(.not. associated(ps(igrid)%w)) then
+    first_alloc = .not. associated(ps(igrid)%w)
+    if(first_alloc) then
        
        ! allocate arrays for solution and space
        call alloc_state(igrid, ps(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,&
@@ -149,14 +154,14 @@ contains
     node(pig1_,igrid)=ig1
     node(pig2_,igrid)=ig2
     node(pig3_,igrid)=ig3
- !$acc update device(node(plevel_,igrid),node(pig1_,igrid),node(pig2_,igrid),node(pig3_,igrid))
+ ${GPU_UPDATE_DEVICE('node(plevel_,igrid),node(pig1_,igrid),node(pig2_,igrid),node(pig3_,igrid)')}$
     
     ! set dx information
     rnode(rpdx1_,igrid)=dx(1,level)
     rnode(rpdx2_,igrid)=dx(2,level)
     rnode(rpdx3_,igrid)=dx(3,level)
     dxlevel(:)=dx(:,level)
- !$acc update device(rnode(rpdx1_,igrid),rnode(rpdx2_,igrid),rnode(rpdx3_,igrid), dxlevel)
+ ${GPU_UPDATE_DEVICE('rnode(rpdx1_,igrid),rnode(rpdx2_,igrid),rnode(rpdx3_,igrid), dxlevel')}$
 
     ! uniform cartesian case as well as all unstretched coordinates
     ! determine the minimal and maximal corners
@@ -170,7 +175,7 @@ contains
    if(rnode(rpxmax2_,igrid)>xprobmax2) rnode(rpxmax2_,igrid)=xprobmax2
    if(rnode(rpxmax3_,igrid)>xprobmax3) rnode(rpxmax3_,igrid)=xprobmax3
 
- !$acc update device( rnode(rpxmax1_,igrid),rnode(rpxmax2_,igrid),rnode(rpxmax3_,igrid), rnode(rpxmin1_,igrid),rnode(rpxmin2_,igrid),rnode(rpxmin3_,igrid) )
+ ${GPU_UPDATE_DEVICE('rnode(rpxmax1_,igrid),rnode(rpxmax2_,igrid),rnode(rpxmax3_,igrid), rnode(rpxmin1_,igrid),rnode(rpxmin2_,igrid),rnode(rpxmin3_,igrid)')}$
    
     ! Fill this block's cell metrics. A uniform block is an analytic function
     ! of rnode alone, so this runs on the device and only the positions come
@@ -273,9 +278,17 @@ contains
       phyboundblock(igrid)=.false.
    end if
 
-   !$acc update device( phyboundblock(igrid) )
-#ifdef _OPENACC
-   call copy_or_update(ps(igrid)%igrid) 
+   ${GPU_UPDATE_DEVICE('phyboundblock(igrid)')}$
+#if defined(_OPENACC) || defined(_OPENMP)
+   ! This differentiation is necessary for OpenMP, because it does not have the
+   ! equivalent of acc_attach as used in copy_or_update_pointer
+   if (first_alloc) then
+      ${GPU_UPDATE_DEVICE('ps(igrid), ps1(igrid), ps2(igrid), psc(igrid)')}$
+   else
+      ${GPU_UPDATE_DEVICE('ps(igrid)%level, psc(igrid)%level')}$
+   end if
+
+   call copy_or_update(ps(igrid)%igrid)
    call copy_or_update(ps1(igrid)%igrid) 
    call copy_or_update(ps2(igrid)%igrid)
 
@@ -298,7 +311,7 @@ contains
 ! ---------------------------------------------------------------------------
 ! Per-cell geometry helpers, shared by the three kernels of
 ! fill_geometry_device below.  They are fypp macros rather than
-! `!$acc routine seq` procedures deliberately: an inlined call inside those
+! `GPU_ROUTINE_SEQ` procedures deliberately: an inlined call inside those
 ! kernels is what nvfortran's -Minline previously mis-hoisted, giving every
 ! cell of a block the position of the first one.
 ! ---------------------------------------------------------------------------
@@ -325,7 +338,7 @@ contains
              fR = ${s}$ + half*${d}$
 #:if defined('LOG_RADIUS')
              ! r_of_s, written out because this has to be a macro rather than
-             ! an !$acc routine (see above).  The odd form is what makes the
+             ! a GPU routine (see above).  The odd form is what makes the
              ! mesh beyond a cylindrical axis the exact mirror of the mesh
              ! inside it, which is what the pole copy in getbc assumes; it is
              ! taken only for log_r0 > 0, where s = 0 is r = 0.  With
@@ -472,7 +485,7 @@ contains
     ! mesh, and from its upper corner in the outer ghost layer, so that the
     ! overlapping ghost cells of two neighbouring blocks come out identical to
     ! the last bit.
-    !$acc parallel loop collapse(3) default(present) private(p1,p2,p3#{if GEOM != 'Cartesian'}#, fL,fR,rc,ds1,rbar#{endif}##{if GEOM == 'spherical'}#, uu,tbar#{endif}#)
+    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$ ${GPU_DEFAULT_PRESENT()}$
     do ix3=ixGlo3,ixGhi3
        do ix2=ixGlo2,ixGhi2
           do ix1=ixGlo1,ixGhi1
@@ -557,7 +570,7 @@ contains
     ! sits dtheta/6 further out than the midpoint and sin(theta_bar) runs about
     ! a third above sin(theta_c) in the first cell - which is exactly the cell
     ! whose vanishing ds(3) sets dt for the whole run.
-    !$acc parallel loop collapse(3) default(present) private(e1,e2,fL,fR,rc,ds1,rbar)
+    ${GPU_PARALLEL_LOOP("collapse(3) private(e1,e2,fL,fR,rc,ds1,rbar)")}$ ${GPU_DEFAULT_PRESENT()}$
     do ix3=ixGextmin3,ixGextmax3
        do ix2=ixGextmin2,ixGextmax2
           do ix1=ixGextmin1,ixGextmax1
@@ -591,7 +604,7 @@ contains
     ! neighbouring coarse block whose ghost cells have to match - and its
     ! spacing is doubled, so one loop covers positions, volumes and areas.
     ! As above, only the positions exist in a Cartesian build.
-    !$acc parallel loop collapse(3) default(present) private(p1,p2,p3#{if GEOM != 'Cartesian'}#, fL,fR,rc,ds1,rbar#{endif}##{if GEOM == 'spherical'}#, uu,tbar#{endif}#)
+    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$ ${GPU_DEFAULT_PRESENT()}$
     do ix3=1,ixCoGmax3
        do ix2=1,ixCoGmax2
           do ix1=1,ixCoGmax1
@@ -694,11 +707,11 @@ contains
 
     integer          :: ix1, ix2, ix3, iwx
     ! wx is sized by the compile-time max_nw, not the runtime nwextra: a
-    ! variable-length private array in an !$acc parallel loop is a fragile
+    ! variable-length private array in a GPU parallel loop is a fragile
     ! corner across OpenACC compilers. Only wx(1:nwextra) is passed and used.
     double precision :: xloc(1:ndim), wx(max_nw)
 
-    !$acc parallel loop collapse(3) default(present) private(xloc, wx)
+    ${GPU_PARALLEL_LOOP("collapse(3) private(xloc, wx, iwx)")}$ ${GPU_DEFAULT_PRESENT()}$
     do ix3 = ixGlo3, ixGhi3
        do ix2 = ixGlo2, ixGhi2
           do ix1 = ixGlo1, ixGhi1

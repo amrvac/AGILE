@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 !> Curvilinear SRHD tests on a spherical mesh, away from the axis: two runs
 !> from one build.
 !>
@@ -55,7 +59,7 @@ module mod_usr
   !> the domain. Deriving the centre from xprob* cannot get that wrong, and
   !> check_blast_fits below verifies the whole sphere is inside.
   double precision :: fr = 0.45d0, ftheta = 0.4d0, fphi = 0.4d0
-  !$acc declare copyin(is_blast, v0, rho0, p0, pblast, rblast, fr, ftheta, fphi)
+  ${GPU_DECLARE_COPYIN('is_blast, v0, rho0, p0, pblast, rblast, fr, ftheta, fphi')}$
 
 contains
 
@@ -76,7 +80,7 @@ contains
     case default
        call mpistop("&usr_list setup must be 'uniform' or 'blast'")
     end select
-    !$acc update device(is_blast, v0)
+    ${GPU_UPDATE_DEVICE('is_blast, v0')}$
 
     usr_init_one_grid => initonegrid_usr
     usr_special_bc    => specialbound_usr
@@ -106,7 +110,13 @@ contains
   !> result needs a temporary that not every OpenACC compiler handles inside
   !> a device routine.
   pure subroutine uniform_velocity(x, v)
-    !$acc routine seq
+    ! Vector parallelization is disabled for OpenMP in specialbound_usr, so this routine should
+    ! work at the vector level in that case
+#ifdef _OPENMP
+    ${GPU_ROUTINE_VECTOR()}$
+#else
+    ${GPU_ROUTINE_SEQ()}$
+#endif
     double precision, intent(in)  :: x(1:ndim)
     double precision, intent(out) :: v(1:3)
     double precision              :: sint, cost, sinp, cosp
@@ -219,8 +229,8 @@ contains
   !> discretisation is under test
   subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
      ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
        ixImax3
     integer, intent(in)             :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
@@ -240,7 +250,11 @@ contains
     ! xi = rho*h*lfac^2, gamma-law enthalpy h = 1 + gamma/(gamma-1) * p0/rho0
     xi0 = (rho0 + gamma_to_gamma_1 * p0) * lfac0**2
 
-    !$acc loop collapse(3) vector private(v, x_loc)
+#ifndef _OPENMP
+    ! Vector-level parallelization within a subroutine does not work with OpenMP.
+    ! TBD if this routine can be made seq (i.e. cell-based).
+    ${GPU_LOOP_VECTOR("collapse(3) private(v, x_loc)")}$
+#endif
     do ix3 = ixOmin3, ixOmax3
        do ix2 = ixOmin2, ixOmax2
           do ix1 = ixOmin1, ixOmax1

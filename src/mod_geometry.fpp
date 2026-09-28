@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 !> Module with geometry-related routines (e.g., divergence, curl)
 module mod_geometry
   use mod_comm_lib, only: mpistop
@@ -5,7 +8,7 @@ module mod_geometry
   public
 
   integer :: coordinate=-1
-  !$acc declare copyin(coordinate)
+  ${GPU_DECLARE_COPYIN('coordinate')}$
   integer, parameter :: Cartesian          = 0
   integer, parameter :: Cartesian_stretched= 1
   integer, parameter :: cylindrical        = 2
@@ -13,7 +16,7 @@ module mod_geometry
   integer, parameter :: Cartesian_expansion= 4
 
   integer :: type_curl=0
-  !$acc declare copyin(type_curl)
+  ${GPU_DECLARE_COPYIN('type_curl')}$
   integer, parameter :: central=1
   integer, parameter :: Gaussbased=2
   integer, parameter :: Stokesbased=3
@@ -458,11 +461,10 @@ contains
     integer :: iigrid
 
     if (present(igrid)) then
-       !$acc update self(bgeo%x(:,:,:,:,igrid), bgeoc%x(:,:,:,:,igrid))
+       ${GPU_UPDATE_HOST('bgeo%x(:,:,:,:,igrid), bgeoc%x(:,:,:,:,igrid)')}$
     else
        do iigrid = 1, igridstail
-          !$acc update self(bgeo%x(:,:,:,:,igrids(iigrid)), &
-          !$acc             bgeoc%x(:,:,:,:,igrids(iigrid)))
+          ${GPU_UPDATE_HOST('bgeo%x(:,:,:,:,igrids(iigrid)), bgeoc%x(:,:,:,:,igrids(iigrid))')}$
        end do
     end if
 
@@ -490,24 +492,18 @@ contains
     integer :: iigrid
 
     ! Index igrids(iigrid) directly rather than through a local igrid: a
-    ! variable whose only uses are inside !$acc directives looks dead to the
+    ! variable whose only uses are inside GPU directives looks dead to the
     ! Fortran front end, the assignment to it is dropped, and the update then
     ! silently targets the wrong block.  sync_positions_host below is written
     ! the same way for the same reason.
     do iigrid = 1, igridstail
-       !$acc update self(bgeo%x(:,:,:,:,igrids(iigrid)))
-       !$acc update self(bgeoc%x(:,:,:,:,igrids(iigrid)))
+       ${GPU_UPDATE_HOST('bgeo%x(:,:,:,:,igrids(iigrid))')}$
+       ${GPU_UPDATE_HOST('bgeoc%x(:,:,:,:,igrids(iigrid))')}$
 #:if GEOM != 'Cartesian'
        ! A Cartesian build has no metrics to fetch - they are not allocated -
        ! so there this reduces to exactly sync_positions_host.
-       !$acc update self(bgeo%dvolume(:,:,:,igrids(iigrid)), &
-       !$acc             bgeo%surfaceC(:,:,:,:,igrids(iigrid)), &
-       !$acc             bgeo%ds(:,:,:,:,igrids(iigrid)), &
-       !$acc             bgeo%dx(:,:,:,:,igrids(iigrid)))
-       !$acc update self(bgeoc%dvolume(:,:,:,igrids(iigrid)), &
-       !$acc             bgeoc%surfaceC(:,:,:,:,igrids(iigrid)), &
-       !$acc             bgeoc%ds(:,:,:,:,igrids(iigrid)), &
-       !$acc             bgeoc%dx(:,:,:,:,igrids(iigrid)))
+       ${GPU_UPDATE_HOST('bgeo%dvolume(:,:,:,igrids(iigrid)), bgeo%surfaceC(:,:,:,:,igrids(iigrid)), bgeo%ds(:,:,:,:,igrids(iigrid)), bgeo%dx(:,:,:,:,igrids(iigrid))')}$
+       ${GPU_UPDATE_HOST('bgeoc%dvolume(:,:,:,igrids(iigrid)), bgeoc%surfaceC(:,:,:,:,igrids(iigrid)), bgeoc%ds(:,:,:,:,igrids(iigrid)), bgeoc%dx(:,:,:,:,igrids(iigrid))')}$
 #:endif
     end do
 

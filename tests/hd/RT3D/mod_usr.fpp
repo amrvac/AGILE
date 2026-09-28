@@ -1,3 +1,7 @@
+#:mute
+#:include "../../../src/mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
   use mod_physics
   use mod_amrvac
@@ -17,7 +21,7 @@ contains
   end subroutine usr_init
 
   pure real(dp) function gravity_field(wCT, x, idim) result(field)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)    :: wCT(nw_phys)
     real(dp), intent(in)    :: x(1:ndim)
     integer, value, intent(in)     :: idim

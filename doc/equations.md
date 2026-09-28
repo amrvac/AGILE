@@ -130,7 +130,7 @@ current cell state by implementing a `gravity_field` function in
 
 ```fortran
 pure real(dp) function gravity_field(wCT, x, idim) result(field)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}
   real(dp), intent(in)       :: wCT(nw_phys)
   real(dp), intent(in)       :: x(1:ndim)
   integer, value, intent(in) :: idim

@@ -1,3 +1,5 @@
+include $(agile)/arch/common.mk
+
 arch := cray
 
 compile = ftn
@@ -14,19 +16,8 @@ endif
 
 ifdef OPENACC
 $(info Enabling OpenACC)
-f90_flags += -hacc
 enabled += OPENACC
-ifdef NOGPUDIRECT
-$(info Disabling direct GPU-GPU copies)
-f90_flags += -DNOGPUDIRECT
-enabled += NOGPUDIRECT
-endif
-endif
-
-ifdef USE_MPIWRAPPERS
-$(info Enabling MPI wrappers)
-f90_flags += -DUSE_MPIWRAPPERS
-enabled += USE_MPIWRAPPERS
+f90_flags += -hacc
 endif
 
 ifdef DEBUG

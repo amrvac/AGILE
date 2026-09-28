@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 !> Module for reading input and writing output
 module mod_input_output
 #ifdef USE_MPIWRAPPERS
@@ -556,7 +559,7 @@ contains
           enddo
        enddo
     enddo
-    !$acc update device(kr,lvc)
+    ${GPU_UPDATE_DEVICE('kr,lvc')}$
 
     ! These are used to construct file and log names from multiple par files
     basename_full = ''
@@ -1559,7 +1562,7 @@ contains
     if(stagger_grid .and. refine_max_level>1 .and. mod(nghostcells,2)/=0) then
       nghostcells=nghostcells+1
    end if
-   !$acc update device(nghostcells)
+   ${GPU_UPDATE_DEVICE('nghostcells')}$
 
       select case (coordinate)
 
@@ -1623,7 +1626,7 @@ contains
 
     xprobmin1 = s_of_r(xprobmin1)
     xprobmax1 = s_of_r(xprobmax1)
-    !$acc update device(log_r0, log_ra, log_rb)
+    ${GPU_UPDATE_DEVICE('log_r0, log_ra, log_rb')}$
 
 #:else
     if (log_r0 /= zero) call mpistop("log_r0 offsets the logarithmic radial &
@@ -1762,18 +1765,18 @@ contains
 
     deallocate(flux_scheme)
 
-    !$acc update device(ixGhi1,ixGhi2,ixGhi3,ixGshi1,ixGshi2,ixGshi3,schmid_rad1,schmid_rad2,schmid_rad3,cada3_radius)
-    !$acc update device(H_correction,type_limiter, max_blocks)
-    !$acc update device(rk_beta11,rk_beta22,rk_beta33,rk_beta44,rk_c2,rk_c3,rk_c4)
-    !$acc update device(rk_alfa21,rk_alfa22,rk_alfa31,rk_alfa33,rk_alfa41,rk_alfa44)
-    !$acc update device(rk_beta54,rk_beta55,rk_alfa53,rk_alfa54,rk_alfa55,rk_c5)
-    !$acc update device(typeboundary, specialboundary, refine_max_level)
-    !$acc update device(slab, slab_uniform)
-    !$acc update device(w_refine_weight, amr_wavefilter)
-    !$acc update device(refine_threshold, derefine_ratio)
-    !$acc update device(block_nx1, block_nx2, block_nx3)
-    !$acc update device(courantpar, dtdiffpar)
-    !$acc update device(flux_adaptive_diffusion, flux_ad_min, flux_ad_scale)
+    ${GPU_UPDATE_DEVICE('ixGhi1,ixGhi2,ixGhi3,ixGshi1,ixGshi2,ixGshi3,schmid_rad1,schmid_rad2,schmid_rad3,cada3_radius')}$
+    ${GPU_UPDATE_DEVICE('H_correction,type_limiter, max_blocks')}$
+    ${GPU_UPDATE_DEVICE('rk_beta11,rk_beta22,rk_beta33,rk_beta44,rk_c2,rk_c3,rk_c4')}$
+    ${GPU_UPDATE_DEVICE('rk_alfa21,rk_alfa22,rk_alfa31,rk_alfa33,rk_alfa41,rk_alfa44')}$
+    ${GPU_UPDATE_DEVICE('rk_beta54,rk_beta55,rk_alfa53,rk_alfa54,rk_alfa55,rk_c5')}$
+    ${GPU_UPDATE_DEVICE('typeboundary, specialboundary, refine_max_level')}$
+    ${GPU_UPDATE_DEVICE('slab, slab_uniform')}$
+    ${GPU_UPDATE_DEVICE('w_refine_weight, amr_wavefilter')}$
+    ${GPU_UPDATE_DEVICE('refine_threshold, derefine_ratio')}$
+    ${GPU_UPDATE_DEVICE('block_nx1, block_nx2, block_nx3')}$
+    ${GPU_UPDATE_DEVICE('courantpar, dtdiffpar')}$
+    ${GPU_UPDATE_DEVICE('flux_adaptive_diffusion, flux_ad_min, flux_ad_scale')}$
 
   end subroutine read_par_files
 
@@ -1845,12 +1848,7 @@ contains
       call getbc(global_time,0.d0,ps,iwstart,nwgc)
     end if
 
-    ! Index igrids(iigrid) directly: a local whose only uses are inside !$acc
-    ! directives can have its assignment dropped as dead code, leaving the
-    ! directive to run with an unset index.
-    do iigrid=1,igridstail
-       !$acc update host(ps(igrids(iigrid))%w)
-    end do
+    ${GPU_UPDATE_HOST('bg(1)%w')}$
 
     ! Same idea for the cell metrics: everything below here that weights by
     ! dvolume, or builds corner positions from dx, reads them on the host.
@@ -2482,7 +2480,7 @@ contains
               ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
                  1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
             end if
-            !$acc update device(bg(1)%w(:,:,:,:,igrid))
+            ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
           else
             call mpi_send_wrapper([ ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,&
                 n_values ], 2*ndim+1, MPI_INTEGER, ipe, itag, icomm, ierrmpi)
@@ -2560,7 +2558,7 @@ contains
           ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
              1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
         end if
-        !$acc update device(bg(1)%w(:,:,:,:,igrid))
+        ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
       end do
     end if
 

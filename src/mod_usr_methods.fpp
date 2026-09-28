@@ -70,7 +70,7 @@ module mod_usr_methods
   ! phys='ffhd' - must define
   !
   !   pure subroutine usr_set_nwextra(x, wextra)
-  !     !$acc routine seq
+  !     GPU_ROUTINE_SEQ()   (the fypp macro, see mod_gpu_directives.fpp)
   !     double precision, intent(in)  :: x(1:ndim)     ! a single point
   !     double precision, intent(out) :: wextra(:)     ! the nwextra values there
   !
