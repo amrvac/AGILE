@@ -202,6 +202,10 @@
     mag(:) = var_set_bfield(ndir)
     !$acc update device(mag)
 
+    !> GLM MHD uses split source addition in psi:
+    any_source_split = .true.
+    ${GPU_UPDATE_DEVICE('any_source_split')}$
+
 !     ! Register tracer fields
 ! #:if defined('N_TRACER')
 !     #:for i in range(1, N_TRACER_+1)
