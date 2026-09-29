@@ -12,46 +12,46 @@
   
   !> Whether synge eos is used
   logical, public                         :: srmhd_eos = .false.
-  !$acc declare copyin(srmhd_eos)
+  ${GPU_DECLARE_COPYIN('srmhd_eos')}$
 
   !> Index of the density (in the w array) as primitive or conserved
   integer, public                         :: rho_
   integer, public                         :: d_
-  !$acc declare create(rho_,d_)
+  ${GPU_DECLARE_CREATE('rho_,d_')}$
 
   !> Indices of the momentum density
   integer, allocatable, public            :: mom(:)
-  !$acc declare create(mom)
+  ${GPU_DECLARE_CREATE('mom')}$
 
   !> Indices of the magnetic field
   integer, allocatable, public            :: mag(:)
-  !$acc declare create(mag)
+  ${GPU_DECLARE_CREATE('mag')}$
 
 
   !> Index of the energy density
   integer, public                         :: tau_
-  !$acc declare create(tau_)
+  ${GPU_DECLARE_CREATE('tau_')}$
 
   !> Index of the gas pressure should equal tau_
   integer, public                         :: p_
-  !$acc declare create(p_)
+  ${GPU_DECLARE_CREATE('p_')}$
 
 
   !> Index of the auxiliary variable mu (1/(lfac*h))
   integer, public            :: mu_
-  !$acc declare create(mu_)
+  ${GPU_DECLARE_CREATE('mu_')}$
 
 
 
   ! may add this for con2prim speedups
   ! !> Index of the upper limit on mu field
   ! integer, allocatable, public            :: mu_plus_
-  ! !$acc declare create(mu_plus_)
+  ! ${GPU_DECLARE_CREATE('mu_plus_')}$
 
 
   !> Index of the Lorentz factor
   integer, public     :: lfac_
-  !$acc declare create(lfac_)
+  ${GPU_DECLARE_CREATE('lfac_')}$
 
   !> Index of GLM psi
   integer, public :: psi_
@@ -65,27 +65,35 @@
 
 !   !> Number of tracer species
 !   integer, public                         :: srmhd_n_tracer = 0
-!   !$acc declare copyin(srmhd_n_tracer)
+!   ${GPU_DECLARE_COPYIN('srmhd_n_tracer')}$
 
   !> The adiabatic index
   double precision, public                :: srmhd_gamma = 5.d0/3.0d0
-  !$acc declare copyin(srmhd_gamma)
+  ${GPU_DECLARE_COPYIN('srmhd_gamma')}$
 
   ! !> derived values from adiabatic index 
   ! double precision, public                :: gamma_1,inv_gamma_1,gamma_to_gamma_1
-  ! !$acc declare copyin(gamma_1,inv_gamma_1,gamma_to_gamma_1)
+  ! ${GPU_DECLARE_COPYIN('gamma_1,inv_gamma_1,gamma_to_gamma_1')}$
 
   !> Helium abundance over Hydrogen
   double precision, public  :: He_abundance=0.1d0
-  !$acc declare copyin(He_abundance)
+  ${GPU_DECLARE_COPYIN('He_abundance')}$
 
   !> Whether particles module is added
   logical, public                         :: srmhd_particles = .false.
-  !$acc declare copyin(srmhd_particles)
+  ${GPU_DECLARE_COPYIN('srmhd_particles')}$
 
   !> switch for source user
   logical, public                         :: srmhd_source_usr = .false.
-  !$acc declare copyin(srmhd_source_usr)
+  ${GPU_DECLARE_COPYIN('srmhd_source_usr')}$
+
+  !> Smallest gas pressure allowed. Both the lower bracket of the pressure
+  !> root-find in con2prim and the floor fix_prim_state applies to a
+  !> reconstructed face state. Zero, the default, leaves both unfloored.
+  double precision, public                :: smrhd_small_pressure = 0.0d0
+  !> Smallest rest-mass density allowed
+  double precision, public                :: smrhd_small_density  = 0.0d0
+  ${GPU_DECLARE_COPYIN('smrhd_small_pressure,smrhd_small_density')}$
 
 
 
@@ -114,12 +122,8 @@
     if (srmhd_small_density < 0.0d0) call mpistop(&
        "srmhd_small_density should be positive.")
 
-#ifdef _OPENACC
-    !$acc update device(srmhd_eos, &
-    !$acc&     srmhd_gamma, srmhd_n_tracer, &
-    !$acc&     He_abundance, srmhd_source_usr, srmhd_glm_alpha)
-    !$acc update device(srmhd_small_pressure, srmhd_small_density)
-#endif
+    ${GPU_UPDATE_DEVICE('srmhd_eos, srmhd_gamma, srmhd_n_tracer, He_abundance, srmhd_source_usr, srmhd_glm_alpha')}$
+    ${GPU_UPDATE_DEVICE('srmhd_small_pressure, srmhd_small_density')}$
 
   end subroutine read_params
 #:enddef
@@ -149,7 +153,7 @@
     unit_time=unit_length/unit_velocity
     unit_mass=unit_density*unit_length**3
 
-    !$acc update device(unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass)
+    ${GPU_UPDATE_DEVICE('unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass')}$
   end subroutine phys_units
 #:enddef
 
@@ -170,7 +174,7 @@
     ! gamma_1=srmhd_gamma-1.0d0
     ! inv_gamma_1=1.0d0/gamma_1
     ! gamma_to_gamma_1=srmhd_gamma/gamma_1
-    ! !$acc update device(gamma_1,inv_gamma_1,gamma_to_gamma_1)
+    ! ${GPU_UPDATE_DEVICE('gamma_1,inv_gamma_1,gamma_to_gamma_1')}$
 
     phys_internal_e=.false.
     phys_partial_ionization=.false.
@@ -179,51 +183,45 @@
     ! Whether diagonal ghost cells are required for the physics
     phys_req_diagonal = .false.
 
- !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,phys_req_diagonal)
+ ${GPU_UPDATE_DEVICE('physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,phys_req_diagonal')}$
 
     use_particles = srmhd_particles
 
     ! Determine flux variables
     rho_ = var_set_rho()
     d_=rho_
-    !$acc update device(rho_,d_)
+    ${GPU_UPDATE_DEVICE('rho_,d_')}$
 
     allocate(mom(ndir))
     mom(:) = var_set_momentum(ndir)
-    !$acc update device(mom)
+    ${GPU_UPDATE_DEVICE('mom')}$
 
     ! Set index of energy variable
     tau_ = var_set_energy()
     p_ = tau_
-    !$acc update device(tau_,p_)
+    ${GPU_UPDATE_DEVICE('tau_,p_')}$
 
     ! set b field indices
     allocate(mag(ndir))
     mag(:) = var_set_bfield(ndir)
-    !$acc update device(mag)
+    ${GPU_UPDATE_DEVICE('mag')}$
 
     !> GLM MHD uses split source addition in psi:
     any_source_split = .true.
     ${GPU_UPDATE_DEVICE('any_source_split')}$
 
-!     ! Register tracer fields
-! #:if defined('N_TRACER')
-!     #:for i in range(1, N_TRACER_+1)
-!         tracer(${i}$) = var_set_fluxvar("trc", "trp", ${i}$, need_bc=.false.)
-!     #:endfor
-!     !$acc update device(tracer)
-! #:endif
+
 
     ! Set index for auxiliary variables
     ! MUST be after the possible tracers (which have fluxes)
     mu_  = var_set_auxvar('mu','mu')
     lfac_= var_set_auxvar('lfac','lfac')
-    psi_ = var_set_auxvar('psi', 'psi')
-    !$acc update device(mu_,lfac_)
+    psi_ = var_set_auxvar('psi_', 'psi_')
+    ${GPU_UPDATE_DEVICE('mu_,lfac_,psi_')}$
 
     ! set number of variables which need update ghostcells
     nwgc=nwflux+nwaux
-    !$acc update device(nwgc)
+    ${GPU_UPDATE_DEVICE('nwgc')}$
 
     ! Define custom flux types:
     if (.not. allocated(flux_type)) then
@@ -232,13 +230,13 @@
     else if (any(shape(flux_type) /= [ndir, nw_flux])) then
        call mpistop("phys_check error: flux_type has wrong shape")
     end if
-    !$acc update device(flux_type)
+    ${GPU_UPDATE_DEVICE('flux_type')}$
 
     nvector      = 2 ! No. vector vars
     allocate(iw_vector(nvector))
     iw_vector(1) = mom(1) - 1
     iw_vector(2) = mag(1) - 1
-    !$acc update device(nvector, iw_vector)
+    ${GPU_UPDATE_DEVICE('nvector, iw_vector')}$
 
 ! use cycle, needs to be dealt with:
 !    ! Initialize particles module
@@ -252,7 +250,7 @@
 
 #:def phys_get_dt()
   subroutine phys_get_dt(w, x, dx, dtnew)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
     real(dp), intent(out)  :: dtnew
 
@@ -267,8 +265,8 @@
 
 #:def to_primitive()
   pure subroutine to_primitive(u)
-    !$acc routine seq
     use srmhd_con2prim
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
 
     real(dp) :: p, d, x, tau, lfac
@@ -324,7 +322,7 @@
 
 #:def to_conservative
   pure subroutine to_conservative(u)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
 
     ! real(dp)    ::  tau, d
@@ -356,14 +354,15 @@
 #:def get_flux()
   subroutine get_flux(u, xC, flux_dim, flux)
     use mod_global_parameters, only: cmax_global
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys)
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim
     real(dp), intent(out) :: flux(nw_flux)
 
-    real(dp) :: vel(1:ndim), si
 
+    real(dp) :: vel(1:ndim), si
+    real(dp) :: v_sqr, 
 
     vel(1) = u(iw_mom(1)) / u(lfac_)
     vel(2) = u(iw_mom(2)) / u(lfac_)
@@ -457,7 +456,7 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
      ! split sources     
      !---------------------------------
         
-    wnew(psi_)=wnew(psi_)*dexp(-qdt*cmax_global*mhd_glm_alpha/minval(dr))
+    wnew(psi_)=wnew(psi_)*dexp(-qdt*cmax_global*srmhd_glm_alpha/minval(dr))
     
   end if
 
