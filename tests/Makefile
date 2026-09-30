@@ -22,19 +22,22 @@ FFHD_DIRS := ffhd/TI3D ffhd/spherical ffhd/cylindrical \
 SRHD_DIRS := srhd/shockTube srhd/spherical srhd/cylindrical \
              srhd/spherical_pole srhd/cylindrical_pole \
              srhd/log_spherical srhd/log_cylindrical
+SRMHD_DIRS := srmhd/shock_tube
 
-TEST_DIRS := $(HD_DIRS) $(MHD_DIRS) $(FFHD_DIRS) $(SRHD_DIRS)
+
+TEST_DIRS := $(HD_DIRS) $(MHD_DIRS) $(FFHD_DIRS) $(SRHD_DIRS) $(SRMHD_DIRS)
 
 # Directories with altered names (useful for cleaning)
 CLEAN_TEST := $(TEST_DIRS:%=clean-%)
 
 .PHONY: $(TEST_DIRS) $(CLEAN_TEST)
 
-all: hd mhd ffhd srhd
+all: hd mhd ffhd srhd srmhd
 hd: $(HD_DIRS)
 mhd: $(MHD_DIRS)
 ffhd: $(FFHD_DIRS)
 srhd: $(SRHD_DIRS)
+srmhd: $(SRMHD_DIRS)
 
 $(TEST_DIRS):
 	@$(MAKE) -C $@ -f test.make

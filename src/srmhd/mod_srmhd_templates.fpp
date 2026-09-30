@@ -90,10 +90,10 @@
   !> Smallest gas pressure allowed. Both the lower bracket of the pressure
   !> root-find in con2prim and the floor fix_prim_state applies to a
   !> reconstructed face state. Zero, the default, leaves both unfloored.
-  double precision, public                :: smrhd_small_pressure = 0.0d0
+  double precision, public                :: srmhd_small_pressure = 0.0d0
   !> Smallest rest-mass density allowed
-  double precision, public                :: smrhd_small_density  = 0.0d0
-  ${GPU_DECLARE_COPYIN('smrhd_small_pressure,smrhd_small_density')}$
+  double precision, public                :: srmhd_small_density  = 0.0d0
+  ${GPU_DECLARE_COPYIN('srmhd_small_pressure,srmhd_small_density')}$
 
 
 
@@ -107,7 +107,7 @@
     character(len=*), intent(in) :: files(:)
     integer                      :: n
 
-    namelist /srmhd_list/ srmhd_eos,srmhd_gamma,srmhd_n_tracer, &
+    namelist /srmhd_list/ srmhd_eos,srmhd_gamma, &
       He_abundance, srmhd_source_usr, &
       srmhd_small_pressure, srmhd_small_density, srmhd_glm_alpha
 
@@ -178,7 +178,7 @@
 
     phys_internal_e=.false.
     phys_partial_ionization=.false.
-    need_global_cmax=.false.
+    need_global_cmax=.true.
 
     ! Whether diagonal ghost cells are required for the physics
     phys_req_diagonal = .false.
@@ -206,6 +206,9 @@
     mag(:) = var_set_bfield(ndir)
     ${GPU_UPDATE_DEVICE('mag')}$
 
+    psi_ = var_set_fluxvar('psi', 'psi', need_bc=.false.)
+    ${GPU_UPDATE_DEVICE('psi_')}$
+
     !> GLM MHD uses split source addition in psi:
     any_source_split = .true.
     ${GPU_UPDATE_DEVICE('any_source_split')}$
@@ -216,8 +219,8 @@
     ! MUST be after the possible tracers (which have fluxes)
     mu_  = var_set_auxvar('mu','mu')
     lfac_= var_set_auxvar('lfac','lfac')
-    psi_ = var_set_auxvar('psi_', 'psi_')
-    ${GPU_UPDATE_DEVICE('mu_,lfac_,psi_')}$
+
+    ${GPU_UPDATE_DEVICE('mu_,lfac_')}$
 
     ! set number of variables which need update ghostcells
     nwgc=nwflux+nwaux
@@ -264,7 +267,7 @@
 #:enddef 
 
 #:def to_primitive()
-  pure subroutine to_primitive(u)
+  subroutine to_primitive(u)
     use srmhd_con2prim
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
@@ -272,7 +275,7 @@
     real(dp) :: p, d, x, tau, lfac
     real(dp) :: mu
     real(dp) :: vel(1:ndim)
-    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps
+    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps, v_sqr
 
     s_sqr = u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2
 
@@ -283,9 +286,9 @@
 
     d=u(iw_rho)
 
-    tau=u(iw_tau)
+    tau=u(iw_e)
 
-    call con2prim(mu, u(iw_rho), u(iw_tau), s_sqr, b_sqr, s_dot_b)
+    call con2prim(mu, u(iw_rho), u(iw_e), s_sqr, b_sqr, s_dot_b)
 
     x=1/(1 + mu*b_sqr/d) !(26)
 
@@ -301,11 +304,13 @@
 
     q_bar=  tau/d - 0.5_dp*b_sqr/d - 0.5_dp* mu**2 * x**2 * (s_sqr*b_sqr/d**3-s_dot_b**2/d**3) !(39)
 
-    eps=lfac*(q_bar - mu*r_bar_sqr) + sum(vi**2)*lfac**2/(1 + lfac) !(42)
+    v_sqr= vel(1)**2 + vel(2)**2 + vel(3)**2
+
+    eps=lfac*(q_bar - mu*r_bar_sqr) + v_sqr*lfac**2/(1 + lfac) !(42)
 
     u(iw_rho) = d/lfac  
 
-    u(iw_tau) = ideal_eos(u(iw_rho), eps)
+    u(iw_e) = ideal_eos(u(iw_rho), eps)
 
     u(iw_mom(1)) = vel(1)*lfac
 
@@ -320,7 +325,7 @@
 #:enddef
 
 
-#:def to_conservative
+#:def to_conservative()
   pure subroutine to_conservative(u)
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
@@ -342,7 +347,7 @@
 
     u(iw_mom(3)) = (u(iw_rho)/u(mu_) + b_sqr/u(lfac_))*u(iw_mom(3)) - v_dot_b*u(iw_mag(3))
 
-    u(iw_tau) = u(iw_rho) / u(mu_) * u(lfac_) - u(iw_tau) + 0.5_dp*b_sqr * (1 + v_sqr)&
+    u(iw_e) = u(iw_rho) / u(mu_) * u(lfac_) - u(iw_e) + 0.5_dp*b_sqr * (1 + v_sqr)&
               - 0.5_dp*v_dot_b**2 - u(iw_rho)*u(lfac_) 
 
     u(iw_rho)= u(iw_rho)*u(lfac_)
@@ -360,9 +365,11 @@
     integer, intent(in)   :: flux_dim
     real(dp), intent(out) :: flux(nw_flux)
 
-
+    
     real(dp) :: vel(1:ndim), si
-    real(dp) :: v_sqr, 
+    real(dp) :: v_sqr, b_sqr, v_dot_b
+
+    ! cmax_global=1
 
     vel(1) = u(iw_mom(1)) / u(lfac_)
     vel(2) = u(iw_mom(2)) / u(lfac_)
@@ -372,7 +379,7 @@
 
     b_sqr= u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
 
-    v_dot_b = (u(iw_mag(1))*u(iw_mom(1)) + u(iw_mag(2))*u(iw_mom(2)) + u(iw_mag(3))*u(iw_mom(3)))/u(lfac_)
+    v_dot_b = u(iw_mag(1))*vel(1) + u(iw_mag(2))*vel(2) + u(iw_mag(3))*vel(3)
 
 
     si = (u(iw_rho) / u(mu_) * u(lfac_) + b_sqr)*vel(flux_dim) - v_dot_b*u(iw_mag(flux_dim))
@@ -387,10 +394,10 @@
 
     flux(iw_mom(3)) = si*vel(1) - u(iw_mag(3)) * u(iw_mag(flux_dim)) / u(lfac_)**2 - v_dot_b* vel(flux_dim)* u(iw_mag(3))
 
-    flux(iw_mom(flux_dim)) = flux(iw_mom(flux_dim)) + u(iw_tau) + 0.5_dp*(b_sqr*(1 + v_sqr) - v_dot_b**2)
+    flux(iw_mom(flux_dim)) = flux(iw_mom(flux_dim)) + u(iw_e) + 0.5_dp*(b_sqr*(1 + v_sqr) - v_dot_b**2)
 
     ! energy flux
-    flux(iw_tau) = si - vel(flux_dim)*u(iw_rho)*u(lfac_)
+    flux(iw_e) = si - vel(flux_dim)*u(iw_rho)*u(lfac_)
 
     ! magnetic flux
     flux(iw_mag(1)) = vel(flux_dim) * u(iw_mag(1)) - vel(1) * u(iw_mag(flux_dim))
@@ -434,6 +441,7 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 #:if defined('SOURCE_USR')
   use mod_usr, only: addsource_usr
 #:endif
+  use mod_global_parameters, only: cmax_global
   ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
@@ -463,3 +471,5 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 end subroutine addsource_local
 #:enddef
 
+
+#:endif

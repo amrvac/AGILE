@@ -3,8 +3,8 @@
 #:endmute
 
 module srmhd_con2prim
+use mod_physics_vars
 
-use iso_fortran_env, only: dp => real64
 implicit none
 real(dp), parameter, public :: h0=1+1e-14_dp
 
@@ -153,8 +153,8 @@ contains
 
     #:enddef
 
-    $:brent_template("brent","master_function")
-    $:brent_template("aux_brent", "aux_f")
+    !$:brent_template("brent","master_function")
+    !$:brent_template("aux_brent", "aux_f")
 
 !=============================================================================
 !
@@ -236,10 +236,8 @@ contains
     end function ${name}$
     #:enddef
 
-    !$:bisection_template("bisection", "master_function")
-    !$:bisection_template("aux_bisection", "aux_f")
-
-
+    $:bisection_template("bisection", "master_function")
+    $:bisection_template("aux_bis","aux_f")
 
 
 
@@ -323,8 +321,11 @@ contains
             eps_hat=0
         end if
 
-        p_hat = ideal_eos(rho_hat,eps_hat) !(43)
+        if (rho_hat<0) then
+            rho_hat=0
+        end if
 
+        p_hat = ideal_eos(rho_hat,eps_hat) !(43)
 
         a_hat=p_hat/rho_hat/(1 + eps_hat) !(43)
 
@@ -340,7 +341,7 @@ contains
     end function master_function
 
 
-    $:master_template("master_function", "ideal_eos")
+
         
 
 
@@ -418,7 +419,7 @@ contains
     end subroutine ${name}$
     #:enddef 
 
-    $:con2prim_template("con2prim", "brent", "aux_brent")
+    $:con2prim_template("con2prim", "bisection", "aux_bis")
 
     
 
