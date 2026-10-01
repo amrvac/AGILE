@@ -282,13 +282,13 @@
     b_sqr = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
 
     s_dot_b = u(iw_mom(1)) * u(iw_mag(1)) + u(iw_mom(2)) * u(iw_mag(2))& 
-             +u(iw_mom(3)) * u(iw_mag(3))
+             + u(iw_mom(3)) * u(iw_mag(3))
 
     d=u(iw_rho)
 
     tau=u(iw_e)
 
-    call con2prim(mu, u(iw_rho), u(iw_e), s_sqr, b_sqr, s_dot_b)
+    call con2prim(mu, d, tau, s_sqr, b_sqr, s_dot_b)
 
     x=1/(1 + mu*b_sqr/d) !(26)
 
@@ -319,6 +319,8 @@
     u(iw_mom(3)) = vel(3)*lfac
 
     u(lfac_) = lfac
+
+    u(mu_) = mu
     
 
   end subroutine to_primitive
@@ -334,6 +336,10 @@
     real(dp)    ::  v_sqr, b_sqr, v_dot_b
 
     ! d=u(iw_rho)*u(lfac_)
+
+    u(lfac_) = sqrt(1+u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2)
+
+    u(mu_) = 1/u(lfac_)/(1 + srmhd_gamma / (srmhd_gamma-1) / u(iw_rho) * u(iw_e))
 
     v_sqr = (u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2)/u(lfac_)**2
 
@@ -470,6 +476,49 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 
 end subroutine addsource_local
 #:enddef
+
+
+#:def fix_prim_state()
+  !> Make a reconstructed primitive face state admissible before it is handed
+  !> to the Riemann solver.
+  !>
+  !> Two things happen here, and only the second is optional. The MUSCL
+  !> reconstruction limits every slot of the state independently, including the
+  !> auxiliaries xi and lfac -- but those are not independent variables, they
+  !> are functions of (rho, u^i, p). A reconstructed face state therefore does
+  !> not in general satisfy lfac = sqrt(1+|u|^2) or xi = lfac^2*rho*h, while
+  !> get_flux, get_cmax and estimate_speeds_minmax all read them. Left alone,
+  !> v2 = 1-1/lfac^2 and v_n = u_n/lfac come from different sources, v_n can
+  !> exceed v (even exceed 1), the radicand of the relativistic characteristic
+  !> speeds goes negative and the HLL wave speeds collapse onto each other --
+  !> which removes the solver's dissipation exactly where it is needed. So the
+  !> auxiliaries are always recomputed from the reconstructed primitives, by
+  !> the same expressions to_conservative uses.
+  !>
+  !> The floors are the optional part. Both default to zero, in which case the
+  !> max() calls only clamp states that were already unphysical; set
+  !> srhd_small_pressure (and srhd_small_density) positive in &srhd_list to get
+  !> an actual floor, which is the useful configuration -- a state floored to
+  !> exactly zero still gives csound2 = gamma*p/(rho*h) a zero denominator.
+  pure subroutine fix_prim_state(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+
+    u(iw_rho) = max(u(iw_rho), srmhd_small_density)
+    u(iw_e)   = max(u(iw_e),   srmhd_small_pressure)
+
+    u(lfac_) = sqrt(1+u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2)
+
+    u(mu_) = 1/u(lfac_)/(1 + srmhd_gamma / (srmhd_gamma-1) / u(iw_rho) * u(iw_e))
+
+  end subroutine fix_prim_state
+#:enddef
+
+
+
+
+
+
 
 
 #:endif

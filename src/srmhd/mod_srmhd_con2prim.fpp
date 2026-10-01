@@ -39,14 +39,14 @@ contains
         b = temp
     end subroutine swap 
 
-    #: def brent_template(name, func)
-    function ${name}$(mu_plus, params, calls) result(s)
+    #: def brent_template(name, func, npar)
+    function ${name}$(mu_plus, params) result(s)
         ${GPU_ROUTINE_SEQ()}$
         implicit none
         real(dp)  :: s
         !real(dp), intent(in) :: d, tau
         !real(dp), intent(in) :: s_sqr, b_sqr, s_dot_b
-        real(dp), intent(in) :: params(:)
+        real(dp), intent(in) :: params(${npar}$)
         real(dp), intent(in) :: mu_plus
         real(dp) :: a, b, c, d
         real(dp) :: fa, fb, fc, fs
@@ -55,11 +55,11 @@ contains
         logical :: mflag
         integer :: i, maxiter
         real(dp):: delta
-        integer, intent(out), optional :: calls
 
 
-        calls=0
-        delta = 2.0_dp * epsilon(1.0_dp) * abs(b) + 0.5_dp * tol
+
+
+
         bound_error=.false.
         maxiter=100
 
@@ -68,11 +68,13 @@ contains
 
         tol=1e-15_dp
 
+        delta = 2.0_dp * epsilon(1.0_dp) * abs(b) + 0.5_dp * tol
+
         fa=${func}$(a, params)
-        calls=calls+1
+
 
         fb=${func}$(b, params)
-        calls=calls+1
+
 
         if (fa*fb>0) then
             bound_error=.true.
@@ -121,7 +123,7 @@ contains
             end if
 
             fs=${func}$(s, params)
-            calls=calls+1
+
 
             d=c
             c=b
@@ -153,8 +155,8 @@ contains
 
     #:enddef
 
-    !$:brent_template("brent","master_function")
-    !$:brent_template("aux_brent", "aux_f")
+    $:brent_template("brent","master_function", 5)
+    $:brent_template("aux_brent", "aux_f", 4)
 
 !=============================================================================
 !
@@ -163,7 +165,7 @@ contains
 !============================Bisection Root Solver=================================
 
     #:def bisection_template(name, func)
-    function ${name}$(mu_plus, params, iter) result(mu)
+    function ${name}$(mu_plus, params) result(mu)
         ${GPU_ROUTINE_SEQ()}$
         implicit none
         !real(dp), intent(in) :: d, tau
@@ -210,7 +212,7 @@ contains
             if (abs((b-a)/c)<tol) then
                 mu=c
 
-                iter=i
+
                 exit
             end if
 
@@ -236,8 +238,8 @@ contains
     end function ${name}$
     #:enddef
 
-    $:bisection_template("bisection", "master_function")
-    $:bisection_template("aux_bis","aux_f")
+    !$:bisection_template("bisection", "master_function")
+    !$:bisection_template("aux_bis","aux_f")
 
 
 
@@ -390,7 +392,7 @@ contains
         real(dp)              :: myd, mytau
         !real(dp)              :: mysi(3), mybi(3)
         !real(dp)              :: s_sqr, b_sqr, s_dot_b
-        real(dp), intent(out):: mu
+        real(dp), intent(out) :: mu
         real(dp)              :: mu_plus
         real(dp)              :: q_bar, r_bar_sqr
         real(dp)              :: x
@@ -407,7 +409,7 @@ contains
         if (s_sqr/myd**2 < h0**2) then
             mu_plus=h0
         else
-            mu_plus=${aux_solver}$(1/h0, aux_params)
+            mu_plus=${aux_solver}$(1/h0, aux_params)+1e-14_dp
         end if
 
         
@@ -419,7 +421,8 @@ contains
     end subroutine ${name}$
     #:enddef 
 
-    $:con2prim_template("con2prim", "bisection", "aux_bis")
+    !$:con2prim_template("con2prim", "bisection", "aux_bis")
+    $:con2prim_template("con2prim", "brent", "aux_brent")
 
     
 
