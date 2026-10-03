@@ -6,7 +6,7 @@ module srmhd_con2prim
 use mod_physics_vars
 
 implicit none
-real(dp), parameter, public :: h0=1+1e-14_dp
+real(dp), parameter, public :: h0=1+1e-7_dp
 
 ${GPU_DECLARE_COPYIN('h0')}$
 
@@ -44,8 +44,6 @@ contains
         ${GPU_ROUTINE_SEQ()}$
         implicit none
         real(dp)  :: s
-        !real(dp), intent(in) :: d, tau
-        !real(dp), intent(in) :: s_sqr, b_sqr, s_dot_b
         real(dp), intent(in) :: params(${npar}$)
         real(dp), intent(in) :: mu_plus
         real(dp) :: a, b, c, d
@@ -55,6 +53,8 @@ contains
         logical :: mflag
         integer :: i, maxiter
         real(dp):: delta
+
+
 
 
 
@@ -76,6 +76,11 @@ contains
         fb=${func}$(b, params)
 
 
+        ! if (fa*fb>0) then
+        !     b=b+1e-10_dp
+        !     fb=${func}$(b, params)
+        ! end if
+
         if (fa*fb>0) then
             bound_error=.true.
         end if
@@ -91,7 +96,8 @@ contains
 
         do i=1, maxiter
             if (bound_error) then
-                !print*, bound_error
+                print*, fa, fb
+                !s=0
                 exit
             end if
 
@@ -129,6 +135,12 @@ contains
             c=b
             fc=fb
 
+            
+            if (abs(b-a)/s<tol) then
+            !if (fs<tol) then
+                exit
+            end if
+
             if (fa*fs < 0) then
                 b=s
                 fb=fs
@@ -137,10 +149,6 @@ contains
                 fa=fs
             end if
 
-            if (abs(b-a)/s<tol) then
-            !if (fs<tol) then
-                exit
-            end if
 
             if (abs(fa) < abs(fb)) then
             call swap(a, b)
@@ -306,15 +314,11 @@ contains
 
         v_hat_sqr=min(v0_sqr, mu**2*r_bar_sqr) !(40)
 
+
         w_hat=1/sqrt(1 - v_hat_sqr) !(40)
 
         rho_hat=d/w_hat !(41)
 
-        
-        if (rho_hat<0) then
-
-            rho_hat=0
-        end if
 
         eps_hat=w_hat*(q_bar - mu*r_bar_sqr) + v_hat_sqr*w_hat**2/(1 + w_hat) !(42)
 
@@ -323,8 +327,8 @@ contains
             eps_hat=0
         end if
 
-        if (rho_hat<0) then
-            rho_hat=0
+        if (rho_hat<=0) then
+            rho_hat=1e-14_dp
         end if
 
         p_hat = ideal_eos(rho_hat,eps_hat) !(43)
@@ -407,9 +411,9 @@ contains
         aux_params=[myd, s_sqr, b_sqr, s_dot_b]
 
         if (s_sqr/myd**2 < h0**2) then
-            mu_plus=h0
+            mu_plus=1/h0
         else
-            mu_plus=${aux_solver}$(1/h0, aux_params)+1e-14_dp
+            mu_plus=${aux_solver}$(1/h0, aux_params)+1e-8_dp
         end if
 
         

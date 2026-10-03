@@ -92,7 +92,7 @@
   !> reconstructed face state. Zero, the default, leaves both unfloored.
   double precision, public                :: srmhd_small_pressure = 0.0d0
   !> Smallest rest-mass density allowed
-  double precision, public                :: srmhd_small_density  = 0.0d0
+  double precision, public                :: srmhd_small_density  = 1e-14_dp
   ${GPU_DECLARE_COPYIN('srmhd_small_pressure,srmhd_small_density')}$
 
 
@@ -269,13 +269,16 @@
 #:def to_primitive()
   subroutine to_primitive(u)
     use srmhd_con2prim
+
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
-
     real(dp) :: p, d, x, tau, lfac
     real(dp) :: mu
     real(dp) :: vel(1:ndim)
     real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps, v_sqr
+
+
+
 
     s_sqr = u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2
 
@@ -285,8 +288,16 @@
              + u(iw_mom(3)) * u(iw_mag(3))
 
     d=u(iw_rho)
-
+    
     tau=u(iw_e)
+
+    if (s_sqr > 1.0e4_dp*d**2 .or. d <= srmhd_small_density) then
+      print *, 'first bad state: d =', d, ' s_sqr =', s_sqr, &
+            ' tau =', tau, ' b_sqr =', b_sqr
+      error stop
+    end if
+
+    
 
     call con2prim(mu, d, tau, s_sqr, b_sqr, s_dot_b)
 
@@ -300,13 +311,13 @@
 
     lfac = 1/sqrt(1-(vel(1)**2 + vel(2)**2 + vel(3)**2))
 
-    r_bar_sqr= s_sqr*x**2/d**2 + mu * x * (1+x) * s_dot_b**2/d**3 !(38)
+    r_bar_sqr = s_sqr*x**2/d**2 + mu * x * (1+x) * s_dot_b**2/d**3 !(38)
 
-    q_bar=  tau/d - 0.5_dp*b_sqr/d - 0.5_dp* mu**2 * x**2 * (s_sqr*b_sqr/d**3-s_dot_b**2/d**3) !(39)
+    q_bar =  tau/d - 0.5_dp*b_sqr/d - 0.5_dp* mu**2 * x**2 * (s_sqr*b_sqr/d**3-s_dot_b**2/d**3) !(39)
 
-    v_sqr= vel(1)**2 + vel(2)**2 + vel(3)**2
+    v_sqr = vel(1)**2 + vel(2)**2 + vel(3)**2
 
-    eps=lfac*(q_bar - mu*r_bar_sqr) + v_sqr*lfac**2/(1 + lfac) !(42)
+    eps = lfac*(q_bar - mu*r_bar_sqr) + v_sqr*lfac**2/(1 + lfac) !(42)
 
     u(iw_rho) = d/lfac  
 
@@ -322,13 +333,12 @@
 
     u(mu_) = mu
     
-
   end subroutine to_primitive
 #:enddef
 
 
 #:def to_conservative()
-  pure subroutine to_conservative(u)
+  subroutine to_conservative(u)
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
 
@@ -337,9 +347,19 @@
 
     ! d=u(iw_rho)*u(lfac_)
 
+
+    
+
     u(lfac_) = sqrt(1+u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2)
 
     u(mu_) = 1/u(lfac_)/(1 + srmhd_gamma / (srmhd_gamma-1) / u(iw_rho) * u(iw_e))
+
+    ! if (u(lfac_) <= 0.0_dp .or. any(u /= u)) then
+    !   print *, 'tocon bad input, u =', u
+    !   error stop
+    ! end if
+
+    u(iw_rho)= u(iw_rho)*u(lfac_)
 
     v_sqr = (u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2)/u(lfac_)**2
 
@@ -347,16 +367,15 @@
 
     v_dot_b = (u(iw_mag(1))*u(iw_mom(1)) + u(iw_mag(2))*u(iw_mom(2)) + u(iw_mag(3))*u(iw_mom(3)))/u(lfac_)
 
-    u(iw_mom(1)) = (u(iw_rho)/u(mu_) + b_sqr/u(lfac_))*u(iw_mom(1)) - v_dot_b*u(iw_mag(1))
+    u(iw_mom(1)) = (u(iw_rho)/u(mu_) + b_sqr)*u(iw_mom(1))/u(lfac_) - v_dot_b*u(iw_mag(1))
 
-    u(iw_mom(2)) = (u(iw_rho)/u(mu_) + b_sqr/u(lfac_))*u(iw_mom(2)) - v_dot_b*u(iw_mag(2))
+    u(iw_mom(2)) = (u(iw_rho)/u(mu_) + b_sqr)*u(iw_mom(2))/u(lfac_) - v_dot_b*u(iw_mag(2))
 
-    u(iw_mom(3)) = (u(iw_rho)/u(mu_) + b_sqr/u(lfac_))*u(iw_mom(3)) - v_dot_b*u(iw_mag(3))
+    u(iw_mom(3)) = (u(iw_rho)/u(mu_) + b_sqr)*u(iw_mom(3))/u(lfac_) - v_dot_b*u(iw_mag(3))
 
-    u(iw_e) = u(iw_rho) / u(mu_) * u(lfac_) - u(iw_e) + 0.5_dp*b_sqr * (1 + v_sqr)&
-              - 0.5_dp*v_dot_b**2 - u(iw_rho)*u(lfac_) 
+    u(iw_e) = u(iw_rho)*(1 / u(mu_) - 1) - u(iw_e) + 0.5_dp*b_sqr * (1 + v_sqr)&
+              - 0.5_dp*v_dot_b**2
 
-    u(iw_rho)= u(iw_rho)*u(lfac_)
   
   end subroutine to_conservative
 #:enddef
@@ -376,6 +395,11 @@
     real(dp) :: v_sqr, b_sqr, v_dot_b
 
     ! cmax_global=1
+    ! if (u(lfac_) <= 0.0_dp .or. any(u /= u)) then
+    ! print *, 'get_flux bad input, flux_dim =', flux_dim, ' u =', u
+    ! error stop
+    ! end if
+
 
     vel(1) = u(iw_mom(1)) / u(lfac_)
     vel(2) = u(iw_mom(2)) / u(lfac_)
@@ -398,9 +422,9 @@
 
     flux(iw_mom(2)) = si*vel(2) - u(iw_mag(2)) * u(iw_mag(flux_dim)) / u(lfac_)**2 - v_dot_b* vel(flux_dim)* u(iw_mag(2))
 
-    flux(iw_mom(3)) = si*vel(1) - u(iw_mag(3)) * u(iw_mag(flux_dim)) / u(lfac_)**2 - v_dot_b* vel(flux_dim)* u(iw_mag(3))
+    flux(iw_mom(3)) = si*vel(3) - u(iw_mag(3)) * u(iw_mag(flux_dim)) / u(lfac_)**2 - v_dot_b* vel(flux_dim)* u(iw_mag(3))
 
-    flux(iw_mom(flux_dim)) = flux(iw_mom(flux_dim)) + u(iw_e) + 0.5_dp*(b_sqr*(1 + v_sqr) - v_dot_b**2)
+    flux(iw_mom(flux_dim)) = flux(iw_mom(flux_dim)) + u(iw_e) + 0.5_dp*(b_sqr/u(lfac_)**2 + v_dot_b**2)
 
     ! energy flux
     flux(iw_e) = si - vel(flux_dim)*u(iw_rho)*u(lfac_)

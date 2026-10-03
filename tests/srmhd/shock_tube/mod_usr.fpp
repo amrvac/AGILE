@@ -15,9 +15,8 @@ contains
     call phys_activate()
 
   end subroutine usr_init
- ! sets up komissarov shock tube 1 from Giacomazzo and Rezzolla 2006
+  ! sets up komissarov shock tube 1 from Giacomazzo and Rezzolla 2006
   subroutine initonegrid_usr(ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3,&
-
        ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,w,x)
     integer, intent(in)             :: ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&
        ixGmax3, ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3
@@ -35,8 +34,8 @@ contains
        w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mom(1)) = 0.0d0
        w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mom(2)) = 0.0d0
        w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mom(3)) = 0.0d0
-       w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,p_)     = 1000.0d0
-       w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mag(1)) = 1.0d0
+       w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,p_)     = 10.0d0
+       w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mag(1)) = 0.0d0
        w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mag(2)) = 0.0d0
        w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mag(3)) = 0.0d0
     elsewhere
@@ -45,7 +44,7 @@ contains
        w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mom(2)) = 0.0d0
        w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mom(3)) = 0.0d0
        w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,p_)     = 1.0d0
-       w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mag(1)) = 1.0d0
+       w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mag(1)) = 0.0d0
        w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mag(2)) = 0.0d0
        w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,ixGmin3:ixGmax3,mag(3)) = 0.0d0
     end where
