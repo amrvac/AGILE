@@ -539,7 +539,19 @@ end subroutine addsource_local
 #:enddef
 
 
-
+#:def estimate_speeds_minmax()
+subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)  :: xC(ndim)
+  integer, intent(in)   :: flux_dim
+  real(dp), intent(out) :: wL, wR
+  ! no signal can outrun light; a safe bound for LLF/HLL until the
+  ! relativistic fast-magnetosonic speeds are implemented
+  wL = -1.0_dp
+  wR =  1.0_dp
+end subroutine estimate_speeds_minmax
+#:enddef
 
 
 
