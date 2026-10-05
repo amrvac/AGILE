@@ -54,7 +54,7 @@
  /
  
 &srmhd_list
-   srmhd_gamma=4.0d0/3.0d0
+   srmhd_gamma=1.33333333333333333333d0
    srmhd_eos=.false.
    He_abundance=0.0d0
    srmhd_small_pressure=0.0d0

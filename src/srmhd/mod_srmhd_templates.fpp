@@ -122,7 +122,7 @@
     if (srmhd_small_density < 0.0d0) call mpistop(&
        "srmhd_small_density should be positive.")
 
-    ${GPU_UPDATE_DEVICE('srmhd_eos, srmhd_gamma, srmhd_n_tracer, He_abundance, srmhd_source_usr, srmhd_glm_alpha')}$
+    ${GPU_UPDATE_DEVICE('srmhd_eos, srmhd_gamma, He_abundance, srmhd_source_usr, srmhd_glm_alpha')}$
     ${GPU_UPDATE_DEVICE('srmhd_small_pressure, srmhd_small_density')}$
 
   end subroutine read_params
@@ -274,8 +274,10 @@
     real(dp), intent(inout) :: u(nw_phys)
     real(dp) :: p, d, x, tau, lfac
     real(dp) :: mu
-    real(dp) :: vel(1:ndim)
-    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps, v_sqr
+    real(dp) :: vel(3)
+    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps, v_sqr, v_rescale
+    real(dp) :: v0_sqr
+    !real(dp), parameter :: h0=1.0_dp
 
 
 
@@ -291,13 +293,6 @@
     
     tau=u(iw_e)
 
-    if (s_sqr > 1.0e4_dp*d**2 .or. d <= srmhd_small_density) then
-      print *, 'first bad state: d =', d, ' s_sqr =', s_sqr, &
-            ' tau =', tau, ' b_sqr =', b_sqr
-      error stop
-    end if
-
-    
 
     call con2prim(mu, d, tau, s_sqr, b_sqr, s_dot_b)
 
@@ -309,15 +304,34 @@
 
     vel(3)= mu*x *(u(iw_mom(3))/d + mu*s_dot_b*u(iw_mag(3))/d**2)
 
-    lfac = 1/sqrt(1-(vel(1)**2 + vel(2)**2 + vel(3)**2))
+    v_sqr = vel(1)**2 + vel(2)**2 + vel(3)**2
+
+    v0_sqr= s_sqr/(h0**2*d**2 + s_sqr)
+
+    if (v_sqr>v0_sqr) then
+      v_rescale= sqrt(v0_sqr/v_sqr)
+
+      vel(1) = vel(1)*v_rescale
+
+      vel(2) = vel(2)*v_rescale
+
+      vel(3) = vel(3)*v_rescale
+
+      v_sqr = v0_sqr
+    end if
+
+    lfac = 1/sqrt(1-v_sqr)
 
     r_bar_sqr = s_sqr*x**2/d**2 + mu * x * (1+x) * s_dot_b**2/d**3 !(38)
 
     q_bar =  tau/d - 0.5_dp*b_sqr/d - 0.5_dp* mu**2 * x**2 * (s_sqr*b_sqr/d**3-s_dot_b**2/d**3) !(39)
 
-    v_sqr = vel(1)**2 + vel(2)**2 + vel(3)**2
 
     eps = lfac*(q_bar - mu*r_bar_sqr) + v_sqr*lfac**2/(1 + lfac) !(42)
+
+    if (eps<0) then
+      eps=0
+    end if
 
     u(iw_rho) = d/lfac  
 
@@ -391,7 +405,7 @@
     real(dp), intent(out) :: flux(nw_flux)
 
     
-    real(dp) :: vel(1:ndim), si
+    real(dp) :: vel(3), si
     real(dp) :: v_sqr, b_sqr, v_dot_b
 
     ! cmax_global=1
@@ -489,7 +503,7 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
      call addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, .false.)
 #:endif
 
-  !!!else
+  else
      !---------------------------------
      ! split sources     
      !---------------------------------
@@ -508,9 +522,9 @@ end subroutine addsource_local
   !>
   !> Two things happen here, and only the second is optional. The MUSCL
   !> reconstruction limits every slot of the state independently, including the
-  !> auxiliaries xi and lfac -- but those are not independent variables, they
+  !> auxiliaries mu and lfac -- but those are not independent variables, they
   !> are functions of (rho, u^i, p). A reconstructed face state therefore does
-  !> not in general satisfy lfac = sqrt(1+|u|^2) or xi = lfac^2*rho*h, while
+  !> not in general satisfy lfac = sqrt(1+|u|^2) or mu = 1/hW, while
   !> get_flux, get_cmax and estimate_speeds_minmax all read them. Left alone,
   !> v2 = 1-1/lfac^2 and v_n = u_n/lfac come from different sources, v_n can
   !> exceed v (even exceed 1), the radicand of the relativistic characteristic
@@ -546,8 +560,9 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
   real(dp), intent(out) :: wL, wR
-  ! no signal can outrun light; a safe bound for LLF/HLL until the
-  ! relativistic fast-magnetosonic speeds are implemented
+  
+
+  
   wL = -1.0_dp
   wR =  1.0_dp
 end subroutine estimate_speeds_minmax

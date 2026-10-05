@@ -6,7 +6,7 @@ module srmhd_con2prim
 use mod_physics_vars
 
 implicit none
-real(dp), parameter, public :: h0=1+1e-7_dp
+real(dp), parameter, public :: h0=1.0_dp
 
 ${GPU_DECLARE_COPYIN('h0')}$
 
@@ -40,7 +40,7 @@ contains
     end subroutine swap 
 
     #: def brent_template(name, func, npar)
-    function ${name}$(mu_plus, params) result(s)
+    pure function ${name}$(mu_plus, params) result(b)
         ${GPU_ROUTINE_SEQ()}$
         implicit none
         real(dp)  :: s
@@ -83,6 +83,9 @@ contains
 
         if (fa*fb>0) then
             bound_error=.true.
+            if (abs(fb)>abs(fa)) then
+                b=a
+            end if
         end if
 
         if (abs(fa) < abs(fb)) then
@@ -96,8 +99,6 @@ contains
 
         do i=1, maxiter
             if (bound_error) then
-                print*, fa, fb
-                !s=0
                 exit
             end if
 
@@ -112,7 +113,7 @@ contains
                 mflag=.true.
             elseif (mflag) then
 
-                if (abs(s-b)>=abs(c-b)/2 .or. abs(c-b)<delta) then
+                if (abs(s-b)>=abs(c-b)/2) then
                     s=(b+a)/2
                     mflag=.true.
                 else
@@ -120,7 +121,7 @@ contains
                 end if
             else
 
-                if (abs(s-b) >= abs(c-d)/2 .or. abs(c-d)<delta) then
+                if (abs(s-b) >= abs(c-d)/2 ) then
                     s=(b+a)/2
                     mflag=.true.
                 else
@@ -136,10 +137,7 @@ contains
             fc=fb
 
             
-            if (abs(b-a)/s<tol) then
-            !if (fs<tol) then
-                exit
-            end if
+
 
             if (fa*fs < 0) then
                 b=s
@@ -154,7 +152,13 @@ contains
             call swap(a, b)
             call swap(fa, fb)
             end if
+
+
             delta = 2.0_dp * epsilon(1.0_dp) * abs(b) + 0.5_dp * tol
+
+            if (fb==0 .or. abs(c-b) < delta*2) then
+                exit
+            end if
 
         end do
 
@@ -260,7 +264,7 @@ contains
 
 
 
-    function ideal_eos(rho,eps) result(p)
+    pure function ideal_eos(rho,eps) result(p)
         ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(in) :: rho, eps
         real(dp) ::p
@@ -271,7 +275,7 @@ contains
 
 
 
-    function master_function(mu, params) result(f)
+    pure function master_function(mu, params) result(f)
         ${GPU_ROUTINE_SEQ()}$
         implicit none
         real(dp), intent(in) :: mu
@@ -289,6 +293,7 @@ contains
         real(dp) :: nu_hat
         real(dp) :: f
 
+
         
         d = params(1)
         tau = params(2)
@@ -304,7 +309,7 @@ contains
 
         r_dot_b=s_dot_b !necessary for (25)
 
-        v0_sqr=r_sqr/h0**2/(1 + r_sqr/h0**2) ! (32)(33)
+        v0_sqr=r_sqr/(h0**2 + r_sqr) ! (32)(33)
 
         x=1.0_dp/(1.0_dp + mu*myb_sqr) !(26)
 
@@ -327,9 +332,6 @@ contains
             eps_hat=0
         end if
 
-        if (rho_hat<=0) then
-            rho_hat=1e-14_dp
-        end if
 
         p_hat = ideal_eos(rho_hat,eps_hat) !(43)
 
@@ -351,7 +353,7 @@ contains
         
 
 
-    function aux_f(mu, params) result(f)
+    pure function aux_f(mu, params) result(f)
         ${GPU_ROUTINE_SEQ()}$
         implicit none
         real(dp), intent(in) :: mu
@@ -413,7 +415,7 @@ contains
         if (s_sqr/myd**2 < h0**2) then
             mu_plus=1/h0
         else
-            mu_plus=${aux_solver}$(1/h0, aux_params)+1e-8_dp
+            mu_plus=${aux_solver}$(1/h0, aux_params)
         end if
 
         
