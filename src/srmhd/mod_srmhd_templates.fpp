@@ -470,9 +470,50 @@ pure function get_cmax(u, x, flux_dim) result(wC)
   real(dp), intent(in)  :: x(1:ndim)
   integer, intent(in)   :: flux_dim
 
+  real(dp) :: rhoh, b_sqr, c_s_sqr, small_b_sqr, v_dot_b, v_a_sqr
+  real(dp) :: cms_sqr
+  real(dp) :: A, B, C, root
+  real(dp) :: cmax, cmin
+
   real(dp) :: wC
 
-  wC=1
+  rhoh = u(iw_rho) /u(mu_) /u(lfac_)
+  
+  c_s_sqr = srmhd_gamma*u(iw_e)/rhoh
+
+  b_sqr = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
+
+  v_dot_b = (u(iw_mag(1))*u(iw_mom(1)) + u(iw_mag(2))*u(iw_mom(2)) + u(iw_mag(3))*u(iw_mom(3)))/u(lfac_)
+
+  small_b_sqr = b_sqr/u(lfac_)**2 + v_dot_b**2
+
+  v_a_sqr = small_b_sqr/(small_b_sqr + rhoh)
+
+  cms_sqr = v_a_sqr + c_s_sqr - v_a_sqr*c_s_sqr
+
+  cms_sqr = min(cms_sqr, 1.0d0)
+
+  A = u(lfac_)**2 - (u(lfac_)**2 - 1)*cms_sqr
+
+  B = 2*u(lfac_) * u(iw_mom(flux_dim)) * (1-cms_sqr)
+
+  C = u(iw_mom(flux_dim))**2 - (1 + u(iw_mom(flux_dim))**2)*cms_sqr
+
+  root = sqrt(max(B**2 - 4*A*C, 0.0d0))
+
+  cmax = (B + root)/(2*A)
+
+  cmin = (B - root)/(2*A)
+
+  ! Limit by speed of light
+  cmin = max(cmin, - 1.0d0)
+  cmin = min(cmin,   1.0d0)
+  cmax = max(cmax, - 1.0d0)
+  cmax = min(cmax,   1.0d0)
+
+  wC = max(abs(cmin), abs(cmax))
+
+  ! wC=1
 
 end function get_cmax
 #:enddef  
@@ -560,11 +601,79 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
   real(dp), intent(out) :: wL, wR
+
+  real(dp) :: rhoh, b_sqr, c_s_sqr, small_b_sqr, v_dot_b, v_a_sqr
+  real(dp) :: cms_sqr
+  real(dp) :: A, B, C, root
+  real(dp) :: cmaxL, cminL, cmaxR, cminR
   
 
+  !left state 
+  rhoh = uL(iw_rho) /uL(mu_) /uL(lfac_)
   
-  wL = -1.0_dp
-  wR =  1.0_dp
+  c_s_sqr = srmhd_gamma*uL(iw_e)/rhoh
+
+  b_sqr = uL(iw_mag(1))**2 + uL(iw_mag(2))**2 + uL(iw_mag(3))**2
+
+  v_dot_b = (uL(iw_mag(1))*uL(iw_mom(1)) + uL(iw_mag(2))*uL(iw_mom(2)) + uL(iw_mag(3))*uL(iw_mom(3)))/uL(lfac_)
+
+  small_b_sqr = b_sqr/uL(lfac_)**2 + v_dot_b**2
+
+  v_a_sqr = small_b_sqr/(small_b_sqr + rhoh)
+
+  cms_sqr = v_a_sqr + c_s_sqr - v_a_sqr*c_s_sqr
+
+  cms_sqr = min(cms_sqr, 1.0d0)
+
+  A = uL(lfac_)**2 - (uL(lfac_)**2 - 1)*cms_sqr
+
+  B = 2*uL(lfac_) * uL(iw_mom(flux_dim)) * (1-cms_sqr)
+
+  C = uL(iw_mom(flux_dim))**2 - (1 + uL(iw_mom(flux_dim))**2)*cms_sqr
+
+  root = sqrt(max(B**2 - 4*A*C, 0.0d0))
+
+  cmaxL = (B + root)/(2*A)
+
+  cminL = (B - root)/(2*A)
+
+  !right side
+  rhoh = uR(iw_rho) /uR(mu_) /uR(lfac_)
+  
+  c_s_sqr = srmhd_gamma*uR(iw_e)/rhoh
+
+  b_sqr = uR(iw_mag(1))**2 + uR(iw_mag(2))**2 + uR(iw_mag(3))**2
+
+  v_dot_b = (uR(iw_mag(1))*uR(iw_mom(1)) + uR(iw_mag(2))*uR(iw_mom(2)) + uR(iw_mag(3))*uR(iw_mom(3)))/uR(lfac_)
+
+  small_b_sqr = b_sqr/uR(lfac_)**2 + v_dot_b**2
+
+  v_a_sqr = small_b_sqr/(small_b_sqr + rhoh)
+
+  cms_sqr = v_a_sqr + c_s_sqr - v_a_sqr*c_s_sqr
+
+  A = uR(lfac_)**2 - (uR(lfac_)**2 - 1)*cms_sqr
+
+  B = 2*uR(lfac_) * uR(iw_mom(flux_dim)) * (1-cms_sqr)
+
+  C = uR(iw_mom(flux_dim))**2 - (1 + uR(iw_mom(flux_dim))**2)*cms_sqr
+
+  root = sqrt(max(B**2 - 4*A*C, 0.0d0))
+
+  cmaxR = (B + root)/(2*A)
+
+  cminR = (B - root)/(2*A)
+
+
+  wL = min(cminL, cminR)
+
+  wR = max(cmaxL, cmaxR)
+
+  wL = min(max(wL, -1.0_dp), 1.0_dp)
+  wR = min(max(wR, -1.0_dp), 1.0_dp)
+
+  ! wL = -1.0_dp
+  ! wR =  1.0_dp
 end subroutine estimate_speeds_minmax
 #:enddef
 
