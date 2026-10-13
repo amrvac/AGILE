@@ -1,0 +1,71 @@
+! Pressure-balanced slab held by equilibrium splitting: p0(x) + B0z(x)^2/2
+! uniform, rho0(x) modulated, periodic, at rest. J0 x B0 = grad p0 is not
+! force-free, so with mhd_b0_split alone or unsplit the state drifts at
+! truncation error; with mhd_equi_split it holds to round-off. The 'special'
+! log carries vmax and the maximum deviations of rho and p from the
+! equilibrium, which is what the regression compares.
+
+ &usr_list
+   rho_c = 1.0d0
+   rho_a = 0.5d0
+   p_c   = 0.5d0
+   p_a   = 0.25d0
+   b_c   = 1.0d0
+ /
+
+ &filelist
+   base_filename    = 'test'
+   typefilelog      = 'special'
+   autoconvert      = F
+ /
+
+ &savelist
+   itsave(1,1)      = 0
+   dtsave_log       = 0.25d0
+   dtsave_dat       = 1e10
+ /
+
+ &stoplist
+   time_max         = 1.0d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'hll'
+   limiter         = 20*'vanleer'
+   phys            = 'mhd'
+ /
+
+ &boundlist
+   typeboundary_min1 = 8*'periodic'
+   typeboundary_max1 = 8*'periodic'
+   typeboundary_min2 = 8*'periodic'
+   typeboundary_max2 = 8*'periodic'
+   typeboundary_min3 = 8*'periodic'
+   typeboundary_max3 = 8*'periodic'
+ /
+
+ &meshlist
+   max_blocks         = 64
+   refine_max_level   = 1
+   block_nx1          = 8
+   block_nx2          = 8
+   block_nx3          = 8
+   domain_nx1         = 32
+   domain_nx2         = 8
+   domain_nx3         = 8
+   xprobmin1          = 0.0d0
+   xprobmax1          = 1.0d0
+   xprobmin2          = 0.0d0
+   xprobmax2          = 0.25d0
+   xprobmin3          = 0.0d0
+   xprobmax3          = 0.25d0
+ /
+
+ &paramlist
+   courantpar       = 0.4d0
+ /
+
+ &mhd_list
+   mhd_equi_split = .true.
+ /

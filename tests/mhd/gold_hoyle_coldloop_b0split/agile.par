@@ -1,0 +1,89 @@
+! Gold-Hoyle cold loop on the B0-split scheme: the rope is B0, B1 starts at
+! zero, and the box is the Legolas domain |x|, |y| <= L with the wall held at
+! the exact equilibrium. Cooling, anisotropic conduction and the heating
+! balance as in tests/mhd/gold_hoyle_coldloop.
+!
+! Build (GPU): make arch=nvidia OPENACC=1; run: mpirun -np 2 ./agile -i agile.par
+
+ &usr_list
+   n0_cgs   = 1.0d9      ! cm^-3
+   bc_gauss = 10.0d0     ! G
+   l_cgs    = 1.0d10     ! cm
+   beta_c   = 0.002d0
+   alpha    = 20.0d0
+   heating  = .true.
+ /
+
+ &filelist
+   base_filename    = 'output/cl'
+   typefilelog      = 'special'
+   autoconvert      = T
+   convert_type     = 'vtuBCCmpi'
+   saveprim         = T
+   nwauxio          = 3
+ /
+
+ &savelist
+   itsave(1,1)      = 0
+   itsave(1,2)      = 0
+   dtsave_log       = 0.05d0
+   dtsave_dat       = 2.0d0
+ /
+
+ &stoplist
+   time_max         = 20.0d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'hll'
+   limiter         = 20*'vanleer'
+   phys            = 'mhd'
+ /
+
+ &boundlist
+   typeboundary_min1 = 8*'special'
+   typeboundary_max1 = 8*'special'
+   typeboundary_min2 = 8*'special'
+   typeboundary_max2 = 8*'special'
+   typeboundary_min3 = 8*'periodic'
+   typeboundary_max3 = 8*'periodic'
+   specialboundary   = .true.
+ /
+
+ &meshlist
+   max_blocks         = 4096
+   refine_max_level   = 1
+   block_nx1          = 16
+   block_nx2          = 16
+   block_nx3          = 16
+   domain_nx1         = 256
+   domain_nx2         = 256
+   domain_nx3         = 64
+   xprobmin1          = -1.0d0
+   xprobmax1          =  1.0d0
+   xprobmin2          = -1.0d0
+   xprobmax2          =  1.0d0
+   xprobmin3          =  0.0d0
+   xprobmax3          =  6.283185307179586d0
+ /
+
+ &paramlist
+   courantpar       = 0.4d0
+ /
+
+ &mhd_list
+   mhd_gamma                                     = 1.6666666666666667d0
+   He_abundance                                  = 0.0d0
+   mhd_radiative_cooling                         = .true.
+   mhd_hyperbolic_thermal_conduction_anisotropic = .true.
+   mhd_source_usr                                = .true.
+   mhd_b0_split                                  = .true.
+ /
+
+ &rc_list
+   coolcurve  = 'Colgan_DM'
+   coolmethod = 'exact'
+   ncool      = 4000
+   Tfix       = .false.
+ /

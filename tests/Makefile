@@ -15,7 +15,8 @@ HD_DIRS := hd/KH3D hd/RT3D hd/KH3D-SMR hd/KH3D_tracer hd/sphere_advection hd/TRM
 MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D \
             mhd/spherical mhd/cylindrical \
             mhd/spherical_pole mhd/cylindrical_pole \
-            mhd/log_spherical mhd/log_cylindrical
+            mhd/log_spherical mhd/log_cylindrical \
+            mhd/gold_hoyle_b0split mhd/gold_hoyle_coldloop_b0split mhd/gold_hoyle_core mhd/equi_split_slab
 FFHD_DIRS := ffhd/TI3D ffhd/spherical ffhd/cylindrical \
              ffhd/spherical_pole ffhd/cylindrical_pole \
              ffhd/log_spherical ffhd/log_cylindrical

@@ -1,0 +1,72 @@
+! Gold-Hoyle rope with B0 splitting: the analytic field is B0, B1 starts at zero.
+
+ &usr_list
+   setup  = 'rope'
+   rho0   = 1.0d0
+   b0     = 1.0d0
+   beta   = 0.1d0
+   qtwist = 1.0d0
+ /
+
+ &filelist
+   base_filename    = 'output/gh'
+   typefilelog      = 'special'
+   autoconvert      = T
+   convert_type     = 'vtuBCCmpi'
+   saveprim         = T
+   nwauxio          = 3
+ /
+
+ &savelist
+   itsave(1,1)      = 0
+   itsave(1,2)      = 0
+   dtsave_log       = 0.5d0
+   dtsave_dat       = 10.0d0
+ /
+
+ &stoplist
+   time_max         = 50.0d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'hll'
+   limiter         = 20*'vanleer'
+   phys            = 'mhd'
+ /
+
+ &boundlist
+   ! exact equilibrium in the ghost cells across the rope, periodic along it
+   typeboundary_min1 = 8*'special'
+   typeboundary_max1 = 8*'special'
+   typeboundary_min2 = 8*'special'
+   typeboundary_max2 = 8*'special'
+   typeboundary_min3 = 8*'periodic'
+   typeboundary_max3 = 8*'periodic'
+   specialboundary   = .true.
+ /
+
+ &meshlist
+   max_blocks         = 4096
+   refine_max_level   = 1
+   block_nx1          = 16
+   block_nx2          = 16
+   block_nx3          = 16
+   domain_nx1         = 128
+   domain_nx2         = 128
+   domain_nx3         = 16
+   xprobmin1          = -4.0d0
+   xprobmax1          =  4.0d0
+   xprobmin2          = -4.0d0
+   xprobmax2          =  4.0d0
+   xprobmin3          =  0.0d0
+   xprobmax3          =  1.0d0
+ /
+
+ &paramlist
+   courantpar       = 0.4d0
+ /
+
+ &mhd_list
+   mhd_b0_split = .true.
+ /
