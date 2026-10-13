@@ -701,7 +701,12 @@ contains
   !> makes no assumption about where in w they live.
   subroutine fill_nwextra_device(igrid)
     use mod_global_parameters
+#:if defined('EQUISPLIT')
+    use mod_physics_vars, only: iw_rho0, iw_p0
+    use mod_usr, only: usr_equilibrium
+#:else
     use mod_usr, only: usr_set_nwextra
+#:endif
 
     integer, intent(in) :: igrid
 
@@ -716,10 +721,14 @@ contains
        do ix2 = ixGlo2, ixGhi2
           do ix1 = ixGlo1, ixGhi1
              xloc(1:ndim) = bgeo%x(ix1,ix2,ix3,1:ndim,igrid)
+#:if defined('EQUISPLIT')
+             call usr_equilibrium(xloc, bg(1)%w(ix1,ix2,ix3,iw_rho0,igrid), bg(1)%w(ix1,ix2,ix3,iw_p0,igrid))
+#:else
              call usr_set_nwextra(xloc, wx(1:nwextra))
              do iwx = 1, nwextra
                 bg(1)%w(ix1,ix2,ix3, iw_extra(iwx), igrid) = wx(iwx)
              end do
+#:endif
           end do
        end do
     end do

@@ -85,6 +85,15 @@ contains
     end select
 end subroutine finite_volume_local
 
+#:def SUBTRACT_EQUILIBRIUM(i1, i2, i3)
+#:if defined('EQUISPLIT')
+                do ieq = 1, 5
+                   tmp(iw_rho, ieq) = tmp(iw_rho, ieq) - bga%w(${i1}$, ${i2}$, ${i3}$, iw_rho0, n)
+                   tmp(iw_e, ieq)   = tmp(iw_e, ieq) - bga%w(${i1}$, ${i2}$, ${i3}$, iw_p0, n)
+                end do
+#:endif
+#:enddef
+
 #:def FV_KERNEL(scheme_tag, faceflux_proc)
   subroutine finite_volume_local_${scheme_tag}$(qdt, dtfactor, ixImin1,ixImin2,&
      ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
@@ -113,6 +122,9 @@ end subroutine finite_volume_local
     integer                :: typelim
     real(dp)               :: xloc(ndim)
     real(dp)               :: xlocC(ndim,2)
+#:if defined('EQUISPLIT')
+    integer                :: ieq
+#:endif
     real(dp)               :: wprim(nw_phys), wCT(nw_phys), wnew(nw_phys)
     ! Block corner in the logical coordinate, for building face positions.
     real(dp)               :: xlo(ndim)
@@ -183,7 +195,7 @@ end subroutine finite_volume_local
              end do
           end do
 
-       ${GPU_LOOP_VECTOR("collapse(ndim) private(f, wnew, tmp, xlocC, xloc" + (", wCT" if defined('SOURCE_LOCAL') else "") + (", wprim" if defined('SOURCE_LOCAL') or GEOM != 'Cartesian' else "") + (", inv_dvol, dAdV" if GEOM != 'Cartesian' else "") + (", tmp1,tmp2,tmp3" if defined('SOURCE_COMPACT') else "") + (", dloc" if defined('SOURCE_LOCAL') or defined('SOURCE_NONLOCAL') or defined('SOURCE_COMPACT') else "") + ")")}$
+       ${GPU_LOOP_VECTOR("collapse(ndim) private(f, wnew, tmp, xlocC, xloc" + (", wCT" if defined('SOURCE_LOCAL') else "") + (", wprim" if defined('SOURCE_LOCAL') or GEOM != 'Cartesian' else "") + (", inv_dvol, dAdV" if GEOM != 'Cartesian' else "") + (", tmp1,tmp2,tmp3" if defined('SOURCE_COMPACT') else "") + (", dloc" if defined('SOURCE_LOCAL') or defined('SOURCE_NONLOCAL') or defined('SOURCE_COMPACT') else "") + (", ieq" if defined('EQUISPLIT') else "") + ")")}$
        do ix3=ixOmin3,ixOmax3 
           do ix2=ixOmin2,ixOmax2 
              do ix1=ixOmin1,ixOmax1 
@@ -232,6 +244,7 @@ end subroutine finite_volume_local
                 xlocC(1,1) = log_ra*dexp(xlocC(1,1)) + log_rb
                 xlocC(1,2) = log_ra*dexp(xlocC(1,2)) + log_rb
 #:endif
+@:SUBTRACT_EQUILIBRIUM(ix1-3+ieq, ix2, ix3)
                 call ${faceflux_proc}$(tmp, xlocC, 1, f, typelim)
 #:if GEOM == 'Cartesian'
                 bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
@@ -288,6 +301,7 @@ end subroutine finite_volume_local
                 xlocC(1:ndim,2) = xloc(1:ndim)
                 xlocC(2,1) = xlo(2) + dble(ix2-nghostcells-1)*dr(2)
                 xlocC(2,2) = xlocC(2,1) + dr(2)
+@:SUBTRACT_EQUILIBRIUM(ix1, ix2-3+ieq, ix3)
                 call ${faceflux_proc}$(tmp, xlocC, 2, f, typelim)
 #:if GEOM == 'Cartesian'
                 bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
@@ -344,6 +358,7 @@ end subroutine finite_volume_local
                 xlocC(1:ndim,2) = xloc(1:ndim)
                 xlocC(3,1) = xlo(3) + dble(ix3-nghostcells-1)*dr(3)
                 xlocC(3,2) = xlocC(3,1) + dr(3)
+@:SUBTRACT_EQUILIBRIUM(ix1, ix2, ix3-3+ieq)
                 call ${faceflux_proc}$(tmp, xlocC, 3, f, typelim)
 #:if GEOM == 'Cartesian'
                 bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
@@ -574,6 +589,27 @@ end subroutine finite_volume_local
 
   !> MUSCL reconstruction in primitive variables for two faces using a 5-point stencil.
   !> Returns uL(:,iface), uR(:,iface) for iface=1 (between cells 2-3) and iface=2 (between 3-4).
+#:if defined('EQUISPLIT')
+  !> face states from reconstructed deviations: add the equilibrium at each face
+  subroutine add_equilibrium(xlocC, uL, uR)
+    use mod_usr, only: usr_equilibrium
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(in)    :: xlocC(1:ndim, 2)
+    real(dp), intent(inout) :: uL(nw_phys,2), uR(nw_phys,2)
+    real(dp) :: xface(1:ndim), rho_eq, p_eq
+    integer  :: iface
+
+    do iface = 1, 2
+      xface(1:ndim) = xlocC(1:ndim, iface)
+      call usr_equilibrium(xface, rho_eq, p_eq)
+      uL(iw_rho, iface) = uL(iw_rho, iface) + rho_eq
+      uR(iw_rho, iface) = uR(iw_rho, iface) + rho_eq
+      uL(iw_e, iface)   = uL(iw_e, iface) + p_eq
+      uR(iw_e, iface)   = uR(iw_e, iface) + p_eq
+    end do
+  end subroutine add_equilibrium
+#:endif
+
   pure subroutine muscl_reconstruct_prim(u, typelim, uL, uR)
     use mod_limiter, only: limiter_minmod, limiter_vanleer, limiter_mcbeta, limiter_koren
     ${GPU_ROUTINE_SEQ()}$
@@ -812,6 +848,9 @@ end subroutine finite_volume_local
     integer  :: iface
 
     call muscl_reconstruct_prim(u, typelim, uL, uR)
+#:if defined('EQUISPLIT')
+    call add_equilibrium(xlocC, uL, uR)
+#:endif
 
     do iface=1,2
       call riemann_hll_prim(uL(:,iface), uR(:,iface), xlocC(:,iface), flux_dim, flux(:,iface))
@@ -841,6 +880,9 @@ end subroutine finite_volume_local
 #:endif
 
     call muscl_reconstruct_prim(u, typelim, uL, uR)
+#:if defined('EQUISPLIT')
+    call add_equilibrium(xlocC, uL, uR)
+#:endif
 
 #:if defined('FLUX_AD')
     ! Rempel et al. (2009): reduce dissipation where reconstruction and cell-centre agree in sign
@@ -885,6 +927,9 @@ end subroutine finite_volume_local
     integer  :: iface
 
     call muscl_reconstruct_prim(u, typelim, uL, uR)
+#:if defined('EQUISPLIT')
+    call add_equilibrium(xlocC, uL, uR)
+#:endif
     do iface=1,2
       call riemann_hllc_prim(uL(:,iface), uR(:,iface), xlocC(:,iface), flux_dim, flux(:,iface))
     end do

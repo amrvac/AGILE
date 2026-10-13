@@ -91,6 +91,21 @@ module mod_usr_methods
   !     double precision, intent(in)  :: x(1:ndim)
   !     double precision, intent(out) :: b0(3) / j0(3)
   !
+  ! Equilibrium splitting (mhd_equi_split, with mhd_b0_split): a static
+  ! rho0(x), p0(x) with grad p0 = J0 x B0. Faces are reconstructed from
+  ! rho - rho0 and p - p0, the momentum flux carries p - p0 and the J0 x B0
+  ! force is dropped, so the equilibrium is held to round-off. The grid still
+  ! holds the full rho and e, except inside the ghost-cell update, where the
+  ! equilibrium is taken out: usr_special_bc sets rho - rho0 and e - p0/(gamma-1).
+  ! rho0 and p0 at cell centres live in the nwextra slots iw_rho0, iw_p0,
+  ! filled by fill_nwextra_device; usr_equilibrium is called directly only at
+  ! faces. An EQUISPLIT case needs no usr_set_nwextra.
+  !
+  !   pure subroutine usr_equilibrium(x, rho0, p0)
+  !     GPU_ROUTINE_SEQ()
+  !     double precision, intent(in)  :: x(1:ndim)
+  !     double precision, intent(out) :: rho0, p0
+  !
   ! The pointers below are the inherited host-side interface and are unused.
 
   ! Set time-independent magnetic field for B0 splitting

@@ -60,6 +60,12 @@
   integer, public                         :: p_
   ${GPU_DECLARE_CREATE('p_')}$
 
+#:if defined('EQUISPLIT')
+  !> Indices of the static equilibrium rho0, p0 (nwextra, from usr_equilibrium)
+  integer, public                         :: iw_rho0, iw_p0
+  ${GPU_DECLARE_CREATE('iw_rho0, iw_p0')}$
+#:endif
+
   !> Indices of the GLM psi
   integer, public :: psi_
   ${GPU_DECLARE_CREATE('psi_')}$
@@ -158,6 +164,10 @@
   !> split B = B0(x) + B1 with B0 from usr_b0_field, J0 from usr_j0_field (mesh components); evolves B1 and e - B0^2/2 - B0.B1
   logical, public                         :: mhd_b0_split = .false.
 
+  !> static equilibrium rho0(x), p0(x) from usr_equilibrium with grad p0 = J0 x B0: faces are reconstructed
+  !> from the deviations and neither force is differenced, so the equilibrium is held to round-off
+  logical, public                         :: mhd_equi_split = .false.
+
   !> switch for radiative cooling
   logical, public                         :: mhd_radiative_cooling = .false.
   ${GPU_DECLARE_COPYIN('mhd_radiative_cooling')}$
@@ -185,7 +195,7 @@
       mhd_hyperbolic_thermal_conduction_anisotropic, &
       tc_kappa_par, tc_kappa_perp, &
       H_ion_fr, He_ion_fr, He_ion_fr2, &
-      mhd_energy_only, mhd_b0_split
+      mhd_energy_only, mhd_b0_split, mhd_equi_split
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -378,6 +388,12 @@
     ${GPU_UPDATE_DEVICE('tracer')}$
 #:endif
 
+#:if defined('EQUISPLIT')
+    iw_rho0 = var_set_extravar('rho0', 'rho0')
+    iw_p0   = var_set_extravar('p0', 'p0')
+    ${GPU_UPDATE_DEVICE('iw_rho0, iw_p0')}$
+#:endif
+
     ! set number of variables which need update ghostcells
     nwgc=nwflux
     ${GPU_UPDATE_DEVICE('nwgc')}$
@@ -495,9 +511,11 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
      vxb(1) = wCTprim(iw_mom(2))*bt(3) - wCTprim(iw_mom(3))*bt(2)
      vxb(2) = wCTprim(iw_mom(3))*bt(1) - wCTprim(iw_mom(1))*bt(3)
      vxb(3) = wCTprim(iw_mom(1))*bt(2) - wCTprim(iw_mom(2))*bt(1)
+#:if not defined('EQUISPLIT')
      wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt*(j0(2)*b0(3) - j0(3)*b0(2))
      wnew(iw_mom(2)) = wnew(iw_mom(2)) + qdt*(j0(3)*b0(1) - j0(1)*b0(3))
      wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt*(j0(1)*b0(2) - j0(2)*b0(1))
+#:endif
      wnew(iw_e) = wnew(iw_e) - qdt*(j0(1)*vxb(1) + j0(2)*vxb(2) + j0(3)*vxb(3))
 #:endif
 
@@ -833,12 +851,18 @@ end subroutine addsource_geometry
 #:if defined('B0SPLIT')
     use mod_usr, only: usr_b0_field
 #:endif
+#:if defined('EQUISPLIT')
+    use mod_usr, only: usr_equilibrium
+#:endif
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys)
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim
     real(dp), intent(out) :: flux(nw_flux)
     real(dp)              :: ptotal, bt(3), b0(3)
+#:if defined('EQUISPLIT')
+    real(dp)              :: rho_eq, p_eq
+#:endif
 #:if defined('HYPERTC') and not defined('HYPERTC_ANISO')
     real(dp)              :: Bmag2_tc, Bmag_tc
 #:endif
@@ -878,6 +902,10 @@ end subroutine addsource_geometry
     ptotal=u(iw_e)+u(iw_mag(1))*bt(1)+u(iw_mag(2))*bt(2)+u(iw_mag(3))*bt(3)-&
       0.5_dp*(u(iw_mag(1))**2+u(iw_mag(2))**2+u(iw_mag(3))**2)
     flux(iw_mom(flux_dim))=flux(iw_mom(flux_dim))+ptotal
+#:if defined('EQUISPLIT')
+    call usr_equilibrium(xC, rho_eq, p_eq)
+    flux(iw_mom(flux_dim))=flux(iw_mom(flux_dim))-p_eq
+#:endif
 
     ! Energy flux: v (e1 + ptotal) - Bt (v.B1), e1 = e_int + kinetic + B1^2/2
     flux(iw_e)=u(iw_mom(flux_dim))*(u(iw_e)*inv_gamma_1+0.5_dp*&
