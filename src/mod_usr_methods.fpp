@@ -80,6 +80,34 @@ module mod_usr_methods
   ! (r,z,phi)), and the case must return it already normalised - the filler
   ! writes it verbatim.
 
+  ! B0 splitting (mhd_b0_split): B = B0(x) + B1, evolving B1 and the energy
+  ! without B0^2/2 and B0.B1. Two by-name device routines, evaluated on the
+  ! fly wherever the field is needed (fluxes, wave speeds, conduction, the
+  ! J0 source terms), so nothing is stored:
+  !
+  !   pure subroutine usr_b0_field(x, b0)   ! B0 at x
+  !   pure subroutine usr_j0_field(x, j0)   ! curl B0 at x, in the mesh's component order
+  !     GPU_ROUTINE_SEQ()
+  !     double precision, intent(in)  :: x(1:ndim)
+  !     double precision, intent(out) :: b0(3) / j0(3)
+  !
+  ! Equilibrium splitting (mhd_equi_split, with mhd_b0_split): a static
+  ! rho0(x), p0(x) with grad p0 = J0 x B0. Faces are reconstructed from
+  ! rho - rho0 and p - p0, the momentum flux carries p - p0 and the J0 x B0
+  ! force is dropped, so the equilibrium is held to round-off. The grid still
+  ! holds the full rho and e, except inside the ghost-cell update, where the
+  ! equilibrium is taken out: usr_special_bc sets rho - rho0 and e - p0/(gamma-1).
+  ! rho0 and p0 at cell centres live in the nwextra slots iw_rho0, iw_p0,
+  ! filled by fill_nwextra_device; usr_equilibrium is called directly only at
+  ! faces. An EQUISPLIT case needs no usr_set_nwextra.
+  !
+  !   pure subroutine usr_equilibrium(x, rho0, p0)
+  !     GPU_ROUTINE_SEQ()
+  !     double precision, intent(in)  :: x(1:ndim)
+  !     double precision, intent(out) :: rho0, p0
+  !
+  ! The pointers below are the inherited host-side interface and are unused.
+
   ! Set time-independent magnetic field for B0 splitting
   procedure(set_B0), pointer          :: usr_set_B0           => null()
   ! Set time-independent variables for equilibrium splitting, except for B0

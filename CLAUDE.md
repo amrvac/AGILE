@@ -1013,6 +1013,128 @@ Consequences:
   `correct_output/blast.log` changed when the frozen field moved to
   `usr_set_nwextra`.
 
+## Background-field splitting (`mhd_b0_split`)
+
+`mhd_b0_split = .true.` in `&mhd_list` (fypp flag `B0SPLIT`, any geometry)
+evolves B = B0(x) + B1 with a static B0 supplied by the case. The grid holds
+B1 in the `mag` slots and e1 = p/(gamma-1) + rho v^2/2 + B1^2/2 as the energy,
+so the pressure is recovered from small quantities and is no longer the
+difference of two large numbers at low beta. The flux algebra is MPI-AMRVAC's
+`mhd_get_flux_split`: momentum and induction fluxes in the total field,
+ptotal = p + B0.B1 + B1^2/2, energy flux v (e1 + ptotal) - Bt (v.B1) — **not**
+the unsplit shortcut `2 ptotal - p`, which counts B0.B1 twice once the field
+is split — plus the J0 x B0 momentum and -J0.(v x Bt) energy sources in
+`addsource_local`. The wave speeds and the hyperbolic conduction's field
+direction use the total field. Nothing is stored: B0 and J0 are two by-name
+device routines in `mod_usr`, `usr_b0_field(x, b0)` and `usr_j0_field(x, j0)`,
+in the components of the mesh's own basis (see `mod_usr_methods.fpp`).
+`usr_j0_field` returns the *index* cross product curl: the cylindrical
+(r, z, phi) mesh is left-handed, so there j_z = -(r B_phi)'/r and
+j_phi = B_z', the negative of the textbook components. A force-free field
+cannot tell the difference; a force-balanced one doubles its imbalance.
+
+None of this is geometry-specific, because MHD's `addsource_geometry`
+contains no physics of its own: it calls `get_flux` at the cell centre and
+contracts the flux tensor with the metric, for each vector U (momentum, B),
+s[U_r] = F_phi(U_phi) <1/r>, s[U_phi] = -F_phi(U_r) <1/r> in cylindrical and
+the three corresponding terms with <cot(theta)/r> in spherical, with the same
+discrete `dAdV` factors as before. Whatever `get_flux` computes - the split,
+the GLM terms, energy-only mode - carries into the curvature terms, and a
+change to the flux never needs a per-geometry counterpart. The six
+`tests/mhd/{spherical,cylindrical}*` directories pin the unsplit result.
+
+The heat-flux vector of `HYPERTC_ANISO` is a vector at a reflecting wall and
+at the polar axis: `read_par_files` gives its normal component `asymm` where
+the normal momentum has it, and flips its mirrored and phi components at a
+pole along with those of the momentum and B.
+
+For a case: `initonegrid_usr` and `usr_special_bc` set B1 (zero for an
+equilibrium that is entirely B0), snapshots hold B1, so diagnostics add B0
+back themselves. `tests/mhd/gold_hoyle_b0split` holds the Gold-Hoyle rope to
+round-off (max |v| ~ 1e-17 against 2.6e-3 unsplit at 16 cells per core
+radius; flip `mhd_b0_split` for the total-field twin);
+`tests/mhd/gold_hoyle_coldloop_b0split` and `tests/mhd/gold_hoyle_core` are
+the non-adiabatic cold loops, Cartesian and on the cylindrical mesh from the
+axis to the wall.
+
+Numerical cross-field heat transport on that rope (energy-only mode, a hot
+column on a flux surface) is the scheme's dissipation of e on the smooth
+profile, about 0.16 v_fast dx (dx/sigma)^2 with hll/vanleer, converging at
+third order and independent of kappa_par; the hyperbolic conduction's own
+leakage is below it. At T ~ 3e4 K this exceeds the physical parallel
+conduction unless dx/sigma is well below 1/30.
+
+### Equilibrium splitting (`mhd_equi_split`)
+
+`mhd_equi_split = .true.` (fypp flag `EQUISPLIT`, implies `mhd_b0_split`) is
+for a static equilibrium that is not force-free: rho0(x), p0(x) with
+grad p0 = J0 x B0, supplied by one more by-name device routine,
+`usr_equilibrium(x, rho0, p0)`. With `mhd_b0_split` alone the pressure
+gradient is differenced on the mesh while J0 x B0 is analytic, so they cancel
+only to truncation error. The splitting removes every place where the
+equilibrium is differenced, without changing what the grid stores (still the
+full rho and e, so cooling, conduction, output and diagnostics are untouched):
+
+- `mod_finite_volume`: the five-cell stencil handed to the reconstruction
+  holds rho - rho0 and p - p0 (equilibrium at each cell's `bgeo%x`), and
+  `add_equilibrium` puts rho0, p0 at the face position back onto uL, uR. At
+  equilibrium uL = uR exactly, so the Riemann solver adds no dissipation to
+  the equilibrium profile either.
+- `get_flux`: the momentum flux carries p - p0; `addsource_geometry` inherits
+  that through `get_flux`.
+- `addsource_local`: the J0 x B0 momentum source is dropped (it cancels
+  grad p0); the -J0.(v x Bt) energy source stays.
+- `getbc`: `shift_equilibrium` takes rho0 and p0/(gamma-1) out of every block
+  before the ghost-cell update and puts them back after it, so restriction,
+  prolongation and boundary values act on deviations. **A case's
+  `usr_special_bc` therefore sets rho - rho0 and e - p0/(gamma-1)** (zero for
+  "hold the equilibrium").
+
+The cell-centre rho0 and p0 are stored the way ffhd stores its frozen field:
+`EQUISPLIT` implies `FILL_NWEXTRA_ANALYTIC`, the MHD module registers `rho0`,
+`p0` with `var_set_extravar` (`iw_rho0`, `iw_p0`), and `fill_nwextra_device`
+writes them from `usr_equilibrium` into every cell of every block, ghosts
+included. The reconstruction stencil and `shift_equilibrium` read those
+slots; only the face values (`add_equilibrium`, `get_flux`) call
+`usr_equilibrium`. They appear in snapshots as `rho0`, `p0`. In a
+`FILL_NWEXTRA_ANALYTIC` build `read_snapshot` pushes only `1:nwgc` to the
+device, so a restart keeps the extras `alloc_node` filled rather than the
+file's copy (which may be absent or stale); other builds restore all `nw`.
+
+`tests/mhd/equi_split_slab` is the regression test: a periodic
+pressure-balanced slab (rho0, p0 and B0z modulated, p0 + B0z^2/2 uniform)
+held to 1e-16 in rho, p and v for a sound-crossing time, also across frozen
+level jumps, where the same case with the splitting off drifts to 5 %. Not
+covered: gravity (a stratified equilibrium would need (rho - rho0) g), and
+regridding still prolongs the full variables. The force-balanced rope on the
+cylindrical mesh (axis, special wall) grows an axisymmetric error at level
+jumps that the Cartesian slab does not show; unexplained.
+
+## MHD units and cooling notes
+
+- `unit_magneticfield = sqrt(4 pi unit_pressure)` is set in `phys_units`
+  (it was left at 1 before, which scaled the Braginskii kappa_perp through
+  `htc_Cchi` by the field unit). `H_ion_fr`, `He_ion_fr`, `He_ion_fr2` in
+  `&mhd_list` enter b = 1 + H_ion_fr + He_abundance (...), the particles per
+  hydrogen nucleus in p = b n kB T; the defaults give the old
+  b = 2 + 3 He_abundance, and `He_abundance = 0, H_ion_fr = 0` gives
+  Legolas' p = n k T.
+- `tc_kappa_perp_factor` (`&mhd_list`, default 1) multiplies the Braginskii
+  kappa_perp = kappa_par/(1 + chi^2); it is how a Legolas run's `lambda`
+  enhancement is matched. Legolas' Braginskii constant is ~15x AGILE's, and
+  its Spitzer prefactor 2 % off; `tests/mhd/gold_hoyle_core/mod_usr.fpp`
+  converts explicitly.
+- The exact-integration cooling (`coolmethod = 'exact'`, the only method)
+  needs the Townsend Y(T) and its inverse to describe the same Lambda(T) as
+  the table: both are evaluated analytically per fine-table segment with
+  Lambda linear in T between points (`segment_integral`, `findY`, `findT`).
+  The previous linear interpolation of Y made Lambda piecewise constant
+  between points, so a perturbation smaller than the table spacing saw
+  dLambda/dT = 0: fine for bulk cooling, wrong for a linear thermal
+  instability. `cooling_curve = 'Rosner'` (Rosner/Priest piecewise power law)
+  is interpolated linearly in log-log onto the fine table, not quadratically,
+  so its breaks stay sharp.
+
 ## Writing a new simulation case (`mod_usr.fpp`)
 
 Every case directory has a `mod_usr.fpp` defining `module mod_usr` with a
@@ -1031,6 +1153,26 @@ The physics module itself (hd/mhd/ffhd/srhd) is selected via `phys` in
 `agile.par`'s `&methodlist`, which the config system turns into a `PHYS`
 fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
 `mod_*_templates.fpp` files.
+
+### Legolas eigenmodes as initial perturbation (`mod_gimli`)
+
+`src/io/mod_gimli.fpp` reads the `.ldat` file that Pylbo's GIMLI writes for
+MPI-AMRVAC (`Amrvac.prepare_legolas_data`: rho, v, p, B eigenfunctions on the
+Legolas radial grid, `k2`, `k3`, and the units) and adds
+Re[f(r) exp(i (k2 theta + k3 z))] to the primitive variables, with
+MPI-AMRVAC's `mod_gimli` interface and conventions: `read_legolas_data(file,
+file_id)` in `usr_init`, then in `usr_init_one_grid`, after the equilibrium
+and before `phys_to_conserved`, `add_perturbation_to_w_array(..., w, iw, x)`
+for `iw = 1, nw` (a no-op for anything but rho, mom, p, mag). hd and mhd,
+host only. The one addition to upstream is the mesh mapping: a cylindrical
+Legolas mode is evaluated at (r, theta, z) of each cell and its vector
+components rotated to (x, y, z) on a Cartesian mesh or mapped onto `r_`,
+`phi_`, `z_` on the (r, z, phi) mesh. The file's units are checked against
+the case's at first use (to 1e-3) and a mismatch stops the run: the mode is
+in code units, so the Legolas run and the case must share length, density
+and field units and the p = n k T convention (`He_abundance = 0,
+H_ion_fr = 0`). With `mhd_b0_split` the field perturbation lands in B1.
+`tests/mhd/gold_hoyle_core/agile.par` (not the regression run) uses it.
 
 ## Code architecture
 
@@ -1135,6 +1277,23 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   This is very likely the same defect as issue #154
   (`to_primitive`/`to_conservative` called from a `collapse`d loop in
   `specialbound_usr` returning nonsense).
+
+- **An array expression passed as an actual argument inside a device kernel
+  is a heap allocation per thread, and it fails silently once enough threads
+  are in flight.** nvfortran materialises `call f(one/dxinv(1:ndim))` in an
+  `!$acc routine` as a temporary from the device heap; with of the order of
+  1024 blocks per rank that heap (a few MB by default) runs out, the temporary
+  comes back NULL and the kernel writes to address 0 — reported later, at the
+  next `cuStreamSynchronize`, as `CUDA_ERROR_ILLEGAL_ADDRESS` in whatever
+  kernel happens to sync, so the location in the error message is unrelated
+  to the fault. Runs with few blocks per rank are fine, which is what makes it
+  look like a physics or resolution problem. `compute-sanitizer --tool memcheck
+  --report-api-errors no` (without the second flag the output is buried under
+  CUDA-aware-MPI API noise) names the kernel and line directly: this was the
+  `SOURCE_DT` branch of `setdt` in `src/mod_dt.fpp`, hit by every build with
+  radiative cooling or hyperbolic thermal conduction. Store the expression in
+  a `private` array first and pass that. Same rule for array sections that
+  are not contiguous, and for function results used as arguments.
 
 ## API documentation (FORD)
 

@@ -1,0 +1,84 @@
+! Regression run of the B0-split cold loop: the Legolas box at 64x64x8, to
+! 0.5 tau_A. The split rope has no equilibrium residual, so the coarse grid
+! is fine here.
+
+ &usr_list
+   n0_cgs   = 1.0d9      ! cm^-3
+   bc_gauss = 10.0d0     ! G
+   l_cgs    = 1.0d10     ! cm
+   beta_c   = 0.002d0
+   alpha    = 20.0d0
+   heating  = .true.
+ /
+
+ &filelist
+   base_filename    = 'test'
+   typefilelog      = 'special'
+   autoconvert      = F
+   convert_type     = 'vtuBCCmpi'
+   saveprim         = T
+   nwauxio          = 3
+ /
+
+ &savelist
+   dtsave_log       = 0.1d0
+   dtsave_dat       = 1e10
+ /
+
+ &stoplist
+   time_max         = 0.5d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'hll'
+   limiter         = 20*'vanleer'
+   phys            = 'mhd'
+ /
+
+ &boundlist
+   typeboundary_min1 = 8*'special'
+   typeboundary_max1 = 8*'special'
+   typeboundary_min2 = 8*'special'
+   typeboundary_max2 = 8*'special'
+   typeboundary_min3 = 8*'periodic'
+   typeboundary_max3 = 8*'periodic'
+   specialboundary   = .true.
+ /
+
+ &meshlist
+   max_blocks         = 64
+   refine_max_level   = 1
+   block_nx1          = 16
+   block_nx2          = 16
+   block_nx3          = 8
+   domain_nx1         = 64
+   domain_nx2         = 64
+   domain_nx3         = 8
+   xprobmin1          = -1.0d0
+   xprobmax1          =  1.0d0
+   xprobmin2          = -1.0d0
+   xprobmax2          =  1.0d0
+   xprobmin3          =  0.0d0
+   xprobmax3          =  6.283185307179586d0
+ /
+
+ &paramlist
+   courantpar       = 0.4d0
+ /
+
+ &mhd_list
+   mhd_gamma                                     = 1.6666666666666667d0
+   He_abundance                                  = 0.0d0
+   mhd_radiative_cooling                         = .true.
+   mhd_hyperbolic_thermal_conduction_anisotropic = .true.
+   mhd_source_usr                                = .true.
+   mhd_b0_split                                  = .true.
+ /
+
+ &rc_list
+   coolcurve  = 'Colgan_DM'
+   coolmethod = 'exact'
+   ncool      = 4000
+   Tfix       = .false.
+ /

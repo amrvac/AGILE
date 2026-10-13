@@ -1398,6 +1398,18 @@ contains
       end do
     end if
 
+    ! the heat-flux vector has no boundary types of its own: at a reflecting
+    ! wall its normal component flips with the normal momentum
+    if (allocated(iw_qvec)) then
+      do idim=1,ndim
+        do iside=1,2
+          iB=2*idim-2+iside
+          if (typeboundary(iw_mom(idim),iB)==bc_asymm) &
+             typeboundary(iw_qvec(idim),iB)=bc_asymm
+        end do
+      end do
+    end if
+
     if (any(typeboundary == 0)) then
       call mpistop("Not all boundary conditions have been defined")
     end if
@@ -1489,6 +1501,10 @@ contains
         if(physics_type=='mhd') then
           typeboundary(iw_mag(idim),iB)=bc_asymm
           typeboundary(iw_mag(phi_),iB)=bc_asymm
+          if(allocated(iw_qvec)) then
+            typeboundary(iw_qvec(idim),iB)=bc_asymm
+            typeboundary(iw_qvec(phi_),iB)=bc_asymm
+          end if
         end if
       end do
     end do
@@ -2480,7 +2496,11 @@ contains
               ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
                  1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
             end if
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+            ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
+#:else
             ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
+#:endif
           else
             call mpi_send_wrapper([ ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,&
                 n_values ], 2*ndim+1, MPI_INTEGER, ipe, itag, icomm, ierrmpi)
@@ -2558,7 +2578,11 @@ contains
           ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
              1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
         end if
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+        ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
+#:else
         ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
+#:endif
       end do
     end if
 

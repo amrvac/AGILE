@@ -179,6 +179,20 @@ flags = ["fypp", "hash"]
 default = false
 implies = ["mhd_list.mhd_hyperbolic_thermal_conduction"]
 
+[mhd_list.mhd_b0_split]
+type = "flag"
+name = "B0SPLIT"
+flags = ["fypp", "hash"]
+default = false
+implies = ["components.source_local"]
+
+[mhd_list.mhd_equi_split]
+type = "flag"
+name = "EQUISPLIT"
+flags = ["fypp", "hash"]
+default = false
+implies = ["mhd_list.mhd_b0_split", "components.fill_nwextra_analytic"]
+
 [mhd_list.mhd_energy_only]
 type = "flag"
 name = "MHD_ENERGY_ONLY"

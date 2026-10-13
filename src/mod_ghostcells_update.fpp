@@ -1160,6 +1160,10 @@ contains
     if (present(req_diag)) req_diagonal = req_diag
     ${GPU_UPDATE_DEVICE('req_diagonal')}$
 
+#:if defined('EQUISPLIT')
+    call shift_equilibrium(bgstep, -1.0_dp)
+#:endif
+
     ! fill internal physical boundary
     if (internalboundary) then
        call getintbc(time,ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3)
@@ -2044,11 +2048,43 @@ contains
        end do
     end if
 
+#:if defined('EQUISPLIT')
+    call shift_equilibrium(bgstep, 1.0_dp)
+#:endif
+
     time_bc=time_bc+(MPI_WTIME()-time_bcin)
 
     call nvtxEndRange
 
   end subroutine getbc
+
+#:if defined('EQUISPLIT')
+  !> ghost cells are exchanged, restricted, prolonged and given boundary values as
+  !> deviations from the static equilibrium: sgn = -1 removes it, +1 puts it back
+  subroutine shift_equilibrium(bgstep, sgn)
+    use mod_global_parameters
+    use mod_physics
+    integer, intent(in)  :: bgstep
+    real(dp), intent(in) :: sgn
+    integer  :: iigrid, igrid, ix1, ix2, ix3
+
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_DEFAULT_PRESENT()}$
+    do iigrid = 1, igridstail; igrid=igrids(iigrid);
+       ${GPU_LOOP_VECTOR("collapse(3)")}$
+       do ix3 = ixGlo3, ixGhi3
+          do ix2 = ixGlo2, ixGhi2
+             do ix1 = ixGlo1, ixGhi1
+                bg(bgstep)%w(ix1,ix2,ix3,iw_rho,igrid) = bg(bgstep)%w(ix1,ix2,ix3,iw_rho,igrid) &
+                   + sgn * bg(bgstep)%w(ix1,ix2,ix3,iw_rho0,igrid)
+                bg(bgstep)%w(ix1,ix2,ix3,iw_e,igrid)   = bg(bgstep)%w(ix1,ix2,ix3,iw_e,igrid) &
+                   + sgn * bg(bgstep)%w(ix1,ix2,ix3,iw_p0,igrid) * inv_gamma_1
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine shift_equilibrium
+#:endif
 
   logical function skip_direction(dir)
     ! This is a Cray compiler directive to force inlining.
