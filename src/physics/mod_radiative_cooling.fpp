@@ -275,6 +275,20 @@ module mod_radiative_cooling
     -25.4490197041986, -25.59789117087043, -25.748433277113637, -25.900646022928218,&
     -26.054529408314178, -26.210083433271517, -26.36730809780023, -26.52620340190032 /
 
+  !> Rosner et al. (1978) piecewise power law, extended by Priest (1982):
+  !> Lambda = 10**x_Rosner * T**a_Rosner between t_Rosner(i) and t_Rosner(i+1)
+  integer, parameter :: n_Rosner = 9
+  double precision   :: t_Rosner(1:n_Rosner+1), x_Rosner(1:n_Rosner), a_Rosner(1:n_Rosner)
+
+  data    t_Rosner / 3.00000d0, 3.89063d0, 4.30195d0, 4.575d0, 4.9d0, &
+                     5.4d0, 5.77d0, 6.315d0, 7.60457d0, 10.00000d0 /
+
+  data    x_Rosner / -69.900d0, -48.307d0, -21.850d0, -31.000d0, -21.200d0, &
+                     -10.400d0, -21.940d0, -17.730d0, -26.602d0 /
+
+  data    a_Rosner / 11.7d0, 6.15d0, 0.0d0, 2.0d0, 0.0d0, &
+                     -2.0d0, 0.0d0, -0.666666667d0, 0.5d0 /
+
   contains
 
   !> get physical quantities from simulation result in specific physics module
@@ -301,11 +315,13 @@ module mod_radiative_cooling
       double precision, dimension(:), allocatable :: t_table
       double precision, dimension(:), allocatable :: L_table
       double precision :: ratt, fact1, fact2, fact3, dL1, dL2
-      double precision :: tstep, Lstep
       integer :: ntable, i, j
       logical :: jump
+      !> the table is a power law between its points: no quadratic interpolation
+      logical :: piecewise_linear
 
       call rc_params_read(fl)
+      piecewise_linear = .false.
 
       ! Init for interpolatable tables
       allocate(fl%tcool(1:fl%ncool), fl%Lcool(1:fl%ncool))
@@ -358,6 +374,18 @@ module mod_radiative_cooling
         t_table(1:ntable) = t_TRML_wide(1:n_TRML_wide)
         L_table(1:ntable) = l_TRML_wide(1:n_TRML_wide)
 
+      case('Rosner')
+        if(mype==0)&
+        print *, 'Rosner (1978) piecewise power law, extended by Priest (1982)'
+        ntable = n_Rosner + 1
+        allocate(t_table(1:ntable))
+        allocate(L_table(1:ntable))
+        t_table(1:ntable) = t_Rosner(1:ntable)
+        L_table(1:n_Rosner) = x_Rosner(1:n_Rosner) &
+           + a_Rosner(1:n_Rosner) * t_Rosner(1:n_Rosner)
+        L_table(ntable) = x_Rosner(n_Rosner) + a_Rosner(n_Rosner) * t_Rosner(ntable)
+        piecewise_linear = .true.
+
       case default
         call mpistop("This coolingcurve is unknown")
       end select
@@ -389,7 +417,8 @@ module mod_radiative_cooling
             else 
               dL1 = L_table(j+1)-L_table(j)
               dL2 = L_table(j+2)-L_table(j+1)
-              jump =(max(dabs(dL1),dabs(dL2)) > 2*min(dabs(dL1),dabs(dL2)))
+              jump = piecewise_linear .or. &
+                 (max(dabs(dL1),dabs(dL2)) > 2*min(dabs(dL1),dabs(dL2)))
             end if
             if( jump ) then
               fact1 = (fl%tcool(i)-t_table(j+1))     &
@@ -445,13 +474,9 @@ module mod_radiative_cooling
         fl%tref = fl%tcoolmax
         fl%lref = fl%Lcool(fl%ncool)
         fl%Yc(fl%ncool) = zero
+        ! Lambda is linear in T between table points, so each segment integrates analytically
         do i=fl%ncool-1, 1, -1
-            fl%Yc(i) = fl%Yc(i+1)
-            do j=1,100
-              tstep = 1.0d-2*(fl%tcool(i+1)-fl%tcool(i))
-              call findL(fl%tcool(i+1)-j*tstep, Lstep, fl)
-              fl%Yc(i) = fl%Yc(i) + fl%lref/fl%tref*tstep/Lstep
-            end do
+            fl%Yc(i) = fl%Yc(i+1) + fl%lref/fl%tref*segment_integral(fl%tcool(i), fl%tcool(i+1), fl%Lcool(i), fl%Lcool(i+1))
         end do
       end if
 
@@ -598,9 +623,7 @@ module mod_radiative_cooling
 
     subroutine calc_l_extended (tpoint, lpoint,fl)
       ${GPU_ROUTINE_SEQ()}$
-    !  Calculate l for t beyond tcoolmax
-    !  Assumes Bremsstrahlung for the interpolated tables
-    !  Uses the power law for piecewise power laws
+    !  Calculate l for t beyond tcoolmax: Bremsstrahlung, Lambda ~ sqrt(T)
       double precision, intent(IN)  :: tpoint
       double precision, intent(OUT) :: lpoint
       type(rc_fluid), intent(in) :: fl
@@ -637,31 +660,42 @@ module mod_radiative_cooling
       double precision, intent(OUT) :: Ypoint
       type(rc_fluid), intent(in) :: fl
 
-      double precision :: lgtp
-      double precision :: y_extra,factor
-      integer :: jl,jc,jh,i
+      double precision :: lgtp, Lpoint
+      integer :: jl
 
       lgtp = dlog10(tpoint)
       jl = int((lgtp - fl%lgtcoolmin) / fl%lgstep) + 1
-      Ypoint = fl%Yc(jl)+ (tpoint-fl%tcool(jl)) &
-                * (fl%Yc(jl+1)-fl%Yc(jl)) &
-                / (fl%tcool(jl+1)-fl%tcool(jl))
+      call findL(tpoint, Lpoint, fl)
+      Ypoint = fl%Yc(jl+1) + fl%lref/fl%tref*segment_integral(tpoint, fl%tcool(jl+1), Lpoint, fl%Lcool(jl+1))
 
     end subroutine findY
+
+    !> integral of dT / Lambda(T) from t1 to t2 with Lambda linear between (t1, l1) and (t2, l2)
+    pure double precision function segment_integral(t1, t2, l1, l2)
+      ${GPU_ROUTINE_SEQ()}$
+      double precision, intent(in) :: t1, t2, l1, l2
+
+      if (abs(l2-l1) > 1.0d-8*l1) then
+        segment_integral = (t2-t1)*log(l2/l1)/(l2-l1)
+      else
+        segment_integral = 2.0d0*(t2-t1)/(l1+l2)
+      end if
+
+    end function segment_integral
 
     subroutine findT (tpoint,Ypoint,fl)
     !  Fast search option to find correct temperature 
     !  from temporal evolution function. Only possible this way because T is a monotonously
-    !  decreasing function for the interpolated tables
-    !  Uses eq. A7 from Townsend 2009 for piecewise power laws
+    !  decreasing function of Y. Inverts the analytic segment integral
+    !  (Lambda linear in T between table points).
       ${GPU_ROUTINE_SEQ()}$
 
       double precision,intent(OUT)   :: tpoint
       double precision, intent(IN) :: Ypoint
       type(rc_fluid), intent(in) :: fl
 
-      double precision :: factor
-      integer :: jl,jc,jh,i
+      double precision :: slope
+      integer :: jl,jc,jh
 
       if(Ypoint >= fl%Yc(1)) then
         tpoint = fl%tcoolmin
@@ -679,10 +713,13 @@ module mod_radiative_cooling
             jh=jc
           end if
         end do
-        ! Linear interpolation to obtain correct temperature
-        tpoint = fl%tcool(jl)+ (Ypoint-fl%Yc(jl)) &
-                * (fl%tcool(jl+1)-fl%tcool(jl)) &
-                / (fl%Yc(jl+1)-fl%Yc(jl))
+        ! invert the analytic segment integral (Lambda linear in T)
+        slope = (fl%Lcool(jl+1)-fl%Lcool(jl))/(fl%tcool(jl+1)-fl%tcool(jl))
+        if (abs(fl%Lcool(jl+1)-fl%Lcool(jl)) > 1.0d-8*fl%Lcool(jl)) then
+          tpoint = fl%tcool(jl) + (fl%Lcool(jl+1)*exp(-slope*(Ypoint-fl%Yc(jl+1))*fl%tref/fl%lref) - fl%Lcool(jl))/slope
+        else
+          tpoint = fl%tcool(jl+1) - (Ypoint-fl%Yc(jl+1))*fl%tref/fl%lref*0.5d0*(fl%Lcool(jl)+fl%Lcool(jl+1))
+        end if
       end if
 
     end subroutine findT
