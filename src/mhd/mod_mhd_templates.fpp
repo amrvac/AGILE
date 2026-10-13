@@ -119,6 +119,10 @@
   double precision, public                :: tc_kappa_perp = -1.0d0
   ${GPU_DECLARE_COPYIN('tc_kappa_perp')}$
 
+  !> Braginskii closure: sig_perp = tc_kappa_perp_factor * sig_par / (1 + chi^2)
+  double precision, public                :: tc_kappa_perp_factor = 1.0d0
+  ${GPU_DECLARE_COPYIN('tc_kappa_perp_factor')}$
+
   ! HYPERTC_ANISO implies HYPERTC (enforced in config_schema.toml)
 #:if defined('HYPERTC')
   !> sig_par = tc_kappa0_par * Te^2.5; if <= 0 and tc_kappa_par <= 0, set from Spitzer in phys_units()
@@ -193,7 +197,7 @@
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
       mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
       mhd_hyperbolic_thermal_conduction_anisotropic, &
-      tc_kappa_par, tc_kappa_perp, &
+      tc_kappa_par, tc_kappa_perp, tc_kappa_perp_factor, &
       H_ion_fr, He_ion_fr, He_ion_fr2, &
       mhd_energy_only, mhd_b0_split, mhd_equi_split
 
@@ -204,7 +208,7 @@
     end do
 
     ${GPU_UPDATE_DEVICE('mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity')}$
-    ${GPU_UPDATE_DEVICE('tc_kappa_par, tc_kappa_perp')}$
+    ${GPU_UPDATE_DEVICE('tc_kappa_par, tc_kappa_perp, tc_kappa_perp_factor')}$
 
   end subroutine read_params
 #:enddef
@@ -679,7 +683,7 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
       sig_perp = tc_kappa_perp
     else
       chi      = htc_Cchi * Bmag * Te_c**1.5d0 / rho_c
-      sig_perp = sig_par / (1.0d0 + chi**2)
+      sig_perp = tc_kappa_perp_factor * sig_par / (1.0d0 + chi**2)
     end if
 
     ! ---- 6. Saturation and relaxation times (per channel) ----
