@@ -80,6 +80,19 @@ module mod_usr_methods
   ! (r,z,phi)), and the case must return it already normalised - the filler
   ! writes it verbatim.
 
+  ! B0 splitting (mhd_b0_split): B = B0(x) + B1, evolving B1 and the energy
+  ! without B0^2/2 and B0.B1. Two by-name device routines, evaluated on the
+  ! fly wherever the field is needed (fluxes, wave speeds, conduction, the
+  ! J0 source terms), so nothing is stored:
+  !
+  !   pure subroutine usr_b0_field(x, b0)   ! B0 at x
+  !   pure subroutine usr_j0_field(x, j0)   ! curl B0 at x, in the mesh's component order
+  !     GPU_ROUTINE_SEQ()
+  !     double precision, intent(in)  :: x(1:ndim)
+  !     double precision, intent(out) :: b0(3) / j0(3)
+  !
+  ! The pointers below are the inherited host-side interface and are unused.
+
   ! Set time-independent magnetic field for B0 splitting
   procedure(set_B0), pointer          :: usr_set_B0           => null()
   ! Set time-independent variables for equilibrium splitting, except for B0

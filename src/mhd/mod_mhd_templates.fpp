@@ -155,6 +155,9 @@
   logical, public                         :: mhd_partial_ionization = .false.
   ${GPU_DECLARE_COPYIN('mhd_partial_ionization')}$
 
+  !> split B = B0(x) + B1 with B0 from usr_b0_field, J0 from usr_j0_field (mesh components); evolves B1 and e - B0^2/2 - B0.B1
+  logical, public                         :: mhd_b0_split = .false.
+
   !> switch for radiative cooling
   logical, public                         :: mhd_radiative_cooling = .false.
   ${GPU_DECLARE_COPYIN('mhd_radiative_cooling')}$
@@ -182,7 +185,7 @@
       mhd_hyperbolic_thermal_conduction_anisotropic, &
       tc_kappa_par, tc_kappa_perp, &
       H_ion_fr, He_ion_fr, He_ion_fr2, &
-      mhd_energy_only
+      mhd_energy_only, mhd_b0_split
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -464,6 +467,9 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 #:if defined('COOLING')
   use mod_radiative_cooling, only: rc_fl, radiative_cooling_add_source
 #:endif
+#:if defined('B0SPLIT')
+  use mod_usr, only: usr_b0_field, usr_j0_field
+#:endif
   use mod_global_parameters, only:cmax_global
   ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
@@ -474,11 +480,26 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
   ! .. local ..
   integer                  :: idim
   real(dp)                 :: field
+#:if defined('B0SPLIT')
+  real(dp)                 :: b0(3), j0(3), bt(3), vxb(3)
+#:endif
 
   if (.not. qsourcesplit) then 
      !---------------------------------
      ! unsplit sources
      !---------------------------------
+#:if defined('B0SPLIT')
+     call usr_b0_field(x, b0)
+     call usr_j0_field(x, j0)
+     bt(1:3) = wCTprim(iw_mag(1:3)) + b0(1:3)
+     vxb(1) = wCTprim(iw_mom(2))*bt(3) - wCTprim(iw_mom(3))*bt(2)
+     vxb(2) = wCTprim(iw_mom(3))*bt(1) - wCTprim(iw_mom(1))*bt(3)
+     vxb(3) = wCTprim(iw_mom(1))*bt(2) - wCTprim(iw_mom(2))*bt(1)
+     wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt*(j0(2)*b0(3) - j0(3)*b0(2))
+     wnew(iw_mom(2)) = wnew(iw_mom(2)) + qdt*(j0(3)*b0(1) - j0(1)*b0(3))
+     wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt*(j0(1)*b0(2) - j0(2)*b0(1))
+     wnew(iw_e) = wnew(iw_e) - qdt*(j0(1)*vxb(1) + j0(2)*vxb(2) + j0(3)*vxb(3))
+#:endif
 
 #:if defined('GRAVITY')
      do idim = 1, ndim
@@ -515,6 +536,9 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
 #:if defined('HYPERTC')
   use mod_global_parameters, only: dt, ndir, smalldouble, courantpar
 #:endif
+#:if defined('B0SPLIT')
+  use mod_usr, only: usr_b0_field
+#:endif
   ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
@@ -534,6 +558,7 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
     real(dp) :: q_sat, f_sat_par, f_sat_perp, tau_par, tau_perp
     real(dp) :: cf2_tc, cmax2_tc
     real(dp) :: Qpar_proj, Qperp_proj_k
+    real(dp) :: btc(3), b0c(3)
     integer  :: k_tc
 #:endif
 
@@ -589,6 +614,11 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
 #:endif
 
 #:if defined('HYPERTC')
+    btc(1:3) = wCTprim1(iw_mag(1:3),2)
+#:if defined('B0SPLIT')
+    call usr_b0_field(x, b0c)
+    btc(1:3) = btc(1:3) + b0c(1:3)
+#:endif
     ! ---- 1. Local thermodynamic state ----
     Te_c  = wCTprim1(iw_e,2) / wCTprim1(iw_rho,2)
     rho_c = wCTprim1(iw_rho,2)
@@ -606,12 +636,12 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
     ! ---- 3. Field direction ----
     Bmag2 = 0.0d0
     do k_tc = 1, ndir
-      Bmag2 = Bmag2 + wCTprim1(iw_mag(k_tc),2)**2
+      Bmag2 = Bmag2 + btc(k_tc)**2
     end do
     Bmag       = sqrt(Bmag2)
     Bmag2_safe = max(Bmag2, smalldouble**2)
     do k_tc = 1, ndir
-      bhat(k_tc) = wCTprim1(iw_mag(k_tc),2) * Bmag / Bmag2_safe
+      bhat(k_tc) = btc(k_tc) * Bmag / Bmag2_safe
     end do
 
     ! ---- 4. Decompose gradT into parallel scalar + perpendicular vector ----
@@ -639,7 +669,7 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
     cmax2_tc = 0.0d0
     do k_tc = 1, ndim
       cmax2_tc = max(cmax2_tc, 0.5d0*(cf2_tc + sqrt(abs( &
-           cf2_tc**2 - 4.0d0*mhd_gamma*pth_c*wCTprim1(iw_mag(k_tc),2)**2/rho_c**2))))
+           cf2_tc**2 - 4.0d0*mhd_gamma*pth_c*btc(k_tc)**2/rho_c**2))))
     end do
     q_sat      = 1.5d0 * rho_c * (pth_c / rho_c)**1.5d0
     f_sat_par  = 1.0d0 / (1.0d0 + abs(sig_par  * bgradT       ) / q_sat)
@@ -666,8 +696,8 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
     Bmag2 = 0.0d0
     bgradT = 0.0d0
     do k_tc = 1, ndir
-      Bmag2  = Bmag2  + wCTprim1(iw_mag(k_tc),2)**2
-      bgradT = bgradT + wCTprim1(iw_mag(k_tc),2) * gradT(k_tc)
+      Bmag2  = Bmag2  + btc(k_tc)**2
+      bgradT = bgradT + btc(k_tc) * gradT(k_tc)
     end do
     Bmag       = sqrt(Bmag2)
     Bmag2_safe = max(Bmag2, smalldouble**2)
@@ -685,7 +715,7 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
     cmax2_tc = 0.0d0
     do k_tc = 1, ndim
       cmax2_tc = max(cmax2_tc, 0.5d0*(cf2_tc + sqrt(abs( &
-           cf2_tc**2 - 4.0d0*mhd_gamma*pth_c*wCTprim1(iw_mag(k_tc),2)**2/rho_c**2))))
+           cf2_tc**2 - 4.0d0*mhd_gamma*pth_c*btc(k_tc)**2/rho_c**2))))
     end do
     q_sat     = 1.5d0 * rho_c * (pth_c / rho_c)**1.5d0
     f_sat_par = 1.0d0 / (1.0d0 + abs(sig_par * bgradT) / q_sat)
@@ -800,19 +830,28 @@ end subroutine addsource_geometry
 #:if defined('HYPERTC')
     use mod_global_parameters, only: smalldouble
 #:endif
+#:if defined('B0SPLIT')
+    use mod_usr, only: usr_b0_field
+#:endif
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys)
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim
     real(dp), intent(out) :: flux(nw_flux)
-    real(dp)              :: ptotal
+    real(dp)              :: ptotal, bt(3), b0(3)
 #:if defined('HYPERTC') and not defined('HYPERTC_ANISO')
     real(dp)              :: Bmag2_tc, Bmag_tc
 #:endif
 
+    bt(1:3) = u(iw_mag(1:3))
+#:if defined('B0SPLIT')
+    call usr_b0_field(xC, b0)
+    bt(1:3) = bt(1:3) + b0(1:3)
+#:endif
+
     ! Hyperbolic TC field geometry
 #:if defined('HYPERTC') and not defined('HYPERTC_ANISO')
-    Bmag2_tc = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
+    Bmag2_tc = bt(1)**2 + bt(2)**2 + bt(3)**2
     Bmag_tc  = sqrt(max(Bmag2_tc, smalldouble**2))
 #:endif
 
@@ -821,7 +860,7 @@ end subroutine addsource_geometry
 #:if defined('HYPERTC_ANISO')
     flux(iw_e) = u(iw_qvec(flux_dim))
 #:elif defined('HYPERTC')
-    flux(iw_e) = u(iw_q) * u(iw_mag(flux_dim)) / Bmag_tc
+    flux(iw_e) = u(iw_q) * bt(flux_dim) / Bmag_tc
 #:endif
     return
 #:endif
@@ -829,26 +868,27 @@ end subroutine addsource_geometry
     ! Density flux
     flux(iw_rho)=u(iw_rho)*u(iw_mom(flux_dim))
 
-    ! Momentum flux with pressure term
+    ! Momentum flux with pressure term; the B0 B0 part is the J0 x B0 source
     flux(iw_mom(1))=u(iw_rho)*u(iw_mom(1))*u(iw_mom(flux_dim))-&
-      u(iw_mag(flux_dim))*u(iw_mag(1))
+      bt(flux_dim)*u(iw_mag(1))-u(iw_mag(flux_dim))*(bt(1)-u(iw_mag(1)))
     flux(iw_mom(2))=u(iw_rho)*u(iw_mom(2))*u(iw_mom(flux_dim))-&
-      u(iw_mag(flux_dim))*u(iw_mag(2))
+      bt(flux_dim)*u(iw_mag(2))-u(iw_mag(flux_dim))*(bt(2)-u(iw_mag(2)))
     flux(iw_mom(3))=u(iw_rho)*u(iw_mom(3))*u(iw_mom(flux_dim))-&
-      u(iw_mag(flux_dim))*u(iw_mag(3))
-    ptotal=u(iw_e)+0.5_dp*(u(iw_mag(1))**2+u(iw_mag(2))**2+u(iw_mag(3))**2)
+      bt(flux_dim)*u(iw_mag(3))-u(iw_mag(flux_dim))*(bt(3)-u(iw_mag(3)))
+    ptotal=u(iw_e)+u(iw_mag(1))*bt(1)+u(iw_mag(2))*bt(2)+u(iw_mag(3))*bt(3)-&
+      0.5_dp*(u(iw_mag(1))**2+u(iw_mag(2))**2+u(iw_mag(3))**2)
     flux(iw_mom(flux_dim))=flux(iw_mom(flux_dim))+ptotal
 
-    ! Energy flux
+    ! Energy flux: v (e1 + ptotal) - Bt (v.B1), e1 = e_int + kinetic + B1^2/2
     flux(iw_e)=u(iw_mom(flux_dim))*(u(iw_e)*inv_gamma_1+0.5_dp*&
       u(iw_rho)*(u(iw_mom(1))**2+u(iw_mom(2))**2+u(iw_mom(3))**2)+&
-      2.0_dp*ptotal-u(iw_e))-u(iw_mag(flux_dim))*&
+      ptotal+0.5_dp*(u(iw_mag(1))**2+u(iw_mag(2))**2+u(iw_mag(3))**2))-bt(flux_dim)*&
       (u(iw_mag(1))*u(iw_mom(1))+u(iw_mag(2))*u(iw_mom(2))+u(iw_mag(3))*u(iw_mom(3)))
 
     ! Magnetic flux
-    flux(iw_mag(1))=u(iw_mom(flux_dim))*u(iw_mag(1))-u(iw_mag(flux_dim))*u(iw_mom(1))
-    flux(iw_mag(2))=u(iw_mom(flux_dim))*u(iw_mag(2))-u(iw_mag(flux_dim))*u(iw_mom(2))
-    flux(iw_mag(3))=u(iw_mom(flux_dim))*u(iw_mag(3))-u(iw_mag(flux_dim))*u(iw_mom(3))
+    flux(iw_mag(1))=u(iw_mom(flux_dim))*bt(1)-bt(flux_dim)*u(iw_mom(1))
+    flux(iw_mag(2))=u(iw_mom(flux_dim))*bt(2)-bt(flux_dim)*u(iw_mom(2))
+    flux(iw_mag(3))=u(iw_mom(flux_dim))*bt(3)-bt(flux_dim)*u(iw_mom(3))
 
     ! GLM psi flux
     flux(iw_mag(flux_dim))=u(psi_)
@@ -869,7 +909,7 @@ end subroutine addsource_geometry
     flux(iw_qvec(2)) = 0.0_dp
     flux(iw_qvec(3)) = 0.0_dp
 #:elif defined('HYPERTC')
-    flux(iw_e) = flux(iw_e) + u(iw_q) * u(iw_mag(flux_dim)) / Bmag_tc
+    flux(iw_e) = flux(iw_e) + u(iw_q) * bt(flux_dim) / Bmag_tc
     flux(iw_q) = 0.0_dp
 #:endif
 
@@ -880,17 +920,25 @@ end subroutine addsource_geometry
 !> Returns maximum local signal speed |v_n| + c_f (fast magnetosonic) from primitive state u in direction flux_dim;
 !> used in LLF/TVDLF flux estimation.
 pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
+#:if defined('B0SPLIT')
+  use mod_usr, only: usr_b0_field
+#:endif
   ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: u(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
   integer, intent(in)   :: flux_dim
 
-  real(dp) :: inv_rho, b2, cfast2
+  real(dp) :: inv_rho, b2, cfast2, bt(3), b0(3)
 
+  bt(1:3) = u(iw_mag(1:3))
+#:if defined('B0SPLIT')
+  call usr_b0_field(x, b0)
+  bt(1:3) = bt(1:3) + b0(1:3)
+#:endif
   inv_rho=1.0_dp/u(iw_rho)
   wC=mhd_gamma*u(iw_e)*inv_rho
-  cfast2=(u(iw_mag(1))**2+u(iw_mag(2))**2+u(iw_mag(3))**2)*inv_rho+wC
-  b2=cfast2**2-4.0_dp*wC*u(iw_mag(flux_dim))**2*inv_rho
+  cfast2=(bt(1)**2+bt(2)**2+bt(3)**2)*inv_rho+wC
+  b2=cfast2**2-4.0_dp*wC*bt(flux_dim)**2*inv_rho
   if(b2<0.d0) b2=0.d0
   wC=sqrt(0.5_dp*(cfast2+sqrt(b2)))+abs(u(iw_mom(flux_dim)))
 
@@ -929,19 +977,29 @@ end function get_Rfactor
 !> Davis (1988) min/max wave speed estimates wL = min(v_n - c_f), wR = max(v_n + c_f) (fast magnetosonic) over left/right states;
 !> used in HLL flux estimation.
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
+#:if defined('B0SPLIT')
+  use mod_usr, only: usr_b0_field
+#:endif
   ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
   real(dp), intent(out) :: wL, wR
 
-  real(dp) :: inv_rho, cs2, cA2, cAn2, sum2, discriminant, cfL, cfR
+  real(dp) :: inv_rho, cs2, cA2, cAn2, sum2, discriminant, cfL, cfR, b0(3), btL(3), btR(3)
+
+  b0(1:3) = 0.0_dp
+#:if defined('B0SPLIT')
+  call usr_b0_field(xC, b0)
+#:endif
+  btL(1:3) = uL(iw_mag(1:3)) + b0(1:3)
+  btR(1:3) = uR(iw_mag(1:3)) + b0(1:3)
 
   ! Left state
   inv_rho = 1.0_dp / uL(iw_rho)
   cs2 = mhd_gamma * uL(iw_e) * inv_rho
-  cA2 = (uL(iw_mag(1))**2 + uL(iw_mag(2))**2 + uL(iw_mag(3))**2) * inv_rho
-  cAn2 = uL(iw_mag(flux_dim))**2 * inv_rho
+  cA2 = (btL(1)**2 + btL(2)**2 + btL(3)**2) * inv_rho
+  cAn2 = btL(flux_dim)**2 * inv_rho
   sum2 = cs2 + cA2
   discriminant = max(sum2**2 - 4.0_dp*cs2*cAn2, 0.0_dp)
   cfL = sqrt(0.5_dp * (sum2 + sqrt(discriminant)))
@@ -949,8 +1007,8 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   ! Right state
   inv_rho = 1.0_dp / uR(iw_rho)
   cs2 = mhd_gamma * uR(iw_e) * inv_rho
-  cA2 = (uR(iw_mag(1))**2 + uR(iw_mag(2))**2 + uR(iw_mag(3))**2) * inv_rho
-  cAn2 = uR(iw_mag(flux_dim))**2 * inv_rho
+  cA2 = (btR(1)**2 + btR(2)**2 + btR(3)**2) * inv_rho
+  cAn2 = btR(flux_dim)**2 * inv_rho
   sum2 = cs2 + cA2
   discriminant = max(sum2**2 - 4.0_dp*cs2*cAn2, 0.0_dp)
   cfR = sqrt(0.5_dp * (sum2 + sqrt(discriminant)))
