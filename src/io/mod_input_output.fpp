@@ -2480,7 +2480,11 @@ contains
               ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
                  1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
             end if
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+            ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
+#:else
             ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
+#:endif
           else
             call mpi_send_wrapper([ ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,&
                 n_values ], 2*ndim+1, MPI_INTEGER, ipe, itag, icomm, ierrmpi)
@@ -2558,7 +2562,11 @@ contains
           ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
              1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
         end if
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+        ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
+#:else
         ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
+#:endif
       end do
     end if
 
