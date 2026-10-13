@@ -1398,6 +1398,18 @@ contains
       end do
     end if
 
+    ! the heat-flux vector has no boundary types of its own: at a reflecting
+    ! wall its normal component flips with the normal momentum
+    if (allocated(iw_qvec)) then
+      do idim=1,ndim
+        do iside=1,2
+          iB=2*idim-2+iside
+          if (typeboundary(iw_mom(idim),iB)==bc_asymm) &
+             typeboundary(iw_qvec(idim),iB)=bc_asymm
+        end do
+      end do
+    end if
+
     if (any(typeboundary == 0)) then
       call mpistop("Not all boundary conditions have been defined")
     end if
@@ -1489,6 +1501,10 @@ contains
         if(physics_type=='mhd') then
           typeboundary(iw_mag(idim),iB)=bc_asymm
           typeboundary(iw_mag(phi_),iB)=bc_asymm
+          if(allocated(iw_qvec)) then
+            typeboundary(iw_qvec(idim),iB)=bc_asymm
+            typeboundary(iw_qvec(phi_),iB)=bc_asymm
+          end if
         end if
       end do
     end do
