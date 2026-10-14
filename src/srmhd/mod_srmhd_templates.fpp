@@ -122,6 +122,10 @@
     if (srmhd_small_density < 0.0d0) call mpistop(&
        "srmhd_small_density should be positive.")
 
+    if (srmhd_eos) call mpistop(&
+       "Synge gas isn't implemented for srmhd yet, sorry.")
+
+
     ${GPU_UPDATE_DEVICE('srmhd_eos, srmhd_gamma, He_abundance, srmhd_source_usr, srmhd_glm_alpha')}$
     ${GPU_UPDATE_DEVICE('srmhd_small_pressure, srmhd_small_density')}$
 
@@ -226,6 +230,9 @@
     nwgc=nwflux+nwaux
     ${GPU_UPDATE_DEVICE('nwgc')}$
 
+
+
+
     ! Define custom flux types:
     if (.not. allocated(flux_type)) then
        allocate(flux_type(ndir, nw_flux))
@@ -233,6 +240,12 @@
     else if (any(shape(flux_type) /= [ndir, nw_flux])) then
        call mpistop("phys_check error: flux_type has wrong shape")
     end if
+
+    ! BnormLF fix:
+    flux_type(:,psi_)=flux_tvdlf
+    do idir=1,ndir
+       flux_type(idir,mag(idir))=flux_tvdlf
+    end do
     ${GPU_UPDATE_DEVICE('flux_type')}$
 
     nvector      = 2 ! No. vector vars
@@ -293,6 +306,7 @@
     
     tau=u(iw_e)
 
+    mu=u(mu_)
 
     call con2prim(mu, d, tau, s_sqr, b_sqr, s_dot_b)
 

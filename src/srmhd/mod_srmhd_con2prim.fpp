@@ -57,9 +57,6 @@ contains
 
 
 
-
-
-
         bound_error=.false.
         maxiter=100
 
@@ -70,10 +67,10 @@ contains
 
         delta = 2.0_dp * epsilon(1.0_dp) * abs(b) + 0.5_dp * tol
 
-        fa=${func}$(a, params)
+        call ${func}$(a, params, fa)
 
 
-        fb=${func}$(b, params)
+        call ${func}$(b, params, fb)
 
 
         ! if (fa*fb>0) then
@@ -129,7 +126,7 @@ contains
                 end if
             end if
 
-            fs=${func}$(s, params)
+            call ${func}$(s, params, fs)
 
 
             d=c
@@ -156,7 +153,7 @@ contains
 
             delta = 2.0_dp * epsilon(1.0_dp) * abs(b) + 0.5_dp * tol
 
-            if (fb==0 .or. abs(c-b) < delta*2) then
+            if (fb==0 .or. abs(a-b) < delta*2) then
                 exit
             end if
 
@@ -180,11 +177,7 @@ contains
     function ${name}$(mu_plus, params) result(mu)
         ${GPU_ROUTINE_SEQ()}$
         implicit none
-        !real(dp), intent(in) :: d, tau
-        !real(dp), intent(in) :: s_sqr, b_sqr, s_dot_b
         real(dp), intent(in) :: mu_plus
-        !logical, intent(out), optional :: success
-        integer, intent(out), optional :: iter
         real(dp), intent(in) :: params(:)
         real(dp) :: mu
         real(dp) :: a, b, c
@@ -204,9 +197,9 @@ contains
 
         b=mu_plus
 
-        fa= ${func}$(a, params)
+        call ${func}$(a, params, fa)
 
-        fb=${func}$(b, params)
+        call ${func}$(b, params, fb)
 
         if (fa>0 .eqv. fb>0) then 
             bound_error=.true.
@@ -219,7 +212,7 @@ contains
 
             c=(b+a)/2.0_dp
 
-            fc=${func}$(c, params)
+            call ${func}$(c, params, fc)
 
             if (abs((b-a)/c)<tol) then
                 mu=c
@@ -275,7 +268,7 @@ contains
 
 
 
-    pure function master_function(mu, params) result(f)
+    pure subroutine master_function(mu, params, f) 
         ${GPU_ROUTINE_SEQ()}$
         implicit none
         real(dp), intent(in) :: mu
@@ -290,9 +283,8 @@ contains
         real(dp) :: p_hat
         real(dp) :: a_hat
         real(dp) :: nu_a, nu_b
-        real(dp) :: nu_hat
-        real(dp) :: f
-
+        real(dp) :: nu_hat, mu_hat
+        real(dp), intent(out) :: f
 
         
         d = params(1)
@@ -333,7 +325,10 @@ contains
         end if
 
 
-        p_hat = ideal_eos(rho_hat,eps_hat) !(43)
+        if (.not. srmhd_eos) then 
+            p_hat = (srmhd_gamma-1)*rho_hat*eps_hat !(43)
+        end if
+
 
         a_hat=p_hat/rho_hat/(1 + eps_hat) !(43)
 
@@ -343,17 +338,18 @@ contains
          
         nu_hat=max(nu_a, nu_b) !(48)
 
-        f=mu-1.0_dp/(nu_hat + mu*r_bar_sqr)!(44)(45)
+        mu_hat = 1.0_dp/(nu_hat + mu*r_bar_sqr) !(45)
 
+        f=mu - mu_hat!(44)
 
-    end function master_function
+    end subroutine master_function
 
 
 
         
 
 
-    pure function aux_f(mu, params) result(f)
+    pure subroutine aux_f(mu, params, f) 
         ${GPU_ROUTINE_SEQ()}$
         implicit none
         real(dp), intent(in) :: mu
@@ -361,9 +357,9 @@ contains
         real(dp)             :: d, s_sqr, s_dot_b, b_sqr
         real(dp)             :: mymu
         real(dp)             :: r_dot_b, myb_sqr, myd
-        real(dp)             :: f
         real(dp)             :: r_bar_sqr, r_sqr, x
-
+        real(dp), intent(out):: f
+        real(dp) :: root
 
         d = params(1)
         s_sqr = params(2)
@@ -380,8 +376,11 @@ contains
 
         r_bar_sqr= r_sqr*x**2 + mu*x* (1+x) *r_dot_b**2/myd**3 !(38)
 
-        f=mu*sqrt(h0**2+r_bar_sqr)-1
-    end function aux_f
+        root = sqrt(h0**2+r_bar_sqr)
+        
+        f=mu*root-1
+
+    end subroutine aux_f
 
 
     #:def con2prim_template(name, solver, aux_solver)
@@ -398,7 +397,7 @@ contains
         real(dp)              :: myd, mytau
         !real(dp)              :: mysi(3), mybi(3)
         !real(dp)              :: s_sqr, b_sqr, s_dot_b
-        real(dp), intent(out) :: mu
+        real(dp), intent(inout) :: mu
         real(dp)              :: mu_plus
         real(dp)              :: q_bar, r_bar_sqr
         real(dp)              :: x
@@ -421,14 +420,18 @@ contains
         
         params=[myd, mytau, s_sqr, b_sqr, s_dot_b]
 
-        mu= ${solver}$(mu_plus, params)
+        mu = ${solver}$(mu_plus, params)
 
 
     end subroutine ${name}$
     #:enddef 
 
-    !$:con2prim_template("con2prim", "bisection", "aux_bis")
+
+
     $:con2prim_template("con2prim", "brent", "aux_brent")
+
+
+   
 
     
 
