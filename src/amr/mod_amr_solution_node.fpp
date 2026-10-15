@@ -485,7 +485,7 @@ contains
     ! mesh, and from its upper corner in the outer ghost layer, so that the
     ! overlapping ghost cells of two neighbouring blocks come out identical to
     ! the last bit.
-    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$
     do ix3=ixGlo3,ixGhi3
        do ix2=ixGlo2,ixGhi2
           do ix1=ixGlo1,ixGhi1
@@ -570,7 +570,7 @@ contains
     ! sits dtheta/6 further out than the midpoint and sin(theta_bar) runs about
     ! a third above sin(theta_c) in the first cell - which is exactly the cell
     ! whose vanishing ds(3) sets dt for the whole run.
-    ${GPU_PARALLEL_LOOP("collapse(3) private(e1,e2,fL,fR,rc,ds1,rbar)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP("collapse(3) private(e1,e2,fL,fR,rc,ds1,rbar)")}$
     do ix3=ixGextmin3,ixGextmax3
        do ix2=ixGextmin2,ixGextmax2
           do ix1=ixGextmin1,ixGextmax1
@@ -604,7 +604,7 @@ contains
     ! neighbouring coarse block whose ghost cells have to match - and its
     ! spacing is doubled, so one loop covers positions, volumes and areas.
     ! As above, only the positions exist in a Cartesian build.
-    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$
     do ix3=1,ixCoGmax3
        do ix2=1,ixCoGmax2
           do ix1=1,ixCoGmax1
@@ -711,7 +711,7 @@ contains
     ! corner across OpenACC compilers. Only wx(1:nwextra) is passed and used.
     double precision :: xloc(1:ndim), wx(max_nw)
 
-    ${GPU_PARALLEL_LOOP("collapse(3) private(xloc, wx, iwx)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP("collapse(3) private(xloc, wx, iwx)")}$
     do ix3 = ixGlo3, ixGhi3
        do ix2 = ixGlo2, ixGhi2
           do ix1 = ixGlo1, ixGhi1

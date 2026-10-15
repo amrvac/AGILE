@@ -49,7 +49,7 @@ contains
 
     if(slab_uniform) then
        CoFiratio=one/dble(2**ndim)
-       ${GPU_PARALLEL_LOOP_GANG()}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG()}$
        do iw=1,nwgc  ! analytic extras past nwgc are set in alloc_node
           ${GPU_LOOP_VECTOR("collapse(3) private(ixFi1,ixFi2,ixFi3)")}$
           do ixCo3 = ixComin3,ixComax3
@@ -65,7 +65,7 @@ contains
           end do
       end do
     else
-       ${GPU_PARALLEL_LOOP_GANG()}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG()}$
        do iw=1,nwgc  ! analytic extras past nwgc are set in alloc_node
           ${GPU_LOOP_VECTOR("collapse(3) private(ixFi1,ixFi2,ixFi3)")}$
           do ixCo3 = ixComin3,ixComax3

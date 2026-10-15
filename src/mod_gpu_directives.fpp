@@ -30,11 +30,11 @@
 #:enddef
 
 #:def GPU_PARALLEL_LOOP(clauses='')
-!$acc parallel loop ${clauses}$
+!$acc parallel loop default(present) ${clauses}$
 #:enddef
 
 #:def GPU_PARALLEL_LOOP_GANG(clauses='')
-!$acc parallel loop gang ${clauses}$
+!$acc parallel loop gang default(present) ${clauses}$
 #:enddef
 
 #:def GPU_LOOP_VECTOR(clauses='')
@@ -43,14 +43,6 @@
 
 #:def GPU_LOOP_SEQ()
 !$acc loop seq
-#:enddef
-
-#:def GPU_PRESENT(vars)
-present(${vars}$)
-#:enddef
-
-#:def GPU_DEFAULT_PRESENT()
-default(present)
 #:enddef
 
 #:def GPU_INDEPENDENT()
@@ -134,11 +126,21 @@ use openacc, only : acc_is_present
 #:enddef
 
 #:def GPU_PARALLEL_LOOP(clauses='')
+#! NVHPC does not support defaultmap with present
+#if defined(__NVCOMPILER)
 !$omp target teams distribute parallel do ${clauses}$
+#else
+!$omp target teams distribute parallel do ${clauses}$ defaultmap(present:aggregrate) defaultmap(present:allocatable) defaultmap(present:pointer)
+#endif
 #:enddef
 
 #:def GPU_PARALLEL_LOOP_GANG(clauses='')
+#! see comments on GPU_PARALLEL_LOOP
+#if defined(__NVCOMPILER)
 !$omp target teams distribute ${clauses}$
+#else
+!$omp target teams distribute ${clauses}$ defaultmap(present:aggregrate) defaultmap(present:allocatable) defaultmap(present:pointer)
+#endif
 #:enddef
 
 #:def GPU_LOOP_VECTOR(clauses='')
@@ -146,12 +148,6 @@ use openacc, only : acc_is_present
 #:enddef
 
 #:def GPU_LOOP_SEQ()
-#:enddef
-
-#:def GPU_PRESENT(vars)
-#:enddef
-
-#:def GPU_DEFAULT_PRESENT()
 #:enddef
 
 #:def GPU_INDEPENDENT()
@@ -269,12 +265,6 @@ use, intrinsic :: iso_c_binding, only: c_loc
 #:enddef
 
 #:def GPU_LOOP_SEQ()
-#:enddef
-
-#:def GPU_PRESENT(vars)
-#:enddef
-
-#:def GPU_DEFAULT_PRESENT()
 #:enddef
 
 #:def GPU_INDEPENDENT()
