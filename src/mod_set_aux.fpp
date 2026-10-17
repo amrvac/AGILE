@@ -8,8 +8,17 @@
 !> The auxiliaries (e.g. mu and lfac for srmhd) are functions of the conserved
 !> state, and the finite-volume update only writes the flux variables, so the
 !> stored copies would otherwise keep their initial values for the whole run.
-!> Nothing in the update needs them back (to_primitive recomputes them for
-!> every cell it touches), so this is about what is stored and output.
+!> They are kept consistent because they are the initial guess of the root
+!> solve in to_primitive, and because they are output.
+!>
+!> The rule is that whoever writes a conserved state refreshes its
+!> auxiliaries, once:
+!>
+!>   set_aux_all   every active block, at the end of each timestep and after
+!>                 the initial condition or a restart;
+!>   set_aux       per cell, called by the kernels that create a block's
+!>                 state during a regrid (prolong_2nd, coarsen_grid), so a new
+!>                 block is never left with interpolated auxiliaries.
 module mod_set_aux
 
   use mod_variables
@@ -17,7 +26,7 @@ module mod_set_aux
   implicit none
   private
 
-  public :: set_aux_all
+  public :: set_aux_all, set_aux
 
 contains
 
@@ -37,11 +46,10 @@ contains
   !> some but does not define set_aux gets the empty default, which leaves them
   !> as they are.
   !>
-  !> Call it wherever the conserved variables were changed by something other
-  !> than the finite-volume update, and once the last Runge-Kutta stage is
-  !> complete. Ghost cells are covered so that no ghost exchange is needed
-  !> afterwards, which requires the ghost cells of the conserved variables to be
-  !> filled already.
+  !> Call it wherever the conserved variables of every block were changed by
+  !> something other than the finite-volume update. Ghost cells are covered so
+  !> that no ghost exchange is needed afterwards, which requires the ghost
+  !> cells of the conserved variables to be filled already.
   subroutine set_aux_all()
     use mod_global_parameters
 

@@ -21,6 +21,7 @@ contains
     use mod_global_parameters
     use mod_particles, only: handle_particles
     use mod_source, only: add_split_source
+    use mod_set_aux, only: set_aux_all
 
     integer, intent(in) :: iit
 
@@ -50,6 +51,11 @@ contains
     ! split source addition
     call add_split_source(prior=.false.)
 
+    ! the update only wrote the flux variables: refresh the auxiliaries of the
+    ! final state, once per step however many sweeps and split sources it took
+    ! (needs the ghost cells the last stage filled)
+    call set_aux_all()
+
     if(use_particles) call handle_particles
 
     ! do iigrid=1,igridstail; igrid=igrids(iigrid);
@@ -67,7 +73,6 @@ contains
     use mod_physics, only: phys_req_diagonal
     use mod_comm_lib, only: mpistop
     use mod_physicaldata
-    use mod_set_aux, only: set_aux_all
 
     integer, intent(in) :: idimmin,idimmax
     integer             :: iigrid, igrid, ix1,ix2,ix3, iw
@@ -168,10 +173,6 @@ contains
     case default
        call mpistop("unkown time_stepper in advect")
     end select
-
-    ! the update only wrote the flux variables: refresh the auxiliaries of the
-    ! final state (needs the ghost cells the last stage filled)
-    call set_aux_all()
 
   end subroutine advect
 

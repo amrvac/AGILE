@@ -83,7 +83,6 @@ contains
     use mod_global_parameters
     use mod_ghostcells_update
     use mod_usr_methods, only: usr_after_refine
-    use mod_set_aux, only: set_aux_all
     use mod_amr_fct
     use mod_space_filling_curve
     use mod_load_balance
@@ -272,9 +271,6 @@ contains
     else
        call getbc(global_time,0.d0,ps,iwstart,nwgc)
     end if
-
-    ! prolongation and restriction interpolated the auxiliaries linearly
-    call set_aux_all()
 
     if (use_multigrid) call mg_update_refinement(n_coarsen, n_refine)
 
