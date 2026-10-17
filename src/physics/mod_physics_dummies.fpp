@@ -109,3 +109,11 @@ pure subroutine fix_prim_state(u)
 
 end subroutine fix_prim_state
 #:enddef
+
+! Physics modules with auxiliary variables (nwaux > 0) that are derived from
+! the conserved state override these. Everyone else needs neither.
+#:def get_aux()
+#:enddef
+
+#:def set_aux()
+#:enddef

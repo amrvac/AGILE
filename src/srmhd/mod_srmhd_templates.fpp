@@ -279,21 +279,23 @@
   end subroutine phys_get_dt
 #:enddef 
 
-#:def to_primitive()
-  subroutine to_primitive(u)
+#:def get_aux()
+  !> The auxiliary variables of a conserved state, together with the pieces
+  !> of the con2prim solution that to_primitive needs on top of them.
+  !>
+  !> This is the single definition of mu and lfac: to_primitive and set_aux
+  !> both call it, so the two cannot drift apart. mu comes out of the root
+  !> solve; lfac out of the velocity it implies, after that velocity has been
+  !> limited to the bound v0 set by the conserved state.
+  subroutine get_aux(u, mu, lfac, x, v_sqr, vel)
     use srmhd_con2prim
 
     ${GPU_ROUTINE_SEQ()}$
-    real(dp), intent(inout) :: u(nw_phys)
-    real(dp) :: p, d, x, tau, lfac
-    real(dp) :: mu
-    real(dp) :: vel(3)
-    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps, v_sqr, v_rescale
-    real(dp) :: v0_sqr
-    !real(dp), parameter :: h0=1.0_dp
-
-
-
+    real(dp), intent(in)  :: u(nw_phys)
+    real(dp), intent(out) :: mu, lfac, x, v_sqr
+    real(dp), intent(out) :: vel(3)
+    real(dp) :: d, tau
+    real(dp) :: s_sqr, b_sqr, s_dot_b, v0_sqr, v_rescale
 
     s_sqr = u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2
 
@@ -303,7 +305,7 @@
              + u(iw_mom(3)) * u(iw_mag(3))
 
     d=u(iw_rho)
-    
+
     tau=u(iw_e)
 
     mu=u(mu_)
@@ -335,6 +337,50 @@
     end if
 
     lfac = 1/sqrt(1-v_sqr)
+
+  end subroutine get_aux
+#:enddef
+
+#:def set_aux()
+  !> Overwrite the auxiliary slots (mu, lfac) of a conserved state with the
+  !> values consistent with its other components. Nothing else in u changes.
+  subroutine set_aux(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+    real(dp) :: mu, lfac, x, v_sqr, vel(3)
+
+    call get_aux(u, mu, lfac, x, v_sqr, vel)
+
+    u(lfac_) = lfac
+
+    u(mu_) = mu
+
+  end subroutine set_aux
+#:enddef
+
+#:def to_primitive()
+  subroutine to_primitive(u)
+    use srmhd_con2prim, only: ideal_eos
+
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+    real(dp) :: d, x, tau, lfac
+    real(dp) :: mu
+    real(dp) :: vel(3)
+    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps, v_sqr
+
+    call get_aux(u, mu, lfac, x, v_sqr, vel)
+
+    s_sqr = u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2
+
+    b_sqr = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
+
+    s_dot_b = u(iw_mom(1)) * u(iw_mag(1)) + u(iw_mom(2)) * u(iw_mag(2))& 
+             + u(iw_mom(3)) * u(iw_mag(3))
+
+    d=u(iw_rho)
+
+    tau=u(iw_e)
 
     r_bar_sqr = s_sqr*x**2/d**2 + mu * x * (1+x) * s_dot_b**2/d**3 !(38)
 
