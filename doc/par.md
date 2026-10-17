@@ -499,10 +499,13 @@ and they have been removed. A par file that still sets any of them will now
 fail to read, since a Fortran namelist read rejects an unrecognised key.
 
 A floor is a physics-specific treatment and lives with its physics module
-instead. At present only `srhd` has one: `srhd_small_pressure` and
-`srhd_small_density` in `&srhd_list` (declared with the other srhd module
-variables in `src/srhd/mod_srhd_templates.fpp`), both defaulting to zero. `srhd_small_pressure` is the lower bracket of the
-pressure root-find in `con2prim`. The other physics modules have no floor; when
+instead. At present `srhd` and `srmhd` have one. `srhd` has
+`srhd_small_pressure` and `srhd_small_density` in `&srhd_list` (declared with
+the other srhd module variables in `src/srhd/mod_srhd_templates.fpp`), both
+defaulting to zero. `srhd_small_pressure` is the lower bracket of the pressure
+root-find in `con2prim`. `srmhd` has `srmhd_small_pressure` and
+`srmhd_small_density` in `&srmhd_list`, defaulting to zero and `1e-14`; they
+floor reconstructed face states in `fix_prim_state`. The other physics modules have no floor; when
 one of them needs it, the parameter belongs in that module's own namelist and
 templates, not in `&methodlist`. 
 
@@ -713,7 +716,7 @@ uniform in ln(r + `log_r0`) rather than in r). This is a **compile-time**
 choice -- changing it and re-running `make` regenerates the build's
 `config.mk` and recompiles the finite-volume kernels for the new geometry,
 rather than switching at runtime. Curvilinear support covers the `hd`, `mhd`,
-`srhd` and `ffhd` physics modules, including the polar/cylindrical axis. See
+`srhd`, `srmhd` and `ffhd` physics modules, including the polar/cylindrical axis. See
 [Coordinate systems](coordinate_systems.html) for the axis conventions, the
 geometric source terms each non-Cartesian choice adds, the logarithmic radius,
 and the current limitations.
