@@ -22,7 +22,9 @@ FFHD_DIRS := ffhd/TI3D ffhd/spherical ffhd/cylindrical \
 SRHD_DIRS := srhd/shockTube srhd/spherical srhd/cylindrical \
              srhd/spherical_pole srhd/cylindrical_pole \
              srhd/log_spherical srhd/log_cylindrical
-SRMHD_DIRS := srmhd/shock_tube
+SRMHD_DIRS := srmhd/shock_tube srmhd/spherical srmhd/cylindrical \
+              srmhd/spherical_pole srmhd/cylindrical_pole \
+              srmhd/log_spherical srmhd/log_cylindrical
 
 
 TEST_DIRS := $(HD_DIRS) $(MHD_DIRS) $(FFHD_DIRS) $(SRHD_DIRS) $(SRMHD_DIRS)

@@ -4,6 +4,7 @@
 module mod_coarsen
   use mod_global_parameters
   use mod_physics
+  use mod_set_aux, only: set_aux
 
   implicit none
   private
@@ -37,6 +38,8 @@ contains
 
     integer :: ixCo1,ixCo2,ixCo3, ixFi1,ixFi2,ixFi3, iw
     double precision :: CoFiratio
+    double precision :: u(nw_phys)
+    logical :: uniform
     double precision :: B_energy_change(ixCoGmin1:ixCoGmax1,&
        ixCoGmin2:ixCoGmax2,ixCoGmin3:ixCoGmax3)
 
@@ -47,41 +50,41 @@ contains
 !       ixFiGmax1,ixFiGmax2,ixFiGmax3,ixFimin1,ixFimin2,ixFimin3,ixFimax1,&
 !       ixFimax2,ixFimax3,wFi,sFi%x)
 
-    if(slab_uniform) then
-       CoFiratio=one/dble(2**ndim)
-       ${GPU_PARALLEL_LOOP_GANG()}$ ${GPU_DEFAULT_PRESENT()}$
-       do iw=1,nwgc  ! analytic extras past nwgc are set in alloc_node
-          ${GPU_LOOP_VECTOR("collapse(3) private(ixFi1,ixFi2,ixFi3)")}$
-          do ixCo3 = ixComin3,ixComax3
-             do ixCo2 = ixComin2,ixComax2
-                do ixCo1 = ixComin1,ixComax1
-                   ixFi3=2*(ixCo3-ixComin3)+ixFimin3+ixFiGmin3-1
-                   ixFi2=2*(ixCo2-ixComin2)+ixFimin2+ixFiGmin2-1
-                   ixFi1=2*(ixCo1-ixComin1)+ixFimin1+ixFiGmin1-1
+    uniform = slab_uniform
+    CoFiratio=one/dble(2**ndim)
+
+    ! One thread per coarse cell: it averages the cell's whole state, then
+    ! recomputes from it the auxiliaries, which were averaged along with the
+    ! rest of w. This covers the coarse representative sent to another rank
+    ! too, so the receiver gets them fresh.
+    ${GPU_PARALLEL_LOOP("collapse(3) private(ixFi1,ixFi2,ixFi3, iw, u)")}$ ${GPU_DEFAULT_PRESENT()}$
+    do ixCo3 = ixComin3,ixComax3
+       do ixCo2 = ixComin2,ixComax2
+          do ixCo1 = ixComin1,ixComax1
+             ixFi3=2*(ixCo3-ixComin3)+ixFimin3+ixFiGmin3-1
+             ixFi2=2*(ixCo2-ixComin2)+ixFimin2+ixFiGmin2-1
+             ixFi1=2*(ixCo1-ixComin1)+ixFimin1+ixFiGmin1-1
+             if(uniform) then
+                do iw=1,nwgc  ! analytic extras past nwgc are set in alloc_node
                    wCo(ixCo1,ixCo2,ixCo3,iw)=sum(wFi(ixFi1:ixFi1+1,ixFi2:ixFi2+1,&
                         ixFi3:ixFi3+1,iw))*CoFiratio
                 end do
-             end do
-          end do
-      end do
-    else
-       ${GPU_PARALLEL_LOOP_GANG()}$ ${GPU_DEFAULT_PRESENT()}$
-       do iw=1,nwgc  ! analytic extras past nwgc are set in alloc_node
-          ${GPU_LOOP_VECTOR("collapse(3) private(ixFi1,ixFi2,ixFi3)")}$
-          do ixCo3 = ixComin3,ixComax3
-             do ixCo2 = ixComin2,ixComax2
-                do ixCo1 = ixComin1,ixComax1
-                   ixFi3=2*(ixCo3-ixComin3)+ixFimin3+ixFiGmin3-1
-                   ixFi2=2*(ixCo2-ixComin2)+ixFimin2+ixFiGmin2-1
-                   ixFi1=2*(ixCo1-ixComin1)+ixFimin1+ixFiGmin1-1
+             else
+                do iw=1,nwgc  ! analytic extras past nwgc are set in alloc_node
                    wCo(ixCo1,ixCo2,ixCo3,iw)= sum(geoFi%dvolume(ixFi1:ixFi1+1,&
                         ixFi2:ixFi2+1,ixFi3:ixFi3+1,igridFi)*wFi(ixFi1:ixFi1+1,ixFi2:ixFi2+1,&
                         ixFi3:ixFi3+1,iw)) /geoCo%dvolume(ixCo1,ixCo2,ixCo3,igridCo)
                 end do
-             end do
+             end if
+             if (nwaux > 0) then
+                u = wCo(ixCo1,ixCo2,ixCo3,1:nw_phys)
+                call set_aux(u)
+                wCo(ixCo1,ixCo2,ixCo3,nwflux+1:nwflux+nwaux) = &
+                     u(nwflux+1:nwflux+nwaux)
+             end if
           end do
        end do
-    end if
+    end do
 
 ! AGILE: tbd
     ! if(stagger_grid) then

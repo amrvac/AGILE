@@ -87,9 +87,8 @@
   logical, public                         :: srmhd_source_usr = .false.
   ${GPU_DECLARE_COPYIN('srmhd_source_usr')}$
 
-  !> Smallest gas pressure allowed. Both the lower bracket of the pressure
-  !> root-find in con2prim and the floor fix_prim_state applies to a
-  !> reconstructed face state. Zero, the default, leaves both unfloored.
+  !> Smallest gas pressure allowed: the floor fix_prim_state applies to a
+  !> reconstructed face state. Zero, the default, leaves it unfloored.
   double precision, public                :: srmhd_small_pressure = 0.0d0
   !> Smallest rest-mass density allowed
   double precision, public                :: srmhd_small_density  = 1e-14_dp
@@ -279,21 +278,23 @@
   end subroutine phys_get_dt
 #:enddef 
 
-#:def to_primitive()
-  subroutine to_primitive(u)
+#:def get_aux()
+  !> The auxiliary variables of a conserved state, together with the pieces
+  !> of the con2prim solution that to_primitive needs on top of them.
+  !>
+  !> This is the single definition of mu and lfac: to_primitive and set_aux
+  !> both call it, so the two cannot drift apart. mu comes out of the root
+  !> solve; lfac out of the velocity it implies, after that velocity has been
+  !> limited to the bound v0 set by the conserved state.
+  subroutine get_aux(u, mu, lfac, x, v_sqr, vel)
     use srmhd_con2prim
 
     ${GPU_ROUTINE_SEQ()}$
-    real(dp), intent(inout) :: u(nw_phys)
-    real(dp) :: p, d, x, tau, lfac
-    real(dp) :: mu
-    real(dp) :: vel(3)
-    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps, v_sqr, v_rescale
-    real(dp) :: v0_sqr
-    !real(dp), parameter :: h0=1.0_dp
-
-
-
+    real(dp), intent(in)  :: u(nw_phys)
+    real(dp), intent(out) :: mu, lfac, x, v_sqr
+    real(dp), intent(out) :: vel(3)
+    real(dp) :: d, tau
+    real(dp) :: s_sqr, b_sqr, s_dot_b, v0_sqr, v_rescale
 
     s_sqr = u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2
 
@@ -303,7 +304,7 @@
              + u(iw_mom(3)) * u(iw_mag(3))
 
     d=u(iw_rho)
-    
+
     tau=u(iw_e)
 
     mu=u(mu_)
@@ -335,6 +336,50 @@
     end if
 
     lfac = 1/sqrt(1-v_sqr)
+
+  end subroutine get_aux
+#:enddef
+
+#:def set_aux()
+  !> Overwrite the auxiliary slots (mu, lfac) of a conserved state with the
+  !> values consistent with its other components. Nothing else in u changes.
+  subroutine set_aux(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+    real(dp) :: mu, lfac, x, v_sqr, vel(3)
+
+    call get_aux(u, mu, lfac, x, v_sqr, vel)
+
+    u(lfac_) = lfac
+
+    u(mu_) = mu
+
+  end subroutine set_aux
+#:enddef
+
+#:def to_primitive()
+  subroutine to_primitive(u)
+    use srmhd_con2prim, only: ideal_eos
+
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+    real(dp) :: d, x, tau, lfac
+    real(dp) :: mu
+    real(dp) :: vel(3)
+    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps, v_sqr
+
+    call get_aux(u, mu, lfac, x, v_sqr, vel)
+
+    s_sqr = u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2
+
+    b_sqr = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
+
+    s_dot_b = u(iw_mom(1)) * u(iw_mag(1)) + u(iw_mom(2)) * u(iw_mag(2))& 
+             + u(iw_mom(3)) * u(iw_mag(3))
+
+    d=u(iw_rho)
+
+    tau=u(iw_e)
 
     r_bar_sqr = s_sqr*x**2/d**2 + mu * x * (1+x) * s_dot_b**2/d**3 !(38)
 
@@ -588,11 +633,11 @@ end subroutine addsource_local
   !> auxiliaries are always recomputed from the reconstructed primitives, by
   !> the same expressions to_conservative uses.
   !>
-  !> The floors are the optional part. Both default to zero, in which case the
-  !> max() calls only clamp states that were already unphysical; set
-  !> srhd_small_pressure (and srhd_small_density) positive in &srhd_list to get
-  !> an actual floor, which is the useful configuration -- a state floored to
-  !> exactly zero still gives csound2 = gamma*p/(rho*h) a zero denominator.
+  !> The floors are the optional part. srmhd_small_pressure defaults to zero
+  !> and srmhd_small_density to 1e-14; set them in &srmhd_list. A pressure
+  !> floored to exactly zero still gives the sound speed in get_cmax a zero
+  !> numerator, so a positive srmhd_small_pressure is the useful
+  !> configuration. Unlike srhd's, these floors are not read by con2prim.
   pure subroutine fix_prim_state(u)
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
@@ -690,6 +735,161 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   ! wR =  1.0_dp
 end subroutine estimate_speeds_minmax
 #:enddef
+
+#:if GEOM == 'spherical'
+!> Curvature source terms for spherical coordinates, with the pressure
+!> gradient folded into the flux divergence, as in this fork's srhd and mhd
+!> addsource_geometry. The non-pressure spatial stress is
+!>
+!>   T^ij = W v^i v^j - (v.B) (B^i v^j + v^i B^j) - B^i B^j / lfac^2,
+!>   W    = rho h lfac^2 + B^2,
+!>
+!> the same tensor get_flux builds, and the total pressure is
+!> ptot = p + (B^2/lfac^2 + (v.B)^2)/2. B here is the lab-frame field: this
+!> T^ij is the covariant (rho h + b^2) u^i u^j - b^i b^j expanded with
+!> b^i = B^i/lfac + lfac (v.B) v^i and b^2 = B^2/lfac^2 + (v.B)^2, where the
+!> lfac^2 (v.B)^2 v^i v^j pieces cancel - so W carries the lab-frame B^2, not
+!> the comoving b^2, and only ptot takes b^2. With B = 0 these reduce to srhd's
+!> terms (W v^i v^j = xi u^i u^j / lfac^2); with lfac = 1 and the (v.B) terms
+!> dropped, to mhd's. The induction and GLM psi terms are mhd's unchanged,
+!> since the induction equation is the same in both. wprim(iw_mom(:)) holds
+!> the spatial four-velocity u^i = lfac*v^i, as in srhd. Every geometric
+!> prefactor is the discrete dAdV = (A_upper - A_lower)/dV rather than the
+!> continuous 2/r and cot(theta)/r: for the metrics fill_geometry_device
+!> builds, dAdV(1) = 2*<1/r> and dAdV(2) = <cot(theta)/r> exactly, so these
+!> terms are well balanced and independent of where in the cell bgeo%x sits.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  ${GPU_ROUTINE_SEQ()}$
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (rho, spatial four-velocity, pressure, B, psi, mu,
+  !> lfac) at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, theta, phi); unused - every geometric factor
+  !> comes from dAdV, see the note above
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: v1, v2, v3, b1, b2, b3, inv_lfac2, v_dot_b
+  real(dp)                 :: w_tot, ptot, inv_r, cot_r, source
+  real(dp)                 :: t22, t33, t12, t13, t23
+
+  inv_lfac2 = 1.0_dp / wprim(lfac_)**2
+  v1 = wprim(iw_mom(1)) / wprim(lfac_)
+  v2 = wprim(iw_mom(2)) / wprim(lfac_)
+  v3 = wprim(iw_mom(3)) / wprim(lfac_)
+  b1 = wprim(iw_mag(1))
+  b2 = wprim(iw_mag(2))
+  b3 = wprim(iw_mag(3))
+  v_dot_b = v1 * b1 + v2 * b2 + v3 * b3
+
+  w_tot = wprim(iw_rho) * wprim(lfac_) / wprim(mu_) + b1**2 + b2**2 + b3**2
+  ptot  = wprim(iw_e) + 0.5_dp * ((b1**2 + b2**2 + b3**2) * inv_lfac2 + &
+     v_dot_b**2)
+  inv_r = 0.5_dp * dAdV(1)   ! <1/r>
+  cot_r = dAdV(2)            ! <cot(theta)/r>
+
+  t22 = w_tot * v2 * v2 - 2.0_dp * v_dot_b * b2 * v2 - b2 * b2 * inv_lfac2
+  t33 = w_tot * v3 * v3 - 2.0_dp * v_dot_b * b3 * v3 - b3 * b3 * inv_lfac2
+  t12 = w_tot * v1 * v2 - v_dot_b * (b1 * v2 + v1 * b2) - b1 * b2 * inv_lfac2
+  t13 = w_tot * v1 * v3 - v_dot_b * (b1 * v3 + v1 * b3) - b1 * b3 * inv_lfac2
+  t23 = w_tot * v2 * v3 - v_dot_b * (b2 * v3 + v2 * b3) - b2 * b3 * inv_lfac2
+
+  ! s[m_r] = (2 ptot + T_theta,theta + T_phi,phi) / r
+  source = (2.0_dp * ptot + t22 + t33) * inv_r
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source
+
+  ! s[m_theta] = ((ptot + T_phi,phi) cot(theta) - T_r,theta) / r
+  source = (ptot + t33) * cot_r - t12 * inv_r
+  wnew(iw_mom(2)) = wnew(iw_mom(2)) + qdt * source
+
+  ! s[m_phi] = -(T_r,phi + T_theta,phi cot(theta)) / r
+  source = -t13 * inv_r - t23 * cot_r
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source
+
+  ! s[B_r] = psi * 2/r (GLM divergence-cleaning coupling only)
+  source = 2.0_dp * wprim(psi_) * inv_r
+  wnew(iw_mag(1)) = wnew(iw_mag(1)) + qdt * source
+
+  ! s[B_theta] = (v_r B_theta - v_theta B_r + psi cot(theta)) / r
+  source = (v1 * b2 - v2 * b1) * inv_r + wprim(psi_) * cot_r
+  wnew(iw_mag(2)) = wnew(iw_mag(2)) + qdt * source
+
+  ! s[B_phi] = (v_r B_phi - v_phi B_r
+  !             + (v_theta B_phi - v_phi B_theta) cot(theta)) / r
+  source = (v1 * b3 - v3 * b1) * inv_r + (v2 * b3 - v3 * b2) * cot_r
+  wnew(iw_mag(3)) = wnew(iw_mag(3)) + qdt * source
+
+  ! No geometric source term for D, tau or psi: they are scalars.
+
+end subroutine addsource_geometry
+#:enddef
+#:elif GEOM == 'cylindrical'
+!> Curvature source terms for cylindrical (r, z, phi) coordinates, with
+!> the same stress T^ij, total pressure and conventions as the spherical
+!> branch above. Only m_r, m_phi, B_phi and B_r (via the GLM psi coupling)
+!> pick up curvature terms; m_z and B_z do not. dAdV(1) is exactly <1/r> -
+!> and, since a cylindrical radial face area is linear in r, exactly
+!> 1/r_midpoint as well. It is *not* 1/x(1): bgeo%x holds the volume
+!> barycentre.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  ${GPU_ROUTINE_SEQ()}$
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (rho, spatial four-velocity, pressure, B, psi, mu,
+  !> lfac) at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, z, phi); unused - every geometric factor
+  !> comes from dAdV, see the note above
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: v1, v2, v3, b1, b2, b3, inv_lfac2, v_dot_b
+  real(dp)                 :: w_tot, ptot, inv_r, source
+  real(dp)                 :: t33, t13
+
+  inv_lfac2 = 1.0_dp / wprim(lfac_)**2
+  v1 = wprim(iw_mom(1)) / wprim(lfac_)
+  v2 = wprim(iw_mom(2)) / wprim(lfac_)
+  v3 = wprim(iw_mom(3)) / wprim(lfac_)
+  b1 = wprim(iw_mag(1))
+  b2 = wprim(iw_mag(2))
+  b3 = wprim(iw_mag(3))
+  v_dot_b = v1 * b1 + v2 * b2 + v3 * b3
+
+  w_tot = wprim(iw_rho) * wprim(lfac_) / wprim(mu_) + b1**2 + b2**2 + b3**2
+  ptot  = wprim(iw_e) + 0.5_dp * ((b1**2 + b2**2 + b3**2) * inv_lfac2 + &
+     v_dot_b**2)
+  inv_r = dAdV(1)   ! <1/r>
+
+  t33 = w_tot * v3 * v3 - 2.0_dp * v_dot_b * b3 * v3 - b3 * b3 * inv_lfac2
+  t13 = w_tot * v1 * v3 - v_dot_b * (b1 * v3 + v1 * b3) - b1 * b3 * inv_lfac2
+
+  ! s[m_r] = (ptot + T_phi,phi) / r
+  source = (ptot + t33) * inv_r
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source
+
+  ! s[m_phi] = -T_r,phi / r
+  source = -t13 * inv_r
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source
+
+  ! s[B_r] = psi / r (GLM divergence-cleaning coupling only)
+  source = wprim(psi_) * inv_r
+  wnew(iw_mag(1)) = wnew(iw_mag(1)) + qdt * source
+
+  ! s[B_phi] = (B_phi v_r - B_r v_phi) / r
+  source = (b3 * v1 - b1 * v3) * inv_r
+  wnew(iw_mag(3)) = wnew(iw_mag(3)) + qdt * source
+
+end subroutine addsource_geometry
+#:enddef
+#:endif
 
 
 
