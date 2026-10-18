@@ -167,85 +167,386 @@ contains
     $:brent_template("brent","master_function", 5)
     $:brent_template("aux_brent", "aux_f", 4)
 
-!=============================================================================
+!===========================================================================================
 !
-! This section implements a bisection root solver for use in the con2prim algorithm
+!           Implements Root solver TOMS748 https://doi.org/10.1145/210089.210111
 !
-!============================Bisection Root Solver=================================
+!==================================TOMS748==================================================
 
-    #:def bisection_template(name, func)
-    function ${name}$(mu_plus, params) result(mu)
+
+
+    pure subroutine bracket(a, b, c, fa, fb, fc, d, fd)
         ${GPU_ROUTINE_SEQ()}$
         implicit none
+        real(dp), intent(inout) :: a, b, fa, fb 
+        real(dp), intent(in) :: c, fc
+
+        real(dp), intent(out) :: d, fd
+        if (sign(1.0_dp, fa) /= sign(1.0_dp, fc)) then
+            d=b
+            fd=fb
+ 
+            b=c
+            fb=fc      
+        elseif (sign(1.0_dp, fb) /= sign(1.0_dp, fc)) then
+            d=a
+            fd=fa
+
+            a = c
+            fa = fc
+        end if
+    end subroutine bracket
+
+    pure function cubic_int(a, b, f1, f2, f3) result(q)
+        ${GPU_ROUTINE_SEQ()}$
+        implicit none 
+        real(dp), intent(in) :: a, b, f1, f2, f3
+        real(dp) :: q
+        q = (a-b)*f1/(f2-f3)
+    end function cubic_int
+
+    pure function secant(a, b, fa, fb) result(f)
+        ${GPU_ROUTINE_SEQ()}$
+        implicit none
+        real(dp), intent(in) :: a, b, fa, fb
+        real(dp) :: f
+        f= (fb - fa)/(b - a)
+    end function secant
+
+
+    pure function ipzero(a, b, c, d, fa, fb, fc, fd) result(x_bar)
+        ${GPU_ROUTINE_SEQ()}$
+        implicit none
+        real(dp), intent(in) :: a, b, c, d, fa, fb, fc, fd
+        real(dp) :: q11, q21, q31, q22, q32, d21, d31, d32, q33
+        real(dp) :: x_bar
+
+        q11 = cubic_int(c, d, fc, fd, fc)
+
+        q21 = cubic_int(b, c, fb, fc, fb)
+
+        q31 = cubic_int(a, b, fa, fb, fa)
+
+        d21 = cubic_int(b, c, fc, fc, fb)
+
+        d31 = cubic_int(a, b, fb, fb, fa)
+
+        q22 = cubic_int(d21, q11, fb, fd, fb)
+
+        q32 = cubic_int(d31, q21, fa, fc, fa)
+
+        d32 = cubic_int(d31, q21, fc, fc, fa)
+
+        q33 = cubic_int(d32, q22, fa, fd, fa)
+
+        x_bar = a + q31 + q32 + q33
+
+    end function ipzero
+
+
+    pure function newt_quad(a, b, d, fa, fb, fd, k) result(r)
+        ${GPU_ROUTINE_SEQ()}$
+        implicit none
+        real(dp), intent(in) :: a, b, d, fa, fb, fd
+        integer, intent(in)  :: k
+        real(dp) :: r
+        real(dp) :: big_a, big_b
+        integer :: i
+        real(dp) :: den
+
+        big_b = secant(a, b, fa, fb)
+
+        big_a = secant(a, d, big_a, secant(b, d, fb, fd))
+
+        if (big_a == 0) then
+
+            r = a - fa/big_b
+
+        else
+            if (big_a*fa>0) then
+                r = a
+            else
+                r = b
+            end if 
+
+            do i=1, k 
+
+                den=big_b + big_a*(2*r - a - b)
+                if (den==0) then
+                    r=(a+b)/2
+                    exit
+                end if
+
+                r = r - (fa+ big_b*(r-a)+ big_a*(r-a)*(r-b))/(den)
+
+
+            end do
+
+        end if
+
+    end function newt_quad
+
+    pure function check_eq(fa, fb, fd, fe) result(equal)
+        ${GPU_ROUTINE_SEQ()}$    
+        implicit none
+        real(dp), intent(in) :: fa, fb, fd, fe
+        logical :: equal
+
+        equal=.false.
+
+        if (fa==fb .or. fa==fd .or. fa==fe .or. fb==fd .or. fa==fe  .or. fd==fe) then
+            equal=.true.
+        end if    
+    end function check_eq
+
+
+    #: def TOMS748_template(name, func, npar)
+    pure function ${name}$(mu_plus, params) result(out)
+        ${GPU_ROUTINE_SEQ()}$
+        implicit none
+        real(dp), intent(in) :: params(${npar}$)
         real(dp), intent(in) :: mu_plus
-        real(dp), intent(in) :: params(:)
-        real(dp) :: mu
-        real(dp) :: a, b, c
-        real(dp) :: fa, fb, fc
+        real(dp) :: a, b, c, d, e, u
+        real(dp) :: fa, fb, fc, fd, fe, fu
         real(dp) :: tol
-        integer :: maxiter, i
         logical :: bound_error
+        logical :: success
+        integer :: i, maxiter
+        real(dp):: delta
+        real(dp) :: old_a, old_b
+        real(dp) :: eps
+        real(dp) :: out
 
+        eps=epsilon(1.0_dp)
 
-
-
+        success=.false.
         bound_error=.false.
-        maxiter=100
-        tol=1e-15
+        maxiter=20
 
         a=0
-
         b=mu_plus
 
+        e=0
+        fe=0
+
+        tol=1e-18_dp
+        ! 4.1.1
         call ${func}$(a, params, fa)
+
+
 
         call ${func}$(b, params, fb)
 
-        if (fa>0 .eqv. fb>0) then 
-            bound_error=.true.
-        end if
 
-        do i=1, maxiter
-            if (bound_error) then
-                exit
+        if (fa*fb>0) then
+            bound_error=.true.
+            if (abs(fb)>abs(fa)) then
+                out=a
+            else
+                out=b
+            end if
+        else
+
+            c = a - fa/secant(a, b, fa, fb)
+
+            if (abs(c-a)<eps*32) then
+                c = c + 100*eps
+            elseif (abs(c-b)<eps*32) then
+                c = c - 100*eps
             end if
 
-            c=(b+a)/2.0_dp
+            if ((c-a)*(c-b)>=0) then
+                c = (a+b)/2
+            end if
 
             call ${func}$(c, params, fc)
 
-            if (abs((b-a)/c)<tol) then
-                mu=c
+
+            ! 4.1.2
+            if (fc == 0) then
+                success = .true.
+                out = c
+            end if
+            call bracket(a, b, c, fa, fb, fc, d, fd)
+
+        end if
 
 
+
+        do i=1, maxiter
+            if (bound_error .or. success) then
+                exit
+            end if
+            !4.2.3
+            if (i==1 .or. check_eq(fa, fb, fd, fe)) then
+                c = newt_quad(a, b, d, fa, fb, fd, 2)
+            else
+                c = ipzero(a, b, d, e, fa, fb, fd, fe)
+                ! if step leaves bracket use newton step instead
+                if ((c-a)*(c-b)>=0) then
+                    c = newt_quad(a, b, d, fa, fb, fd, 2)
+                end if
+            end if 
+
+
+            if ((c-a)*(c-b)>=0) then
+                c = (a+b)/2
+            end if
+
+            call ${func}$(c, params, fc)
+
+
+            old_a = a
+            old_b = b
+
+            !4.2.4
+            e = d
+            fe = fd
+
+            if (fc == 0) then
+                out=c 
+                exit
+            end if
+            call bracket(a, b, c, fa, fb, fc, d, fd)
+
+            if (abs(fa)<abs(fb)) then
+                delta = 2*abs(a)*eps+tol
+                out=a
+            else
+                delta = 2*abs(b)*eps+tol
+                out=b
+            end if
+            if (abs(b-a)<=2*delta) exit
+
+            !4.2.5
+            if (check_eq(fa, fb, fd, fe))  then
+                c = newt_quad(a, b, d, fa, fb, fd, 3)
+            else
+                c = ipzero(a, b, d, e, fa, fb, fd, fe)
+                ! if step leaves bracket use newton step instead
+                if ((c-a)*(c-b)>=0) then
+                    c = newt_quad(a, b, d, fa, fb, fd, 3)
+                end if
+                
+            end if 
+
+
+            if ((c-a)*(c-b)>=0) then
+                c = (a+b)/2
+            end if
+
+            call ${func}$(c, params, fc)
+
+
+            !4.2.6
+
+            if (fc == 0) then
+                out=c 
                 exit
             end if
 
-            if (fa>0 .and. fc>0) then
-                a=c
-                fa=fc
+            e = d
+            fe = fd            
+            call bracket(a, b, c, fa, fb, fc, d, fd)
 
-            else if(.not. fa>0 .and. .not. fc>0) then
-                a=c
-                fa=fc
+            if (abs(fa)<abs(fb)) then
+                delta = 2*abs(a)*eps+tol
+                out=a
+            else
+                delta = 2*abs(b)*eps+tol
+                out=b
+            end if
+            if (abs(b-a)<=2*delta) exit
+
+            !4.1.5
+            if (abs(fa)<abs(fb)) then
+                u=b
+                fu=fb
+
+                if (abs(c-u)<eps*32) then
+                    u = u - abs(u)*tol
+                end if
             else 
-                b=c
-                fb=fc
+                u=a
+                fu=fa
+                if (abs(c-u)<eps*32) then
+                    u = u + abs(u)*tol
+                end if
             end if
 
 
-        end do
 
-        if (.not. bound_error) then
-            mu=c
-        end if
-    
+            !4.1.6
+            c = u - 2 /secant(a, b, fa, fb)*fu
+
+            !4.1.7
+            if (abs(c-u)>0.5*(b-a)) then
+                c = (a+b)/2
+            end if
+
+
+            if ((c-a)*(c-b)>=0) then
+                c = (a+b)/2
+            end if
+
+            call ${func}$(c, params, fc)
+
+
+
+
+            e = d
+            fe = fd
+            !4.1.8
+            if (fc == 0) then
+                out=c 
+                exit
+            end if
+            call bracket(a, b, c, fa, fb, fc, d, fd)
+
+            if (abs(fa)<abs(fb)) then
+                delta = 2*abs(a)*eps+tol
+                out=a
+            else
+                delta = 2*abs(b)*eps+tol
+                out=b
+            end if
+            if (abs(b-a)<=2*delta) exit
+
+            !4.1.9
+            !if bracket hasnt closed enough default to bisection
+            if (abs(b-a)>0.5*abs(old_b - old_a)) then
+
+                e = d 
+                fe = fd
+                c=(a+b)/2
+                call ${func}$(c, params, fc)
+
+
+                if (fc == 0) then
+                    out=c 
+                    exit
+                end if
+                call bracket(a, b, c, fa, fb, fc, d, fd)
+
+                if (abs(fa)<abs(fb)) then
+                    delta = 2*abs(a)*eps+tol
+                    out = a
+                else
+                    delta = 2*abs(b)*eps+tol
+                    out = b
+                end if
+                if (abs(b-a)<=2*delta) exit
+            end if
+        end do
+        
     end function ${name}$
+
     #:enddef
 
-    !$:bisection_template("bisection", "master_function")
-    !$:bisection_template("aux_bis","aux_f")
-
+    
+    $:TOMS748_template("toms", "master_function", 5)
+    $:TOMS748_template("aux_toms", "aux_f", 4)
+            
 
 
 
@@ -428,7 +729,9 @@ contains
 
 
 
-    $:con2prim_template("con2prim", "brent", "aux_brent")
+    !$:con2prim_template("con2prim", "brent", "aux_brent")
+
+    $:con2prim_template("con2prim", "toms", "aux_toms")
 
 
    
