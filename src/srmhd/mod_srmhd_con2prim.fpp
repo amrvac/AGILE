@@ -345,6 +345,15 @@ contains
             else
                 out=b
             end if
+        
+        elseif (fa==0) then
+            out=a
+            success=.true.
+
+        elseif(fb==0) then
+            out=b
+            success=.true.
+            
         else
 
             c = a - fa/secant(a, b, fa, fb)
