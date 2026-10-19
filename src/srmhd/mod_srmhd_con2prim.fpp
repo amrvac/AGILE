@@ -180,15 +180,15 @@ contains
         implicit none
         real(dp), intent(inout) :: a, b, fa, fb 
         real(dp), intent(in) :: c, fc
-
         real(dp), intent(out) :: d, fd
+
         if (sign(1.0_dp, fa) /= sign(1.0_dp, fc)) then
             d=b
             fd=fb
  
             b=c
             fb=fc      
-        elseif (sign(1.0_dp, fb) /= sign(1.0_dp, fc)) then
+        else
             d=a
             fd=fa
 
@@ -256,7 +256,7 @@ contains
 
         big_b = secant(a, b, fa, fb)
 
-        big_a = secant(a, d, big_a, secant(b, d, fb, fd))
+        big_a = secant(a, d, big_b, secant(b, d, fb, fd))
 
         if (big_a == 0) then
 
@@ -294,7 +294,7 @@ contains
 
         equal=.false.
 
-        if (fa==fb .or. fa==fd .or. fa==fe .or. fb==fd .or. fa==fe  .or. fd==fe) then
+        if (fa==fb .or. fa==fd .or. fa==fe .or. fb==fd .or. fb==fe  .or. fd==fe) then
             equal=.true.
         end if    
     end function check_eq
@@ -685,7 +685,7 @@ contains
 
 
     #:def con2prim_template(name, solver, aux_solver)
-    subroutine ${name}$(mu, d, tau, s_sqr, b_sqr, s_dot_b)
+    pure subroutine ${name}$(mu, d, tau, s_sqr, b_sqr, s_dot_b)
         ${GPU_ROUTINE_SEQ()}$
         implicit none
         !real(dp), intent(out) :: lfac
@@ -729,9 +729,9 @@ contains
 
 
 
-    !$:con2prim_template("con2prim", "brent", "aux_brent")
+    $:con2prim_template("con2prim", "brent", "aux_brent")
 
-    $:con2prim_template("con2prim", "toms", "aux_toms")
+    !$:con2prim_template("con2prim", "toms", "aux_toms")
 
 
    

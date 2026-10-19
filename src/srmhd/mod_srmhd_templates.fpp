@@ -696,7 +696,7 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
 
   cminL = (B - root)/(2*A)
 
-  !right side
+  !right state
   rhoh = uR(iw_rho) /uR(mu_) /uR(lfac_)
   
   c_s_sqr = srmhd_gamma*uR(iw_e)/rhoh
