@@ -76,6 +76,7 @@ contains
     use mod_initialize_amr, only: improve_initial_condition
 
     use mod_selectgrids, only: selectgrids
+    use mod_set_aux, only: set_aux_all
     use mod_particles
     use mod_fix_conserve
     use mod_advance, only: process
@@ -156,6 +157,8 @@ contains
        ! update ghost cells for all need-boundary variables
        call getbc(global_time,0.d0,ps,1,nwflux+nwaux)
 
+       call set_aux_all()
+
        ! reset AMR grid
        if (reset_grid) then
          call settree
@@ -231,6 +234,8 @@ contains
 
        ! select active grids
        call selectgrids
+
+       call set_aux_all()
 
        if (use_particles) then
          call init_gridvars()
