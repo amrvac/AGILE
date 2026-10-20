@@ -2,14 +2,33 @@ name: tests (CPU)
 
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Test suite to run'
+        type: choice
+        options: [ basic, extended, all ]
+        default: basic
   push:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+    types: [ opened, synchronize, reopened, labeled ]
+  schedule:
+    - cron: '0 2 * * 0'   # weekly full run on master (Sunday 02:00 UTC)
 
+# Basic suite by default; the full suite for the weekly run, for a PR labelled
+# 'full-tests', or as chosen in a manual run. Read by tests/Makefile.
+env:
+  SUITE: >-
+    ${{ inputs.suite
+        || (github.event_name == 'schedule' && 'all')
+        || (contains(github.event.pull_request.labels.*.name, 'full-tests') && 'all')
+        || 'basic' }}
 
 jobs:
   GNU:
+    # labelling a PR reruns CI only for the full-tests label
+    if: github.event.action != 'labeled' || github.event.label.name == 'full-tests'
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +81,8 @@ jobs:
           arch=gnu ./test_runner.sh
 
   INTEL:
+    # labelling a PR reruns CI only for the full-tests label
+    if: github.event.action != 'labeled' || github.event.label.name == 'full-tests'
     strategy:
       fail-fast: false
       matrix:

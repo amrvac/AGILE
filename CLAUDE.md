@@ -85,14 +85,31 @@ absolute).
 
 ```bash
 cd tests
-make hd            # run all hd/* test cases
-make mhd           # run all mhd/* test cases
-make ffhd          # run all ffhd/* test cases
-make srhd          # run all srhd/* test cases
+make hd            # run the basic hd/* test cases
+make mhd           # run the basic mhd/* test cases
+make ffhd          # run the basic ffhd/* test cases
+make srhd          # run the basic srhd/* test cases
+make SUITE=all hd  # basic and extended hd/* cases
+make SUITE=all list # print the directories a SUITE selects
 make -j4 hd         # run in parallel
 make -s hd          # suppress "Entering/leaving directory" noise
 make clean          # clean all test build artifacts
 ```
+
+The test directories are split into two suites in `tests/Makefile`: each
+physics module has a `*_BASIC` and a `*_EXTENDED` list. `SUITE` (a make
+variable or environment variable, like `arch`) selects `basic` (the default),
+`extended` or `all`. The split is per directory, because a directory is one
+build and builds dominate the cost. The basic suite keeps one Cartesian case
+per physics plus the curvilinear cases whose checks nothing else provides
+(`hd/spherical` for refluxing, `hd/log_cylindrical_pole` for `log_r0`, ...).
+Naming a single directory (`make hd/spherical`) runs it regardless of `SUITE`.
+
+In CI (`.github/workflows/tests.yml` and `gpu.yml`) pushes and PRs run the
+basic suite. The full suite (`all`) runs weekly on master (Sunday 02:00
+UTC), on a PR carrying the `full-tests` label (adding the label triggers the
+run), and from a manual run, whose `suite` input chooses between
+`basic`, `extended` and `all` (`gh workflow run tests.yml -f suite=all --ref <branch>`).
 
 To run a single case's test directly:
 
@@ -107,7 +124,8 @@ This is also what CI does, via `tests/test_runner.sh <target>` (used as
 
 Add a new test case by copying an existing case directory (`mod_usr.fpp`,
 `agile.par`/`test.par`, `test.make`, `correct_output/`) and registering it in
-`tests/Makefile` under the appropriate `*_DIRS` variable.
+`tests/Makefile` under the appropriate `*_BASIC` or `*_EXTENDED` variable (extended unless
+it covers something no basic case does).
 
 ## Coordinate systems
 
