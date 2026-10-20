@@ -149,6 +149,7 @@ contains
     logical :: refineflag, coarsenflag, norefineflag, nocoarsenflag
     double precision :: qt
     integer :: ix1, ix2, ix3
+    logical :: rf, cf, nrf, ncf
 
     if (time_advance) then
        qt=global_time+dt
@@ -167,13 +168,22 @@ contains
        nocoarsenflag = .false.
 
 #:if defined('REFINE_USR')
-       ${GPU_LOOP_VECTOR("collapse(3) reduction(.or.:refineflag) reduction(.and.:coarsenflag) reduction(.and.:norefineflag) reduction(.or.:nocoarsenflag)")}$
+       ! the user rule sets per-cell flags
+       ${GPU_LOOP_VECTOR("collapse(3) private(rf, cf, nrf, ncf) reduction(.or.:refineflag) reduction(.and.:coarsenflag) reduction(.and.:norefineflag) reduction(.or.:nocoarsenflag)")}$
        do ix3 = ixMlo3, ixMhi3
           do ix2 = ixMlo2, ixMhi2
              do ix1 = ixMlo1, ixMhi1
+                rf = .false.
+                cf = .true.
+                nrf = .true.
+                ncf = .false.
                 call usr_refine_grid(level,qt, &
                      bg(1)%w(ix1, ix2, ix3, :, igrid), bgeo%x(ix1, ix2, ix3, :, igrid), &
-                     refineflag, coarsenflag, norefineflag, nocoarsenflag)
+                     rf, cf, nrf, ncf)
+                refineflag = refineflag .or. rf
+                coarsenflag = coarsenflag .and. cf
+                norefineflag = norefineflag .and. nrf
+                nocoarsenflag = nocoarsenflag .or. ncf
              end do
           end do
        end do
