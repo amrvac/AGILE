@@ -181,6 +181,7 @@
       mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
       mhd_hyperbolic_thermal_conduction_anisotropic, &
       tc_kappa_par, tc_kappa_perp, &
+      H_ion_fr, He_ion_fr, He_ion_fr2, &
       mhd_energy_only
 
     do n = 1, size(files)
@@ -212,7 +213,7 @@
     kB = kB_cgs
     !> eq_state_units by default, to be implemented
     a = 1.d0+4.d0*He_abundance
-    b = 2.d0+3.d0*He_abundance
+    b = 1.d0+H_ion_fr+He_abundance*(He_ion_fr*(He_ion_fr2+1.d0)+1.d0)
 
     if(unit_density/=1.d0 .or. unit_numberdensity/=1.d0) then
       if(unit_density/=1.d0) then
@@ -279,8 +280,9 @@
       end if
     end if
     unit_mass=unit_density*unit_length**3
+    unit_magneticfield=dsqrt(4.d0*dpi*unit_pressure)
 
-    ${GPU_UPDATE_DEVICE('unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass')}$
+    ${GPU_UPDATE_DEVICE('unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass, unit_magneticfield')}$
 
 #:if defined('HYPERTC')
     if (tc_kappa0_par <= 0.0d0 .and. tc_kappa_par <= 0.0d0) &
