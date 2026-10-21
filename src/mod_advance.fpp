@@ -75,7 +75,7 @@ contains
     fix_conserve_at_step = time_advance .and. levmax>levmin
     
     ! copy w instead of wold because of potential use of dimsplit or sourcesplit
-    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_PRESENT('bg, bg(1), bg(2)')}$
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
        do iw = 1, nw
@@ -90,7 +90,7 @@ contains
     end do
     
     if(stagger_grid) then
-       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_PRESENT('ps1, ps')}$
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
        do iigrid=1,igridstail; igrid=igrids(iigrid);
           ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
           do iw = 1, nws
@@ -118,7 +118,7 @@ contains
           call advect1(flux_method,rk_beta11, idimmin,idimmax,global_time,ps,&
                bg(1),global_time,ps1,bg(2))
 
-          ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_PRESENT('bg, ps2, ps1, ps')}$
+          ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
           do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
              ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
              do iw = 1, nw
@@ -139,7 +139,7 @@ contains
                global_time+rk_c2*dt,ps1,bg(2),global_time+rk_alfa22*rk_c2*dt,ps2,&
                bg(3))
 
-          ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_PRESENT('bg, ps2, ps')}$
+          ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
           do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
              ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
              do iw = 1, nw
