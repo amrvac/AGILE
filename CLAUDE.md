@@ -1031,6 +1031,16 @@ Consequences:
   `correct_output/blast.log` changed when the frozen field moved to
   `usr_set_nwextra`.
 
+## MHD units
+
+- `unit_magneticfield = sqrt(4 pi unit_pressure)` is set in `phys_units`
+  (it was left at 1 before, which scaled the Braginskii kappa_perp through
+  `htc_Cchi` by the field unit). `H_ion_fr`, `He_ion_fr`, `He_ion_fr2` in
+  `&mhd_list` enter b = 1 + H_ion_fr + He_abundance (...), the particles per
+  hydrogen nucleus in p = b n kB T; the defaults give the old
+  b = 2 + 3 He_abundance, and `He_abundance = 0, H_ion_fr = 0` gives
+  Legolas' p = n k T.
+
 ## Writing a new simulation case (`mod_usr.fpp`)
 
 Every case directory has a `mod_usr.fpp` defining `module mod_usr` with a
@@ -1105,6 +1115,18 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   dependency rules for incremental rebuilds.
 
 ## Bug-hunting notes
+
+- **A reduction variable must not be passed by reference into a routine
+  called from the reduced loop.** `forcedrefine_grid` combined the per-block
+  refine/coarsen flags with `reduction(.or.:refineflag) ...` on the vector
+  loop over a block's cells and passed those same flags as `intent(inout)`
+  arguments to `usr_refine_grid`. The callee then wrote to the shared
+  variable, not the lane's reduction copy, and only the first cell's value
+  survived: a `usr_refine_grid` rule was applied to one cell per block, the
+  mesh came out lopsided, and nothing complained. CPU builds were unaffected,
+  which is what made it look like a physics asymmetry. The call now takes
+  per-cell `private` flags that the loop body combines into the reduction
+  variables itself; the loop stays vectorised.
 
 - **When CPU is correct and one GPU compiler is wrong and the failure is
   deterministic, it is a miscompile — bisect the kernel's directives
