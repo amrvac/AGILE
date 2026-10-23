@@ -560,7 +560,7 @@ device kernel and reads `bgeo` there like the rest of the AMR machinery.
 `modify_IC`, `getintbc` (when `usr_internal_bc` is
 set), `process`/`process_advanced` (when the `usr_process_*_grid` hooks are
 set), `usr_modify_output` in `src/agile.fpp`, `prolong_grid`/`prolong_2nd`
-(when `prolongprimitive` or `fix_small_values` is on), and `alloc_node` itself
+(when `prolongprimitive` is on), and `alloc_node` itself
 just before `set_B0_grid`/`phys_set_equi_vars`, which read positions on the
 host.
 

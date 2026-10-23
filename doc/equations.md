@@ -1,8 +1,8 @@
 title: Physics modules and equations
 
 # List of physics modules {: #eq_list_physics }
-This document describes the equations implemented.
-Information about user defined source terms are in the user module. In
+This document describes the equations implemented. User-defined source
+terms are described in [User source terms](#eq_usr_source) below. In
 principle, the code handles anything of generic form
 
 \begin{equation}
@@ -35,11 +35,35 @@ Section 2.3, which is also the citable reference for AGILE 1.0.
 | `mhd`  | `LF`, `HLL` |
 | `srhd` | `LF`, `HLL` |
 
-The scheme is set per refinement level via `flux_scheme` in `&methodlist`
-(`'tvdlf'` for `LF`, `'hll'`, `'hllc'`; `'tvdlf'` is the default). `srhd`'s
-`HLL` uses the relativistic Davis (1988) min/max signal-speed estimate in
-`estimate_speeds_minmax`; `HLLC` remains `hd`-only, as its Toro (2010) contact-wave
-construction assumes a non-relativistic, scalar-pressure state.
+The scheme is chosen with `flux_scheme` in `&methodlist` (`'tvdlf'` for
+`LF`, `'hll'`, `'hllc'`; `'tvdlf'` is the default). `flux_scheme` is an
+array with one entry per refinement level, as in MPI-AMRVAC, but **AGILE
+uses only its first entry, for every level**: different schemes on
+different levels are not implemented yet. The slope limiter, `limiter`, is
+applied per level. `srhd`'s `HLL` uses the relativistic Davis (1988) min/max
+signal-speed estimate in `estimate_speeds_minmax`; `HLLC` remains `hd`-only,
+as its Toro (2010) contact-wave construction assumes a non-relativistic,
+scalar-pressure state. A solver not listed for a module in the table is
+not supported by it: the module has no signal-speed estimate for it, only a
+placeholder that calls `mpistop`.
+
+## Compile-time switches {: #eq_compile_time }
+
+Most of the physics options below are **compile-time** switches: they become
+fypp defines through `make/config_schema.toml`, so they select which source
+terms and variables are compiled in. Set them in the case's `agile.par`,
+which is the file the build reads, and rebuild. Setting one only in the
+parameter file of a run, without rebuilding, has no effect. These are:
+
+| Module | Compile-time switches in its `_list` |
+| --- | --- |
+| `hd`   | `hd_gravity`, `hd_radiative_cooling`, `hd_n_tracer` |
+| `mhd`  | `mhd_gravity`, `mhd_radiative_cooling`, `mhd_resistivity`, `mhd_hyperbolic_thermal_conduction`, `mhd_hyperbolic_thermal_conduction_anisotropic`, `mhd_source_usr`, `mhd_energy_only`, `mhd_n_tracer` |
+| `ffhd` | `ffhd_gravity`, `ffhd_radiative_cooling`, `ffhd_hyperbolic_thermal_conduction`, `ffhd_pdivb`, `ffhd_source_usr` |
+| `srhd` | `srhd_source_usr`, `srhd_n_tracer` |
+
+Everything else in the `_list`s, for example `hd_gamma`, `mhd_eta` or
+`srhd_eos`, is an ordinary run-time parameter.
 
 ## Hydrodynamics: hd {: #eq_hd }
 
@@ -87,13 +111,22 @@ and the constant mean molecular weight μ̃ = (1+4He_a)/(2+3He_a) is set by
 the fixed Helium abundance **He_abundance** (He_a ≡ n_He/n_H).
 
 Parameters of hydrodynamics are read in the **hd_list** of the parameter
-file, including the equation parameter **hd_gamma**.
+file, including the equation parameter **hd_gamma** and the number of
+tracers **hd_n_tracer**.
 
 This equation module can be combined with physical sources for
 (local) optically thin radiative losses by setting **hd_radiative_cooling=.true.**,
 see the [radiative cooling](radiative_cooling.html) page. It can also be
 combined with the external gravity module by setting **hd_gravity=.true.**,
-see [Gravity](#eq_gravity) below.
+see [Gravity](#eq_gravity) below. Both are compile-time switches, set in
+`agile.par` (see [Compile-time switches](#eq_compile_time)). `hd` has no
+switch for [user source terms](#eq_usr_source).
+
+`hd_list` also reads **hd_energy** and **hd_adiab**, inherited from
+MPI-AMRVAC, where `hd_energy = .false.` selects an isothermal gas with
+p = `hd_adiab` ρ^γ̂. AGILE does not support that: the flux and conversion
+kernels always evolve the energy equation, and `hd_adiab` is not used.
+Leave `hd_energy` at its default, `.true.`.
 
 ### Radiative losses {: #eq_radloss }
 When **hd_radiative_cooling**/**mhd_radiative_cooling**/**ffhd_radiative_cooling**
@@ -121,7 +154,8 @@ abundance He_a ≡ n_He/n_H, so that charge neutrality sets
 The external gravitational acceleration **g** enters the momentum and
 energy sources (ρ**g** and ρ**v**·**g** respectively) of the `hd`, `mhd`
 and `ffhd` modules alike, activated by setting **hd_gravity**/**mhd_gravity**/**ffhd_gravity**
-`= .true.` in the corresponding `_list` of the parameter file. AGILE does
+`= .true.` in the corresponding `_list` of `agile.par` (a compile-time
+switch, see [Compile-time switches](#eq_compile_time)). AGILE does
 not ship a built-in gravity profile (e.g. no separate "uniform" vs "point
 mass" switches); instead, the user supplies **g** directly for the
 current cell state by implementing a `gravity_field` function in
@@ -130,7 +164,7 @@ current cell state by implementing a `gravity_field` function in
 
 ```fortran
 pure real(dp) function gravity_field(wCT, x, idim) result(field)
-  ${GPU_ROUTINE_SEQ()}
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)       :: wCT(nw_phys)
   real(dp), intent(in)       :: x(1:ndim)
   integer, value, intent(in) :: idim
@@ -145,6 +179,52 @@ end function gravity_field
 acceleration component is requested; a spatially- or time-varying field
 (e.g. a point-mass potential) can be implemented by using `x` (and any
 module-level state the user maintains) inside this function.
+
+`gravity_field` is called on the GPU, from inside the source-term kernels,
+so it must be a `pure` function marked with the generic device-routine macro
+`${GPU_ROUTINE_SEQ()}$`. Do not write `!$acc routine seq` directly: the macro
+expands to the matching directive of whichever offload backend the build
+uses (OpenACC or OpenMP) and to nothing in a CPU build. Using it needs the
+macro definitions included at the top of `mod_usr.fpp`, as every test case
+does:
+
+```fortran
+#:include "../../../src/mod_gpu_directives.fpp"
+```
+
+(the path is relative to the case directory).
+
+### User source terms {: #eq_usr_source }
+
+`mhd`, `ffhd` and `srhd` can add a user-defined, local source term to every
+cell. It is enabled with **mhd_source_usr**/**ffhd_source_usr**/**srhd_source_usr**
+`= .true.` in `agile.par` (a compile-time switch), and the physics module
+then calls a subroutine named `addsource_usr` that the case's `mod_usr.fpp`
+must provide:
+
+```fortran
+subroutine addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, qsourcesplit)
+  ${GPU_ROUTINE_SEQ()}$
+  double precision, intent(in)    :: qdt, qt                    ! step and time
+  double precision, intent(in)    :: wCT(nw_phys), wCTprim(nw_phys)
+  double precision, intent(in)    :: x(ndim)                    ! cell position
+  double precision, intent(inout) :: wnew(nw_phys)              ! add qdt*S here
+  logical, intent(in)             :: qsourcesplit
+
+  ! e.g. a heating rate H_user(x) on the energy equation:
+  wnew(iw_e) = wnew(iw_e) + qdt * ...
+end subroutine addsource_usr
+```
+
+Like `gravity_field`, it is called by name from inside the source-term
+kernel on the GPU, so it is a device routine and must not assume anything
+outside the one cell it is given. `wCT` and `wCTprim` are the state the
+stage evaluates its update on, in conserved and primitive variables; `wnew`
+is the state being updated. It is always added unsplit (`qsourcesplit` is
+`.false.`), and it does not limit the time step: a stiff user source needs a
+small enough `courantpar` or `dtpar`. `tests/ffhd/TI3D` is a working example.
+`hd` has no such switch. The `usr_source` procedure pointer in
+`mod_usr_methods` is a leftover of MPI-AMRVAC and is never called.
 
 ## Magnetohydrodynamics: mhd {: #eq_mhd }
 
@@ -178,23 +258,62 @@ where the total energy density closure is
 \end{equation}
 
 **J** = ∇×**B** is the current density, and the magnetic field is
-measured in units for which the magnetic permeability is 1. For
-non-zero resistivity η, the resistive terms are added as "non-local"
-source terms using the compact stencil detailed in Porth & Xia et al.
-(2014). The GLM field ψ used to control the divergence of **B**
-numerically is described in [Divergence B source
-treatments](#eq_divB_fix) below.
+measured in units for which the magnetic permeability is 1. The resistive
+terms, those with η, are compiled in only with **mhd_resistivity=.true.** in
+`agile.par`; they are then added with the compact stencil detailed in Porth
+& Xia et al. (2014), and also limit the time step. The GLM field ψ used to
+control the divergence of **B** numerically is described in [Divergence B
+source treatments](#eq_divB_fix) below.
 
-Parameters of magnetohydrodynamics are read in the **mhd_list** of parameter file.
-The source terms on the right hand side with **eta** in them are the resistive
-terms.
+Parameters of magnetohydrodynamics are read in the **mhd_list** of the
+parameter file. The equation parameters are the ratio of specific heats
+**mhd_gamma** and the resistivity **mhd_eta**, which only has an effect when
+`mhd_resistivity` is on.
 
-There are two equation parameters: the polytropic index **mhd_gamma**
-(which must be larger or equal to 1), and the resistivity **mhd_eta**. 
+The gas law p = n k_B T counts the particles per hydrogen nucleus as
+b = 1 + `H_ion_fr` + `He_abundance` (`He_ion_fr` (`He_ion_fr2` + 1) + 1),
+with the ionisation fractions `H_ion_fr` = H⁺/(H⁺+H),
+`He_ion_fr` = (He²⁺+He⁺)/(He²⁺+He⁺+He) and `He_ion_fr2` = He²⁺/(He²⁺+He⁺),
+all 1 (fully ionised) by default; this gives b = 2 + 3 He_a as for `hd`.
+`He_abundance = 0` with `H_ion_fr = 0` gives a neutral hydrogen gas,
+p = n k_B T. The magnetic field unit is set to √(4π p_unit).
 
-This equation module can be combined with physical sources for
-(local) optically thin [radiative losses](radiative_cooling.html) by set **mhd_radiative_cooling=.true.**. 
-It can also be combined with the external gravity modules by set **mhd_gravity=.true.**.
+This equation module can be combined with physical sources for (local)
+optically thin [radiative losses](radiative_cooling.html) by setting
+**mhd_radiative_cooling=.true.**, with the external gravity module by
+setting **mhd_gravity=.true.**, and with [user source
+terms](#eq_usr_source) by setting **mhd_source_usr=.true.**; all three are
+compile-time switches. **mhd_energy_only=.true.** freezes ρ, **v** and
+**B** and evolves only the energy equation, for example to follow
+conduction or cooling on a fixed background.
+
+### Hyperbolic thermal conduction {: #eq_mhd_htc }
+
+With **mhd_hyperbolic_thermal_conduction=.true.** (compile time), `mhd`
+evolves the field-aligned heat flux q as an extra variable, relaxing it
+towards the Spitzer value instead of solving a parabolic equation. q enters
+the energy flux as q **b̂**, and obeys
+
+\begin{equation}
+    \partial_t q = -\frac{q + f_{\mathrm{sat}}\,\kappa_\parallel\,\mathbf{\hat{b}}\cdot\nabla T}{\tau} \,,
+\end{equation}
+
+so that it tends to −f_sat κ_∥ **b̂**·∇T, the conductive flux. The
+conductivity is κ_∥ = κ_∥,0 T^(5/2) with the Spitzer coefficient
+κ_∥,0 = 8×10⁻⁷ (cgs, converted to code units in `phys_units`), or the
+constant **tc_kappa_par** when that is set positive. The flux saturates as
+f_sat = 1/(1 + |κ_∥ **b̂**·∇T|/q_sat), with q_sat = 1.5 ρ (p/ρ)^(3/2). The
+relaxation time is τ = max(4Δt, f_sat κ_∥ T C² (γ̂−1)/(p c²)), where C is
+`courantpar` and c the largest fast speed of the cell.
+
+**mhd_hyperbolic_thermal_conduction_anisotropic=.true.** (which implies the
+switch above) evolves the full heat-flux vector **q** instead, and relaxes
+its parallel and perpendicular parts separately, each with its own
+saturation and τ. The perpendicular conductivity is
+κ_⊥ = κ_∥/(1 + χ²), with the magnetisation χ = C_χ B T^(3/2)/ρ (code
+units; C_χ is set in `phys_units`), or the constant **tc_kappa_perp** when
+that is set positive. Both conductivity coefficients κ_∥,0 and C_χ are
+derived from the units and are not parameters.
 
 ### Divergence B source treatments {: #eq_divB_fix }
 
@@ -223,8 +342,10 @@ step, while
     \alpha_{\mathrm{GLM}}=\min_{i=1,3}(\Delta x_i)\,c_h/c_p^2
 \end{equation}
 
-becomes a fixed parameter set to 0.5 by default, but generally taken
-within [0,1] (Mignone, Tzeferacos & Bodo 2010).
+becomes a fixed parameter, **mhd_glm_alpha** in `&mhd_list`, set to 0.5 by
+default but generally taken within [0,1] (Mignone, Tzeferacos & Bodo 2010).
+Δx_i is the physical extent of the cell, which on a curvilinear grid varies
+from cell to cell.
 
 ## Frozen-field hydrodynamics: ffhd {: #eq_ffhd }
 
@@ -241,37 +362,53 @@ solves hydrodynamics along a given *frozen* 3D magnetic topology
 magnetic unit vector b̂ = **B**/B, this module evolves the set
 **U** = [ρ, m_∥=ρv_∥, e_hd∥, q_∥], the magnetic-field-line-projected
 variant of the hydrodynamic mass, momentum and energy equations above,
-augmented with a field-aligned heat flux q_∥:
+optionally augmented with a field-aligned heat flux q_∥:
 
 \begin{eqnarray}
     \partial_t \rho+\nabla \cdot  \left (  \rho v_{\parallel} \mathbf{\hat{b}}\right ) &=& 0\,,\\
     \partial_t m_{\parallel}+\nabla \cdot \left [  \left (  \rho v^2_{\parallel} +p\right ){\mathbf{\hat{b}}}\right ] &=& \rho \mathbf{g}\cdot\mathbf{\hat{b}} + p (\nabla\cdot \mathbf{\hat{b}})\,,\\
-    \partial_t e_{hd\parallel} + \nabla \cdot \left[\left((e_{hd\parallel} + p) v_{\parallel}-q_\parallel\right) \mathbf{\hat{b}}\right] &=& \rho v_{\parallel} \mathbf{g}\cdot\mathbf{\hat{b}}  -n_e  n_H\Lambda(T) + H_{\mathrm{user}}(\mathbf{x})\,,\\
-    \partial_t q_\parallel & = & -\frac{\left(q_\parallel-\kappa_\parallel\mathbf{\hat{b}}\cdot \nabla T\right)}{\tau} \,,
+    \partial_t e_{hd\parallel} + \nabla \cdot \left[\left((e_{hd\parallel} + p) v_{\parallel}+q_\parallel\right) \mathbf{\hat{b}}\right] &=& \rho v_{\parallel} \mathbf{g}\cdot\mathbf{\hat{b}}  -n_e  n_H\Lambda(T) + H_{\mathrm{user}}(\mathbf{x})\,,\\
+    \partial_t q_\parallel & = & -\frac{q_\parallel+\kappa_\parallel\mathbf{\hat{b}}\cdot \nabla T}{\tau} \,,
 \end{eqnarray}
 
-where now e_hd∥ = p/(γ̂-1) + ρv_∥²/2. This uses a hyperbolic approach to
-handle anisotropic (purely field-aligned) thermal conduction, where
-κ_∥ = κ_∥,0 T^(5/2), with κ_∥,0 the equation parameter **hypertc_kappa**.
-This prescription forces the parallel heat flux q_∥ to approach its
-target expression κ_∥ b̂·∇T within at most four CFL-limited timesteps
-(hence setting τ = max(4Δt_n, τ_reduced), where various prescriptions for
-τ_reduced are possible; Rempel 2017, Warnecke & Bingert 2020, Navarro et
-al. 2022, Zhou et al. 2025). A purely local user-defined heating
-prescription can be coded up by the user in H_user(**x**) (see
-`usr_source`/`usr_source_usr` in `mod_usr.fpp`).
+where now e_hd∥ = p/(γ̂-1) + ρv_∥²/2. Each source term is optional:
+
+- **The heat flux q_∥** exists only with
+  **ffhd_hyperbolic_thermal_conduction=.true.** (compile time). It uses a
+  hyperbolic approach to purely field-aligned thermal conduction, relaxing
+  q_∥ towards the conductive flux −κ_∥ **b̂**·∇T with
+  κ_∥ = κ_∥,0 T^(5/2). Note the sign: q_∥ is the heat flux itself and
+  enters the energy flux with a plus sign. κ_∥,0 is not a parameter: it is
+  the Spitzer coefficient 8×10⁻⁷ (cgs), converted to code units in
+  `phys_units` (the variable `hypertc_kappa`). The relaxation time is
+  τ = max(4Δt, κ_∥ T C² (γ̂−1)/(p c²_max)), with C = `courantpar` and c_max
+  the global maximum signal speed, so q_∥ approaches its target within at
+  most four time steps (Rempel 2017, Warnecke & Bingert 2020, Navarro et
+  al. 2022, Zhou et al. 2025). Unlike `mhd`'s
+  [conduction](#eq_mhd_htc), there is no saturation.
+- **The p(∇·b̂) term** is included only with **ffhd_pdivb=.true.**
+  (compile time, off by default). Its ∇·b̂ is a plain fourth-order central
+  difference along each direction, which is correct on a Cartesian mesh
+  only: it lacks the metric factors of a divergence in spherical or
+  cylindrical coordinates.
+- **The gravity, cooling and H_user terms** need **ffhd_gravity**,
+  **ffhd_radiative_cooling** and **ffhd_source_usr** respectively. A
+  purely local user-defined heating H_user(**x**) is coded as
+  `addsource_usr` in `mod_usr.fpp`, see [User source
+  terms](#eq_usr_source).
 
 ### Setting the frozen field {: #eq_ffhd_bhat }
 
 The unit vector b̂ = **B**/B is a pure function of position: it is never
 evolved and is not a boundary condition. The user supplies it by
 implementing the by-name hook `usr_set_nwextra` in `mod_usr.fpp` — a
-`pure`, `!$acc routine seq` subroutine that takes one point and returns
-the field's components there:
+`pure` subroutine, marked as a device routine with `${GPU_ROUTINE_SEQ()}$`
+like `gravity_field` above, that takes one point and returns the field's
+components there:
 
 ```fortran
 pure subroutine usr_set_nwextra(x, bhat)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   double precision, intent(in)  :: x(1:ndim)   ! one cell position
   double precision, intent(out) :: bhat(1:3)   ! b-hat there, in grid components
 
@@ -306,8 +443,8 @@ Key points:
 Note that FFHD re-uses the external gravity module from the hydro case
 (see [Gravity](#eq_gravity) above), but here only the effective gravity
 projected along the fixed field, **g**·b̂, enters. The radiative loss
-treatment (see [Radiative losses](#eq_radloss) above) is shared with all
-other physics modules, activated with **ffhd_radiative_cooling=.true.**.
+treatment (see [Radiative losses](#eq_radloss) above) is shared with `hd`
+and `mhd`, activated with **ffhd_radiative_cooling=.true.**.
 The equation parameter **ffhd_gamma** sets γ̂, analogous to **hd_gamma**.
 
 ## Special relativistic hydrodynamics: srhd {: #eq_srhd }
@@ -402,7 +539,133 @@ Goedbloed, Keppens & Poedts 2010). The equation parameter **srhd_gamma**
 sets γ̂ for the ideal-gas EOS (and the adiabatic index used in the Synge
 gas approximation).
 
+`srhd` has no gravity or radiative cooling. It carries **srhd_n_tracer**
+passive tracers and supports [user source terms](#eq_usr_source) with
+**srhd_source_usr=.true.** (both compile time). Its density and pressure
+floors, **srhd_small_density** and **srhd_small_pressure**, are described
+under [Positivity fixes](#eq_srhd_floors).
+
 
 # Positivity fixes {: #eq_positivity_fixes }
 
-TODO
+A finite-volume update can drive the density or the pressure of a cell
+negative, typically in strong rarefactions, near high-Mach shocks, or where
+radiative cooling removes most of the thermal energy within a step. AGILE
+handles this differently from upstream MPI-AMRVAC, and more narrowly:
+
+- **There is no general small-values machinery.** Upstream's `small_density`,
+  `small_pressure`, `check_small_values`, `fix_small_values` and
+  `small_values_method` are not part of AGILE, and the cell averages of the
+  evolved solution are never floored by the core code.
+- **hd, mhd and ffhd have no floor at all.** A negative pressure or density
+  goes straight into the sound speed (`sqrt(gamma*p/rho)` in `get_cmax`) and
+  yields NaN.
+- **A run that goes unphysical is not stopped.** `setdt` raises a `crash`
+  flag when the time step falls below `dtmin`, but the check in
+  `timeintegration` that would save a snapshot and abort on it is currently
+  commented out. Watch the log for NaN.
+
+What there is: a hook on the reconstructed face states, used by `srhd`; the
+`srhd` floors; and the temperature floor of radiative cooling.
+
+## The face-state hook: fix_prim_state {: #eq_fix_prim_state }
+
+After the MUSCL reconstruction, and before the Riemann solver, every
+reconstructed primitive face state passes through
+
+```fortran
+pure subroutine fix_prim_state(u)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(inout) :: u(nw_phys)   ! one face state, in primitive variables
+```
+
+It is called from `muscl_reconstruct_prim` in `src/mod_finite_volume.fpp`
+for the left and right state at both faces of a cell, in every direction,
+whatever the limiter. That routine is the single producer of face states, so
+this one call covers all three Riemann solvers (`tvdlf`, `hll`, `hllc`). The
+reconstruction limits every slot of the state independently, so a face
+state can come out with a negative density or pressure even where both
+neighbouring cells are admissible. The hook is the place to repair it.
+
+Two things it is *not*:
+
+- **It does not touch the cell averages.** It changes only the states the
+  fluxes are computed from. A cell can still go negative through the update
+  itself, and nothing then resets it.
+- **It is not a user hook.** `fix_prim_state` is a fypp macro of the physics
+  module, not a routine in `mod_usr.fpp`. `src/physics/mod_physics_dummies.fpp`
+  defines it empty for every module, which the compiler inlines away, and a
+  physics template that defines its own `#:def fix_prim_state()` replaces
+  it. Only `srhd` does so at present.
+
+### Floors in srhd {: #eq_srhd_floors }
+
+`srhd` uses the hook for two things. The first is always on: the
+reconstruction limits the auxiliary variables ξ and Γ like independent
+variables, although they are functions of (ρ, Γ**v**, p). A reconstructed
+face state therefore does not satisfy Γ = √(1+|Γ**v**|²) or ξ = Γ²ρh in
+general, and the signal speeds computed from it can exceed the speed of
+light. `fix_prim_state` recomputes both from the reconstructed primitives,
+with the same expressions as `to_conservative` (the Synge-gas enthalpy
+included).
+
+The second is optional, a density and pressure floor set in `&srhd_list`:
+
+```fortran
+&srhd_list
+   srhd_small_density  = 1.0d-10
+   srhd_small_pressure = 1.0d-12
+/
+```
+
+Both are run-time parameters, default to zero, and a negative value stops
+the run at startup. A face state is floored as ρ ← max(ρ, `srhd_small_density`)
+and p ← max(p, `srhd_small_pressure`) before Γ and ξ are recomputed.
+`srhd_small_pressure` is also the lower bound of the pressure bracket in the
+primitive-variable inversion (`mod_con2prim`), so it constrains the
+pressures recovered from the cell averages too. With the defaults the
+`max()` only clips values that were already negative, and a pressure clipped
+to exactly zero still gives a zero denominator in the sound speed; set both
+to small positive values when floors are wanted.
+
+### Adding a floor to another physics module {: #eq_floor_howto }
+
+To floor the face states of `hd`, for example, define the macro in
+`src/hd/mod_hd_templates.fpp`, inside its `#:if PHYS == 'hd'` block. At this
+point `u` is in primitive variables, so for `hd` the density is in
+`u(iw_rho)` and the pressure in `u(iw_e)`:
+
+```fortran
+#:def fix_prim_state()
+  pure subroutine fix_prim_state(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+
+    u(iw_rho) = max(u(iw_rho), hd_small_density)
+    u(iw_e)   = max(u(iw_e),   hd_small_pressure)
+  end subroutine fix_prim_state
+#:enddef
+```
+
+The two floors are new module parameters. Declare them next to the other
+`hd` parameters with `${GPU_DECLARE_COPYIN('hd_small_density,hd_small_pressure')}$`,
+add them to the `hd_list` namelist, and push them to the device after
+reading, with `${GPU_UPDATE_DEVICE(...)}$`, as `srhd` does for its own. If
+the module carries auxiliary variables derived from the primitives, as
+`srhd` does, recompute them here as well. Because the hook sees only face
+states, such a floor keeps the fluxes computable but does not stop a cell
+average from going negative.
+
+## Temperature floor of radiative cooling {: #eq_cooling_floor }
+
+The one floor that acts on the evolved solution belongs to radiative
+cooling. With `Tfix = .true.` in `&rc_list`, after the cooling source has
+been added, a cell is given back the thermal energy it lacks to reach
+ρ𝓡T_low, where `tlow` sets T_low (in code units; it defaults to the lowest
+temperature of the cooling table). The test is made on the state the stage
+started from, not on the cooled state, so a single stage can still cool a
+cell slightly below T_low. It only applies
+where `hd_radiative_cooling`, `mhd_radiative_cooling` or
+`ffhd_radiative_cooling` is on, and only to the cooling term: other source
+terms can still lower the temperature below T_low. See [Radiative
+cooling](radiative_cooling.html).
