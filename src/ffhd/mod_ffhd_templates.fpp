@@ -231,6 +231,8 @@
     inv_gamma_1 = 1.0d0/gamma_1
     ${GPU_UPDATE_DEVICE('physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization, gamma_1, inv_gamma_1')}$
 
+    phys_write_info => ffhd_write_info
+
     ! Determine flux variables
     rho_ = var_set_rho()
     ${GPU_UPDATE_DEVICE('rho_')}$
@@ -576,6 +578,27 @@ pure real(dp) function get_Rfactor() result(Rfactor)
   ${GPU_ROUTINE_SEQ()}$
   Rfactor = 1.0d0
 end function get_Rfactor
+#:enddef
+
+#:def write_info()
+  !> Write this module's parameters to a snapshot
+  subroutine ffhd_write_info(fh)
+    use mod_global_parameters
+    integer, intent(in)                 :: fh
+
+    integer                             :: er
+    integer, parameter                  :: n_par = 1
+    double precision                    :: values(n_par)
+    integer, dimension(MPI_STATUS_SIZE) :: st
+    character(len=name_len)             :: names(n_par)
+
+    call MPI_FILE_WRITE(fh, n_par, 1, MPI_INTEGER, st, er)
+
+    names(1) = "gamma"
+    values(1) = ffhd_gamma
+    call MPI_FILE_WRITE(fh, values, n_par, MPI_DOUBLE_PRECISION, st, er)
+    call MPI_FILE_WRITE(fh, names, n_par * name_len, MPI_CHARACTER, st, er)
+  end subroutine ffhd_write_info
 #:enddef
 
 #:endif
