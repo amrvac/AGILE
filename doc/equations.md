@@ -62,8 +62,9 @@ parameter file of a run, without rebuilding, has no effect. These are:
 | `ffhd` | `ffhd_gravity`, `ffhd_radiative_cooling`, `ffhd_hyperbolic_thermal_conduction`, `ffhd_pdivb`, `ffhd_source_usr` |
 | `srhd` | `srhd_source_usr`, `srhd_n_tracer` |
 
-Everything else in the `_list`s, for example `hd_gamma`, `mhd_eta` or
-`srhd_eos`, is an ordinary run-time parameter.
+Everything else in the `_list`s, for example `hd_gamma`, `mhd_eta`,
+`srhd_eos` or the [density and pressure floors](#eq_floors)
+`*_small_density`/`*_small_pressure`, is an ordinary run-time parameter.
 
 ## Hydrodynamics: hd {: #eq_hd }
 
@@ -247,7 +248,7 @@ induction equation for the magnetic field **B**:
 \end{equation}
 
 \begin{equation}
-  \partial_t e_{\mathrm{mhd}}+\nabla\cdot\left[\mathbf{v}(e_{\mathrm{mhd}}+p+{\textstyle{\frac{1}{2}}}B^2)-\mathbf{B}(\mathbf{v}\cdot\mathbf{B})\right]
+  \partial_t e_{\mathrm{mhd}}+\nabla\cdot\left[\mathbf{v}(e_{\mathrm{mhd}}+p+{\textstyle{\frac{1}{2}}}B^2)-\mathbf{B}(\mathbf{v}\cdot\mathbf{B})+\mathbf{q}\right]
   = \rho\mathbf{v}\cdot\mathbf{g} -n_e  n_H\Lambda(T) + \nabla \cdot \left[ \mathbf{B} \times \eta \mathbf{J}\right]\,,
 \end{equation}
 
@@ -261,7 +262,8 @@ where the total energy density closure is
     e_{\mathrm{mhd}}=\frac{p}{\hat{\gamma}-1}+\frac{1}{2}\rho v^2+\frac{1}{2}B^2 \,,
 \end{equation}
 
-**J** = ∇×**B** is the current density, and the magnetic field is
+**q** is the conductive heat flux, which is zero unless [hyperbolic thermal
+conduction](#eq_mhd_htc) is switched on. **J** = ∇×**B** is the current density, and the magnetic field is
 measured in units for which the magnetic permeability is 1. The resistive
 terms, those with η, are compiled in only with **mhd_resistivity=.true.** in
 `agile.par`; they are then added with the compact stencil detailed in Porth
@@ -295,8 +297,8 @@ conduction or cooling on a fixed background.
 
 With **mhd_hyperbolic_thermal_conduction=.true.** (compile time), `mhd`
 evolves the field-aligned heat flux q as an extra variable, relaxing it
-towards the Spitzer value instead of solving a parabolic equation. q enters
-the energy flux as q **b̂**, and obeys
+towards the Spitzer value instead of solving a parabolic equation. It enters
+the energy equation above as the heat flux **q** = q **b̂**, and obeys
 
 \begin{equation}
     \partial_t q = -\frac{q + f_{\mathrm{sat}}\,\kappa_\parallel\,\mathbf{\hat{b}}\cdot\nabla T}{\tau} \,,
@@ -311,7 +313,8 @@ relaxation time is τ = max(4Δt, f_sat κ_∥ T C² (γ̂−1)/(p c²)), where 
 `courantpar` and c the largest fast speed of the cell.
 
 **mhd_hyperbolic_thermal_conduction_anisotropic=.true.** (which implies the
-switch above) evolves the full heat-flux vector **q** instead, and relaxes
+switch above) evolves the full heat-flux vector **q** instead, which then
+enters the energy flux directly, and relaxes
 its parallel and perpendicular parts separately, each with its own
 saturation and τ. The perpendicular conductivity is
 κ_⊥ = κ_∥/(1 + χ²), with the magnetisation χ = C_χ B T^(3/2)/ρ (code
@@ -547,7 +550,8 @@ gas approximation).
 passive tracers and supports [user source terms](#eq_usr_source) with
 **srhd_source_usr=.true.** (both compile time). Its density and pressure
 floors, **srhd_small_density** and **srhd_small_pressure**, are described
-under [Positivity fixes](#eq_srhd_floors).
+under [Density and pressure floors](#eq_floors), like those of the other
+modules.
 
 
 # Positivity fixes {: #eq_positivity_fixes }
@@ -561,16 +565,20 @@ handles this differently from upstream MPI-AMRVAC, and more narrowly:
   `small_pressure`, `check_small_values`, `fix_small_values` and
   `small_values_method` are not part of AGILE, and the cell averages of the
   evolved solution are never floored by the core code.
-- **hd, mhd and ffhd have no floor at all.** A negative pressure or density
-  goes straight into the sound speed (`sqrt(gamma*p/rho)` in `get_cmax`) and
-  yields NaN.
+- **Only the reconstructed face states are floored.** Every physics module
+  floors the density and pressure of the face states it hands to the
+  Riemann solver (see [Density and pressure floors](#eq_floors) below). A
+  cell average that the update itself drives negative is not reset, and its
+  negative pressure then goes into the sound speed (`sqrt(gamma*p/rho)`)
+  when the next time step is computed, which yields NaN.
 - **A run that goes unphysical is not stopped.** `setdt` raises a `crash`
   flag when the time step falls below `dtmin`, but the check in
   `timeintegration` that would save a snapshot and abort on it is currently
   commented out. Watch the log for NaN.
 
-What there is: a hook on the reconstructed face states, used by `srhd`; the
-`srhd` floors; and the temperature floor of radiative cooling.
+What there is: a hook on the reconstructed face states, which every module
+uses for a density and pressure floor; and the temperature floor of
+radiative cooling.
 
 ## The face-state hook: fix_prim_state {: #eq_fix_prim_state }
 
@@ -598,46 +606,66 @@ Two things it is *not*:
   itself, and nothing then resets it.
 - **It is not a user hook.** `fix_prim_state` is a fypp macro of the physics
   module, not a routine in `mod_usr.fpp`. `src/physics/mod_physics_dummies.fpp`
-  defines it empty for every module, which the compiler inlines away, and a
-  physics template that defines its own `#:def fix_prim_state()` replaces
-  it. Only `srhd` does so at present.
+  defines it empty, which the compiler inlines away, and a physics template
+  that defines its own `#:def fix_prim_state()` replaces it. All four
+  modules define one.
 
-### Floors in srhd {: #eq_srhd_floors }
+## Density and pressure floors {: #eq_floors }
 
-`srhd` uses the hook for two things. The first is always on: the
-reconstruction limits the auxiliary variables ξ and Γ like independent
-variables, although they are functions of (ρ, Γ**v**, p). A reconstructed
-face state therefore does not satisfy Γ = √(1+|Γ**v**|²) or ξ = Γ²ρh in
-general, and the signal speeds computed from it can exceed the speed of
-light. `fix_prim_state` recomputes both from the reconstructed primitives,
-with the same expressions as `to_conservative` (the Synge-gas enthalpy
-included).
+Each module's `fix_prim_state` floors the density and pressure of a face
+state, at two run-time parameters of its `_list`:
 
-The second is optional, a density and pressure floor set in `&srhd_list`:
+| Module | Parameters |
+| --- | --- |
+| `hd`   | `hd_small_density`, `hd_small_pressure` |
+| `mhd`  | `mhd_small_density`, `mhd_small_pressure` |
+| `ffhd` | `ffhd_small_density`, `ffhd_small_pressure` |
+| `srhd` | `srhd_small_density`, `srhd_small_pressure` |
+
+for example
 
 ```fortran
-&srhd_list
-   srhd_small_density  = 1.0d-10
-   srhd_small_pressure = 1.0d-12
+&hd_list
+   hd_small_density  = 1.0d-10
+   hd_small_pressure = 1.0d-12
 /
 ```
 
-Both are run-time parameters, default to zero, and a negative value stops
-the run at startup. A face state is floored as ρ ← max(ρ, `srhd_small_density`)
-and p ← max(p, `srhd_small_pressure`) before Γ and ξ are recomputed.
+The face state is floored as ρ ← max(ρ, `*_small_density`) and
+p ← max(p, `*_small_pressure`). Both parameters default to zero, and a
+negative value stops the run at startup. With the defaults the `max()` only
+clips values that were already negative, and leaves every admissible state
+bit-for-bit unchanged, so a run that never produces a negative face state
+gives exactly the same result with or without the floors. A pressure clipped
+to exactly zero still gives a zero sound speed, and a density clipped to
+zero a division by zero in the velocity; set both to small positive values
+when floors are actually wanted. How `max()` treats a NaN is left to the
+compiler, so a face state that is already NaN is not guaranteed to survive
+the floor as NaN.
+
+These floors act on the face states only, so they keep the fluxes
+computable but do not stop a cell average from going negative.
+
+### srhd {: #eq_srhd_floors }
+
+`srhd`'s hook does one more thing, and always: the reconstruction limits the
+auxiliary variables ξ and Γ like independent variables, although they are
+functions of (ρ, Γ**v**, p). A reconstructed face state therefore does not
+satisfy Γ = √(1+|Γ**v**|²) or ξ = Γ²ρh in general, and the signal speeds
+computed from it can exceed the speed of light. After the floors,
+`fix_prim_state` recomputes both from the reconstructed primitives, with the
+same expressions as `to_conservative` (the Synge-gas enthalpy included).
+
 `srhd_small_pressure` is also the lower bound of the pressure bracket in the
-primitive-variable inversion (`mod_con2prim`), so it constrains the
-pressures recovered from the cell averages too. With the defaults the
-`max()` only clips values that were already negative, and a pressure clipped
-to exactly zero still gives a zero denominator in the sound speed; set both
-to small positive values when floors are wanted.
+primitive-variable inversion (`mod_con2prim`), so in `srhd` it constrains
+the pressures recovered from the cell averages too.
 
-### Adding a floor to another physics module {: #eq_floor_howto }
+### Writing the hook for a new physics module {: #eq_floor_howto }
 
-To floor the face states of `hd`, for example, define the macro in
-`src/hd/mod_hd_templates.fpp`, inside its `#:if PHYS == 'hd'` block. At this
-point `u` is in primitive variables, so for `hd` the density is in
-`u(iw_rho)` and the pressure in `u(iw_e)`:
+A new physics module gets the empty default until its template defines the
+macro, inside its `#:if PHYS == '...'` block. At this point `u` is in
+primitive variables; for `hd`, for example, the density is in `u(iw_rho)`
+and the pressure in `u(iw_e)`, and the whole hook is
 
 ```fortran
 #:def fix_prim_state()
@@ -651,14 +679,11 @@ point `u` is in primitive variables, so for `hd` the density is in
 #:enddef
 ```
 
-The two floors are new module parameters. Declare them next to the other
-`hd` parameters with `${GPU_DECLARE_COPYIN('hd_small_density,hd_small_pressure')}$`,
-add them to the `hd_list` namelist, and push them to the device after
-reading, with `${GPU_UPDATE_DEVICE(...)}$`, as `srhd` does for its own. If
-the module carries auxiliary variables derived from the primitives, as
-`srhd` does, recompute them here as well. Because the hook sees only face
-states, such a floor keeps the fluxes computable but does not stop a cell
-average from going negative.
+with the two floors declared next to the module's other parameters
+(`${GPU_DECLARE_COPYIN(...)}$`), added to its namelist, checked for
+negative values, and pushed to the device after reading
+(`${GPU_UPDATE_DEVICE(...)}$`). If the module carries auxiliary variables
+derived from the primitives, as `srhd` does, recompute them there as well.
 
 ## Temperature floor of radiative cooling {: #eq_cooling_floor }
 

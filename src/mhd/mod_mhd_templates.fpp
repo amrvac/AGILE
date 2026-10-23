@@ -167,6 +167,13 @@
   logical, public                         :: mhd_source_usr = .false.
   ${GPU_DECLARE_COPYIN('mhd_source_usr')}$
 
+  !> Smallest gas pressure allowed in a reconstructed face state, applied by
+  !> fix_prim_state. Zero, the default, clips only negative values.
+  double precision, public                :: mhd_small_pressure = 0.0d0
+  !> Smallest density allowed in a reconstructed face state
+  double precision, public                :: mhd_small_density  = 0.0d0
+  ${GPU_DECLARE_COPYIN('mhd_small_pressure,mhd_small_density')}$
+
 #:enddef
 
 #:def read_params()
@@ -182,7 +189,8 @@
       mhd_hyperbolic_thermal_conduction_anisotropic, &
       tc_kappa_par, tc_kappa_perp, &
       H_ion_fr, He_ion_fr, He_ion_fr2, &
-      mhd_energy_only
+      mhd_energy_only, &
+      mhd_small_pressure, mhd_small_density
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -191,7 +199,13 @@
     end do
 
     ${GPU_UPDATE_DEVICE('mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity')}$
+    if (mhd_small_pressure < 0.0d0) call mpistop(&
+       "mhd_small_pressure should be positive.")
+    if (mhd_small_density < 0.0d0) call mpistop(&
+       "mhd_small_density should be positive.")
+
     ${GPU_UPDATE_DEVICE('tc_kappa_par, tc_kappa_perp')}$
+    ${GPU_UPDATE_DEVICE('mhd_small_pressure, mhd_small_density')}$
 
   end subroutine read_params
 #:enddef
@@ -863,6 +877,25 @@ end subroutine addsource_geometry
     u(iw_mom(3))=u(iw_rho)*u(iw_mom(3))
 
   end subroutine to_conservative
+#:enddef
+
+#:def fix_prim_state()
+  !> Make a reconstructed primitive face state admissible before it is handed
+  !> to the Riemann solver. The MUSCL reconstruction limits every slot of the
+  !> state independently, so a face state can come out with a negative
+  !> density or pressure even where both neighbouring cells are admissible.
+  !> Floor both, at mhd_small_density and mhd_small_pressure in &mhd_list.
+  !> Both default to zero, in which case the max() calls only clip values
+  !> that were already negative and leave every admissible state bit-for-bit
+  !> unchanged. Only the face states are floored, not the cell averages.
+  pure subroutine fix_prim_state(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+
+    u(iw_rho) = max(u(iw_rho), mhd_small_density)
+    u(iw_e)   = max(u(iw_e),   mhd_small_pressure)
+
+  end subroutine fix_prim_state
 #:enddef
 
 #:def get_flux()
