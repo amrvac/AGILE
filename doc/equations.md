@@ -189,10 +189,14 @@ macro definitions included at the top of `mod_usr.fpp`, as every test case
 does:
 
 ```fortran
-#:include "../../../src/mod_gpu_directives.fpp"
+#:include "mod_gpu_directives.fpp"
 ```
 
-(the path is relative to the case directory).
+Give the file name only, without a path. The build passes `$AGILE_DIR/src`
+to fypp as an include directory, so this works wherever the case directory
+is. Older cases wrote a path relative to the repository, such as
+`"../../../src/mod_gpu_directives.fpp"`; that still works, but only while
+the case stays at that depth inside the repository, so do not copy it.
 
 ### User source terms {: #eq_usr_source }
 

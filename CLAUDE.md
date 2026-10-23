@@ -1132,8 +1132,25 @@ Every case directory has a `mod_usr.fpp` defining `module mod_usr` with a
 `usr_init()` subroutine that:
 1. registers callbacks by assigning the procedure pointers declared in
    `src/mod_usr_methods.fpp` (e.g. `usr_init_one_grid`, `usr_special_bc`,
-   `usr_source`, `usr_process_grid`, `usr_refine_threshold`, ...),
+   `usr_process_grid`, `usr_refine_threshold`, ...),
 2. calls `phys_activate()` last.
+
+Hooks that run on the GPU are not procedure pointers but routines the core
+calls by name from `mod_usr`, compiled in by a switch in `agile.par`:
+`gravity_field` (`*_gravity`), `addsource_usr` (`*_source_usr`; the
+`usr_source` pointer is a leftover and never called), `usr_refine_grid`
+(`refine_usr`) and `usr_set_nwextra` (ffhd). They are marked with
+`${GPU_ROUTINE_SEQ()}$`, so `mod_usr.fpp` starts with
+
+```fortran
+#:include "mod_gpu_directives.fpp"
+```
+
+by bare file name: `make/30-fypp.mk` passes `-I $(agile)/src` to fypp (and
+`make/fypp-deps.py` searches the same directories for its dependency
+rules), so the include works wherever the case directory is. The tests used
+to write `"../../../src/mod_gpu_directives.fpp"`, which only worked at that
+depth inside the repository.
 
 The coordinate system comes from `geometry` in `agile.par` (see "Coordinate
 systems" above); `usr_init()` does not need to call `set_coordinate_system`

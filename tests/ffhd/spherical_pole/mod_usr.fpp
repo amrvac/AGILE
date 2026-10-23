@@ -1,5 +1,5 @@
 #:mute
-#:include "../../../src/mod_gpu_directives.fpp"
+#:include "mod_gpu_directives.fpp"
 #:endmute
 
 !> Uniform field-aligned FFHD flow on a spherical mesh through both poles.

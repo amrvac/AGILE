@@ -1,5 +1,5 @@
 #:mute
-#:include "../../../src/mod_gpu_directives.fpp"
+#:include "mod_gpu_directives.fpp"
 #:endmute
 
 !> Polar-axis tests on a cylindrical mesh: three runs from one build.
