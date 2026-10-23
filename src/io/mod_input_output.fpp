@@ -802,7 +802,6 @@ contains
     select case (time_stepper)
     case ("onestep")
        t_stepper=onestep
-       nstep=1
        if (time_integrator=='default') then
           time_integrator="Forward_Euler"
        end if
@@ -821,7 +820,6 @@ contains
        use_imex_scheme=(t_integrator==IMEX_Euler.or.t_integrator==IMEX_SP)
     case ("twostep")
        t_stepper=twostep
-       nstep=2
        if (time_integrator=='default') then
           time_integrator="Predictor_Corrector"
        endif
@@ -854,7 +852,6 @@ contains
        endif
     case ("threestep")
        t_stepper=threestep
-       nstep=3
        if (time_integrator=='default') then
           time_integrator='ssprk3'
        endif
@@ -996,7 +993,6 @@ contains
           IMEX_232.or.t_integrator==IMEX_CB3a)
     case ("fourstep")
        t_stepper=fourstep
-       nstep=4
        if (time_integrator=='default') then
           time_integrator="ssprk4"
        endif
@@ -1043,7 +1039,6 @@ contains
        endif
     case ("fivestep")
        t_stepper=fivestep
-       nstep=5
        if (time_integrator=='default') then
           time_integrator="ssprk5"
        end if
@@ -1127,6 +1122,19 @@ contains
     case default
        call mpistop("Unknown time_stepper in read_par_files")
     end select
+
+    ! The coefficients above are kept for every upstream scheme, but advect
+    ! implements only the explicit ones; the IMEX schemes would need a
+    ! physics module with an implicit update.  Stop here rather than at the
+    ! first time step.
+    select case (t_integrator)
+    case (Forward_Euler, Predictor_Corrector, RK2_alf, ssprk2, ssprk3, &
+          RK3_BT, ssprk4, rk4, ssprk5)
+    case default
+       call mpistop("time_integrator='"//trim(time_integrator)//&
+          "' is not implemented in AGILE")
+    end select
+    call time_levels(t_integrator, nstep, nlevel)
 
     ! Harmonize the parameters for dimensional splitting and source splitting
     if(typedimsplit   =='default'.and.     dimsplit)   typedimsplit='xyyx'
@@ -1773,6 +1781,9 @@ contains
     end do
 
     if (mype==0) then
+       write(unitterm, '(A30,A,A,A,I0,A,I0,A)') 'time_integrator: ', ' ',&
+           trim(time_integrator), ' (', nstep, ' stages, ', nlevel,&
+           ' time levels)'
        write(unitterm, '(A30,A,A)') 'restart_from_file: ', ' ',&
            trim(restart_from_file)
        write(unitterm, '(A30,L1)') 'converting: ', convert

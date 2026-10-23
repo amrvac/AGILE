@@ -330,6 +330,9 @@ without changing time, set `reset_it=T`.
 
 time_stepper='twostep' | 'onestep' | 'threestep' | 'fourstep' | 'fivestep'
 time_integrator= choices depends on time_stepper
+ssprk_order= 3 | 2
+rk2_alfa= DOUBLE
+rk3_switch= 1 | 2 | 3 | 4
 flux_scheme=nlevelshi strings from: 'hll'|'hllc'|'hlld','hllcd'|'tvdlf'|'tvdmu'|'tvd'|'cd'|'fd'|'source'|'nul'
 limiter= nlevelshi strings from: 'minmod' | 'woodward' | 'superbee' | 'vanleer' | 'albada' | 'ppm' | 'mcbeta' | 'koren' | 'cada' | 'cada3' | 'mp5' | 'schmid1' | 'schimid2' | 'venk' | 'weno3' | 'wenoyc3' | 'weno5' | 'weno5nm'| 'wenoz5' | 'wenoz5nm' | 'wenozp5' | 'wenozp5nm' | 'weno5cu6' | 'teno5ad' | 'weno7' | 'mpweno7'
 gradient_limiter= nlevelshi strings from: 'minmod' | 'woodward' | 'superbee' | 'vanleer' | 'albada' | 'ppm' | 'mcbeta' | 'koren' | 'cada' | 'cada3'
@@ -362,24 +365,35 @@ typecurl = 'central' | 'Gaussbased' | 'Stokesbased'
 ```
 
 ### time_stepper, time_integrator, flux_scheme {: #par_time_integrator }
-The `time_stepper` variable determines the time integration procedure. The
-default procedure is a second order predictor-corrector type 'twostep' scheme
-(suitable for TVDLF, TVD-MUSCL schemes), and a simple 'onestep' algorithm for
-the temporally second order TVD method, or the first order TVDLF1, TVDMU1,
-TVD1 schemes. It is not possible to mix different step size methods across
-the AMR grid levels. The temporally first order but spatially second order
-TVD1 algorithm is best suited for steady state calculations as a 'onestep'
-scheme. The TVDLF and TVD-MUSCL schemes can be forced to be first order, and
-linear in the time step, which is good for getting a steady state, by setting
-`time_stepper='onestep'`.
+The `time_stepper` variable sets the number of stages of the time
+integration, and `time_integrator` chooses among the schemes with that many
+stages:
 
-There is also a fourth order Runge-Kutta type method, when
-`time_stepper='fourstep'` 
-and one sets
-`time_integrator='rk4'`. It can be used with _dimsplit=.true._.
- These higher order time integration methods can be
-most useful in conjunction with higher order spatial discretizations.
-See also [discretization](discretization.html).
+```fortran
+time_stepper    = 'onestep'   ! time_integrator = 'Forward_Euler'
+time_stepper    = 'twostep'   ! 'Predictor_Corrector' (default) | 'ssprk2' | 'RK2_alfa'
+time_stepper    = 'threestep' ! 'ssprk3' (default) | 'RK3_BT'
+time_stepper    = 'fourstep'  ! 'ssprk4' (default) | 'rk4'
+time_stepper    = 'fivestep'  ! 'ssprk5'
+ssprk_order     = 3           ! ssprk3 / ssprk4 / ssprk5 variant: 3 (default) or 2
+rk2_alfa        = 0.5d0       ! for RK2_alfa, in (0,1]
+rk3_switch      = 3           ! RK3_BT tableau: 1 Ralston, 2 Wray, 3 Heun, 4 Nystrom
+```
+
+The default is `time_stepper='twostep'`, the second-order
+predictor-corrector scheme. The same scheme is used on all AMR levels. The
+IMEX integrators of MPI-AMRVAC are recognised but stop the run at startup,
+since no physics module in AGILE provides an implicit update.
+
+`ssprk_order` selects the variant of the SSP integrators and has no effect
+on the others. For `ssprk3` and `ssprk4`, the default 3 gives the
+third-order SSPRK(3,3) and SSPRK(4,3), and 2 gives the second-order SSP(3,2)
+and SSP(4,2), which have a larger CFL limit (2 and 3, against 1 and 2). For
+`ssprk5`, both values give the same fourth-order SSPRK(5,4), with Gottlieb's
+(3) or Spiteri and Ruuth's (2) coefficients. Any other value stops the run.
+
+See [Time integration](time_integration.html) for the order, stability limit
+and memory cost of each scheme and variant.
 
 The array `flux_scheme` defines a scheme to calculate the flux at cell interfaces using the chosen
 method (like hll based approximate Riemann solver) per activated grid level

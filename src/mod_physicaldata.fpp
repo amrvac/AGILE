@@ -173,4 +173,29 @@ module mod_physicaldata
     double precision, dimension(:,:,:,:,:), allocatable :: vbarC,vbarLC,vbarRC
   end type ct_velocity
 
+contains
+
+  !> The state views onto time level k of bg: ps for k = 1, ps1..ps4 for
+  !> k = 2..5, null beyond.  Their %istep is k (set in initialize_vars), which
+  !> is how getbc finds the level from the views it is handed.
+  function ps_level(k) result(p)
+    integer, intent(in) :: k
+    type(state), dimension(:), pointer, contiguous :: p
+
+    select case (k)
+    case (1)
+       p => ps
+    case (2)
+       p => ps1
+    case (3)
+       p => ps2
+    case (4)
+       p => ps3
+    case (5)
+       p => ps4
+    case default
+       nullify(p)
+    end select
+  end function ps_level
+
 end module mod_physicaldata

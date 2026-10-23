@@ -91,23 +91,21 @@ represents any of the Fx, (Fz+S/3), (Fx+Fy), (Fx+Fy+Fz+S), etc. terms that
 arise in the equations above depending on the number of dimensions and on the
 dimensional and source splitting parameters.
 
-In principle there are many options to evaluate **w_R=[I+dt*R] w**, it is determined by the
-value of the **time_stepper** (and the **time_integrator**) parameter.  
-At the time of writing, only the twostep method is implemented in AGILE:  
+There are many options to evaluate **w_R=[I+dt*R] w**; the choice is made by
+the **time_stepper** and **time_integrator** parameters. The default is the
+twostep predictor-corrector scheme:
 
-    w_1 = w + dt/2*R1(w)               'twostep'  (predictor step)
+    w_1 = w + dt/2*R(w)                'twostep'  (predictor step)
     w_R = w + dt  *R(w_1)                        (corrector step)
 
-However, porting the numerous timestepping schemes over from MPI-AMRVAC is not difficult. 
-For consistency, the accuracy of the time integrator should have the same order as the slope
-limiter's accuracy. 
+AGILE implements all explicit schemes of MPI-AMRVAC, from first-order forward
+Euler to the fourth-order ssprk5 and rk4. They are described, with their
+memory cost and how they are tested, in [Time integration](time_integration.html).
+For consistency, the accuracy of the time integrator should have the same
+order as the slope limiter's accuracy.
 
-Since in the twostep method the **R1** spatial discretization in the first
-_predictor_ step can be different from **R** of the second _corrector_ step,
-the twostep time integration is a predictor-corrector type scheme. In the
-parameter file, the arrays **typepred1** and **flux_scheme** (which need to be
-specified for each AMR grid level up to **nlevelshi**), determine the method
-applied in the predictor and full step.
+Unlike MPI-AMRVAC, AGILE does not support a separate spatial discretization
+for the predictor step (**typepred1**): every stage uses **flux_scheme**.
 
 # Grid and Mesh {: #disc-grid }
 The grid is a 3D Cartesian grid.  

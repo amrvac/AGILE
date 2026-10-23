@@ -22,6 +22,8 @@ financial support.
 # Discretization methods and AMR strategy {: #discretization }
 * [Discretization](discretization.html) The equation and its discretization, the
 basic variables, the structure of the grid, boundaries, ghost cells.
+* [Time integration](time_integration.html) The time integration schemes,
+  their order, stability limit and memory cost, and how to add one.
 * [AMR aspects](amrstructure.html) Some essential info on global parameters and
 the data structures for the block-tree AMR.
 

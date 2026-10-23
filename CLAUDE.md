@@ -60,6 +60,15 @@ make clean                 # remove this case's build products
 - `OPENACC` and `OPENMP` are mutually exclusive GPU offload backend switches
   (`make` errors out if both are given); neither flag gives a plain CPU
   build, where every `GPU_*` directive macro expands to nothing.
+- `NOGPUDIRECT=1` (only meaningful with `OPENACC` or `OPENMP`) stages MPI
+  buffers through the host instead of handing device pointers to MPI. **Use
+  it when all ranks share a single GPU.** Without it, a workstation with one
+  GTX 1660 Ti (nvhpc 26.9, HPC-X) runs `tests/hd/KH3D` correctly on one
+  rank but loses mass deterministically on two or more (`mean(rho)` 5.42 at
+  2 ranks, 5.37 at 4, against 5.5), whichever MPI build or UCX transport is
+  used; with `NOGPUDIRECT=1` it passes at 1, 2 and 4 ranks. The cause is not
+  understood, so treat this as a workaround, not a known limit. Multi-GPU
+  machines (e.g. the GPU CI) keep GPU-direct.
 - Physics-relevant compile-time options (which physics module, the coordinate
   system, tracers, gravity, cooling, thermal conduction, etc.) are declared in
   `agile.par` and turned into `config.mk`/fypp defines by
@@ -1031,6 +1040,82 @@ Consequences:
   `correct_output/blast.log` changed when the frozen field moved to
   `usr_set_nwextra`.
 
+## Time integration
+
+Set `time_stepper` and `time_integrator` in `&methodlist`. `advect` in
+`src/mod_advance.fpp` implements these; the default `time_integrator` of each
+`time_stepper` is in bold, and the overall default is `twostep`, so
+`Predictor_Corrector`:
+
+| `time_stepper` | `time_integrator` | order | stages | time levels |
+|---|---|---|---|---|
+| `onestep` | **`Forward_Euler`** | 1 | 1 | 2 |
+| `twostep` | **`Predictor_Corrector`** | 2 | 2 | 2 |
+| `twostep` | `ssprk2` | 2 | 2 | 2 |
+| `twostep` | `RK2_alfa` (`rk2_alfa` in (0,1]) | 2 | 2 | 2 |
+| `threestep` | **`ssprk3`** (`ssprk_order` 3 or 2) | 3 / 2 | 3 | 3 |
+| `threestep` | `RK3_BT` (`rk3_switch` 1-4: Ralston, Wray, Heun, Nyström) | 3 | 3 | 4 |
+| `fourstep` | **`ssprk4`** (`ssprk_order` 3: Spiteri-Ruuth, 2: SSP(4,2)) | 3 / 2 | 4 | 3 |
+| `fourstep` | `rk4` (classical) | 4 | 4 | 4 |
+| `fivestep` | **`ssprk5`** (Spiteri-Ruuth (5,4)) | 4 | 5 | 4 |
+
+That is every explicit scheme upstream MPI-AMRVAC has. `read_par_files` also
+parses the IMEX family and fills its coefficients, but stops at startup for
+it: there is nothing implicit to integrate here, since every
+`phys_implicit_update` is the dummy in `src/physics/mod_physics.fpp`.
+
+The SSP schemes are stable to different Courant numbers relative to forward
+Euler (ssprk4: 2 at order 3, 3 at order 2), but AGILE does not rescale
+`courantpar` per scheme, so a run has to raise it itself to profit.
+
+**Stages and time levels are different numbers, and only the second costs
+memory.** `nstep` counts sub-steps (flux evaluations). `nlevel` counts the
+solution copies the scheme holds at once, its registers, and `initialize_vars`
+allocates `bg(1:nlevel)`. Each level is `nw` times the block size times
+`max_blocks` doubles, all device-resident, so it often decides how large
+`max_blocks` can be on a GPU. The two counts disagree in both directions:
+ssprk4 is 4 stages in 3 levels, while RK3_BT is 3 stages needing 4 levels.
+`alloc_node` used to size the levels from the integrator in one place while
+`bg` was sized from `nstep` in another, which left RK3_BT and the IMEX schemes
+pointing past the end of `bg`.
+
+Both numbers now come from one table, `time_levels` in
+`src/mod_global_parameters.fpp`. **A new scheme adds its row there**, a `case`
+branch in `advect`, and its name to the accepted list in `read_par_files`.
+Everything else follows from `nlevel`: `bg` allocation, the `ps1..ps4` views
+that `alloc_node` points at `bg(2..nlevel)` through `ps_level`
+(`src/mod_physicaldata.fpp`), and the guard in `alloc_state` that stops on a
+view beyond `size(bg)`.
+
+Within `advect` a scheme is written as upstream writes it, with `ps`, `ps1`,
+`ps2`, `ps3` becoming time levels 1, 2, 3, 4:
+
+- `advect1(dtfactor, ..., qtC, ka, qt, kb)` adds `dtfactor*dt` times the
+  update evaluated on level `ka` to level `kb`. The two must differ, because
+  the flux stencil reads neighbouring cells.
+- `bg_assign(bgd, a1, bg1[, a2, bg2[, a3, bg3]])` (`bgd = sum`) and
+  `bg_accum(bgd, s, a1, bg1[, ...])` (`bgd = s*bgd + sum`) are the pointwise
+  combinations between stages. They are generic names over device kernels
+  that fypp generates for one to three sources, so each reads only the
+  arrays it uses. There are two shapes so that a destination is never also
+  passed as a source argument, and is never read where its coefficient would
+  be zero.
+
+The schemes are tested on the AMR case of `tests/hd/KH3D-SMR`, not on a
+uniform grid, because the static refinement is what puts refluxing at every
+stage under test. `tests/hd/KH3D-SMR` itself (basic suite) runs ssprk3,
+ssprk4 and the default, Predictor_Corrector: its `pc.par` sets no
+`time_stepper`, so the same test also checks the default.
+`tests/hd/KH3D-SMR-integrators` (extended suite) is the same case with one
+par file per scheme and coefficient variant: all twelve, including
+`ssprk_order = 2` for ssprk3 and ssprk4, and two `rk3_switch` tableaus
+(Wray, Nyström). It is a directory of its own, rather than par files added
+to `KH3D-SMR`, because the suite split is per directory.
+
+Refluxing runs after every stage except the predictor of
+`Predictor_Corrector` (as upstream), and only when the mesh has more than one
+level (`fix_conserve_at_step`).
+
 ## MHD units
 
 - `unit_magneticfield = sqrt(4 pi unit_pressure)` is set in `phys_units`
@@ -1189,14 +1274,15 @@ doc/ford/build_docs.sh   # preprocesses src/*.fpp with fypp, then runs ford
 firefox doc/ford/html/index.html
 ```
 
-`doc/ford/docgen.par` picks one representative build (`PHYS='mhd'`, most
-optional features on) to preprocess with, since the `#:if PHYS == '...'`
-splicing described above means only one physics module's variant of the
-shared files can be documented per pass. `doc/ford/src/` and
-`doc/ford/html/` are generated/gitignored, not committed. The narrative
-`doc/*.md` pages are not yet wired into the FORD site (`page_dir`) — they
-still use Doxygen-specific `{#label}`/`@ref`/`[TOC]` syntax that needs
-converting first.
+`build_docs.sh` preprocesses every file once per physics module
+(`doc/ford/docgen_{mhd,hd,ffhd,srhd}.par`), since the `#:if PHYS == '...'`
+splicing described above means one pass only shows one physics module's
+variant of the shared files; `merge_physics_variants.py` keeps files that
+come out identical once and suffixes the rest (`mod_physics_hd`, ...).
+`doc/ford/src/` and `doc/ford/html/` are generated/gitignored, not committed.
+The narrative `doc/*.md` pages are part of the site (`page_dir: ..` in
+`doc/ford/project.md`), as FORD pages with a `title:` header; the time
+integrators are described in `doc/time_integration.md`.
 
 ## Code style (from `doc/code_style_guide.md`)
 
