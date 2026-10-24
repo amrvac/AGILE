@@ -16,26 +16,25 @@ have physics-independent class and physics-dependent class. The physics-independ
 * [Paramlist](#par_paramlist) Time-step parameters
 
 The default parameter values in these namelists are set in
-`src/amrvacio/mod_input_output.t`, look at the subroutine `read_par_files` for
+`src/io/mod_input_output.fpp`, look at the subroutine `read_par_files` for
 details.
 
-The physics-dependent namelists include:
+The physics-dependent namelists are those of the four physics modules; only
+the one matching `phys` in `&methodlist` is read:
 
-* [rho list](#par_rholist) (see also `mod_rho_phys`)
-* [nonlinear list](#par_nonlinearlist) (see also `mod_nonlinear_phys`)
-* [HD list](#par_hdlist) (see also `mod_hd_phys`)
-* [MHD list](#par_mhdlist) (see also `mod_mhd_phys`)
+* [HD list](#par_hdlist) (`&hd_list`, see `src/hd/mod_hd_templates.fpp`)
+* [MHD list](#par_mhdlist) (`&mhd_list`, see `src/mhd/mod_mhd_templates.fpp`)
+* [FFHD list](#par_ffhdlist) (`&ffhd_list`, see `src/ffhd/mod_ffhd_templates.fpp`)
+* [SRHD list](#par_srhdlist) (`&srhd_list`, see `src/srhd/mod_srhd_templates.fpp`)
 
-Further namelist are used to control optional modules. Most of these lists are
-not documented here, but the parameters are described in the corresponding
-modules:
+Further namelists control optional modules. They are not documented here, but
+the parameters are described in the corresponding modules:
 
-* `rc_list` (radiative cooling, see `mod_radiative_cooling`)
-* `tc_list` (thermal conduction, see `mod_thermal_conduction`)
-* `dust_list` (dust, see `mod_dust`)
-* `vc_list` (viscosity, see `mod_viscosity`)
-* `grav_list` (gravity, see `mod_gravity`)
-* `mf_list` (magnetofriction, see `mod_mf_phys`)
+* `rc_list` (radiative cooling, read when `*_radiative_cooling` is on; see
+  [Radiative cooling](radiative_cooling.html) and `mod_radiative_cooling`)
+* `bd_list` (boundary or initial data read from file, see `mod_bc_data`)
+* `rh_list` (random heating, for a case that calls it from its `mod_usr`;
+  see `mod_random_heating`)
 
 ## An example for a namelist
 
@@ -513,12 +512,11 @@ and they have been removed. A par file that still sets any of them will now
 fail to read, since a Fortran namelist read rejects an unrecognised key.
 
 A floor is a physics-specific treatment and lives with its physics module
-instead. At present only `srhd` has one: `srhd_small_pressure` and
-`srhd_small_density` in `&srhd_list` (declared with the other srhd module
-variables in `src/srhd/mod_srhd_templates.fpp`), both defaulting to zero. `srhd_small_pressure` is the lower bracket of the
-pressure root-find in `con2prim`. The other physics modules have no floor; when
-one of them needs it, the parameter belongs in that module's own namelist and
-templates, not in `&methodlist`. 
+instead: every module has a `*_small_density` and `*_small_pressure` in its
+own namelist (e.g. `hd_small_density` in `&hd_list`), both defaulting to zero,
+applied to the reconstructed face states. `srhd_small_pressure` is in addition
+the lower bracket of the pressure root-find in `con2prim`. See
+[Density and pressure floors](equations.html#eq_floors).
 
 ### Special process {: #par_process }
 User controlled special process can be added to 
@@ -916,210 +914,166 @@ problems resulting from numerically unfavourable initial conditions, e.g. very
 sharp discontinuities. It is normally inactive with a default value -1.
 
 # Physics-dependent Namelists {: #par_pdpnamelists }
-## rho list {: #par_rholist }
-```fortran
-&rho_list
-  rho_v= ndim doubles for advection velocity
-/
-```
 
+AGILE has four physics modules, `hd`, `mhd`, `ffhd` and `srhd`. Which one a
+build uses is chosen by `phys` in `&methodlist` of the case's `agile.par`, and
+only that module's namelist is read. The equations, and what each option
+does, are described in [Physics modules and equations](equations.html); this
+section only lists the keys.
 
-## nonlinear list {: #par_nonlinearlist }
-```fortran
-&nonlinear_list
-  nonlinear_flux_type= INTEGER
-  kdv_source_term= F | T
-/
-```
+**Some keys are compile-time switches**, marked `! compile time` below. They
+become fypp defines through `make/config_schema.toml`, so they have to be set
+in the case's `agile.par` (the file the build reads) and take effect only
+after a rebuild; setting one only in the par file of a run changes nothing.
+See [Compile-time switches](equations.html#eq_compile_time). Every other key is
+an ordinary run-time parameter.
+
+The lists show the default first. `*_small_density` and `*_small_pressure`
+are the module's [density and pressure floors](equations.html#eq_floors);
+both default to zero, which clips only negative values.
+
+Three things upstream MPI-AMRVAC users should know:
+
+- **Every module solves an energy equation.** `hd_energy`, `mhd_energy` and
+  `ffhd_energy` are still read, but the isothermal variant is not implemented
+  (the energy slot is part of the compile-time variable count), so they must
+  stay `T`. There is accordingly no `*_adiab`.
+- **Upstream's other physics modules (`rho`, `nonlinear`, `rd`, `ard`,
+  `mf`, `twofl`, ...) and their namelists do not exist in AGILE**, nor do the
+  `*_dust`, `*_viscosity`, `*_thermal_conduction` (parabolic), `*_Hall`,
+  `*_4th_order`, semirelativistic, internal-energy and `SI_unit` options.
+- **The particle module is not available.** `hd_particles`, `mhd_particles`
+  and `srhd_particles` are declared, but nothing initialises the particles,
+  so leave them at `F`.
 
 ## HD list {: #par_hdlist }
 ```fortran
 &hd_list
-  hd_energy= T | F
-  hd_n_tracer= INTEGER
-  hd_gamma= DOUBLE 
-  hd_adiab= DOUBLE
-  hd_dust= F | T
-  hd_thermal_conduction= F | T
-  hd_radiative_cooling= F | T
-  hd_gravity= F | T
-  hd_viscosity= F | T
-  hd_particles= F | T
-  He_abundance= DOUBLE from 0 to 1
-  SI_unit= F | T
+  hd_gamma= 5/3 | DOUBLE                 ! adiabatic index
+  hd_n_tracer= 0 | INTEGER               ! compile time: passive tracers
+  hd_gravity= F | T                      ! compile time: gravity_field in mod_usr
+  hd_radiative_cooling= F | T            ! compile time: reads &rc_list
+  hd_source_usr= F | T                   ! compile time: addsource_usr in mod_usr
+  He_abundance= 0.1 | DOUBLE from 0 to 1 ! He/H number ratio, for the units
+  hd_small_density= 0 | DOUBLE           ! floor in reconstructed face states
+  hd_small_pressure= 0 | DOUBLE
+  hd_energy= T                           ! must stay T, see above
+  hd_force_diagonal= T | F               ! fill corner ghost cells too
 /
 ```
+
+`hd_force_diagonal` makes the ghost-cell exchange fill the diagonal (edge and
+corner) ghost cells as well, which the conversion to primitive variables
+expects. `hd_adiab` and `hd_partial_ionization` are still accepted for
+compatibility but have no effect, and `hd_particles` must stay `F`.
 
 ## MHD list {: #par_mhdlist }
 ```fortran
 &mhd_list
- mhd_energy= T | F
- mhd_n_tracer= INTEGER
- mhd_gamma= DOUBLE 
- mhd_adiab= DOUBLE
- mhd_eta= DOUBLE
- mhd_eta_hyper= DOUBLE
- mhd_etah= DOUBLE 
- mhd_glm_alpha= 0.5d0 between 0 and 1
- mhd_glm_extended= T | F
- mhd_magnetofriction= F | T
- mhd_thermal_conduction= F | T
- mhd_radiative_cooling= F | T
- mhd_Hall= F | T
- mhd_gravity= F | T
- mhd_viscosity= F | T
- mhd_particles= F | T
- mhd_4th_order= F | T
- mhd_internal_e= F | T
- mhd_hydrodynamic_e= F | T
- mhd_semirelativistic= F | T
- mhd_boris_simplification= F | T
- mhd_reduced_c = 6.d8
- mhd_trac= F | T
- mhd_trac_type= INTEGER from 1 to 6
- mhd_trac_mask= bigdouble
- mhd_trac_finegrid= INTEGER
- typedivbfix= 'linde'|'ct'|'glm'|'powel'|'lindejanhunen'|'lindepowel'|'lindeglm'|'multigrid'|'none'
- type_ct='uct_contact'|'uct_hll'|'average'
- source_split_divb= F | T
- boundary_divbfix= 2*ndim logicals, all false by default
- divbdiff= 0.8d0 between 0 and 2
- typedivbdiff= 'all' | 'ind'
- clean_initial_divb= F | T
- divbwave= T | F
- B0field= F | T
- B0field_forcefree= T | F
- Bdip= DOUBLE
- Bquad= DOUBLE
- Boct= DOUBLE
- Busr= DOUBLE
- He_abundance= DOUBLE from 0 to 1
- SI_unit= F | T
+  mhd_gamma= 5/3 | DOUBLE                ! adiabatic index
+  mhd_n_tracer= 0 | INTEGER              ! compile time: passive tracers
+  mhd_glm_alpha= 0.5 | DOUBLE in [0,1]   ! GLM div B cleaning: diffusive/advective time scale
+  mhd_resistivity= F | T                 ! compile time: resistive terms
+  mhd_eta= 0 | DOUBLE                    ! uniform resistivity, with mhd_resistivity
+  mhd_gravity= F | T                     ! compile time: gravity_field in mod_usr
+  mhd_radiative_cooling= F | T           ! compile time: reads &rc_list
+  mhd_source_usr= F | T                  ! compile time: addsource_usr in mod_usr
+  mhd_hyperbolic_thermal_conduction= F | T              ! compile time
+  mhd_hyperbolic_thermal_conduction_anisotropic= F | T  ! compile time, implies the above
+  tc_kappa_par= -1 | DOUBLE              ! > 0: constant parallel conductivity
+  tc_kappa_perp= -1 | DOUBLE             ! > 0: constant perpendicular conductivity
+  mhd_energy_only= F | T                 ! compile time: evolve the energy equation only
+  He_abundance= 0.1 | DOUBLE from 0 to 1 ! He/H number ratio
+  H_ion_fr= 1 | DOUBLE                   ! H+/(H+ + H)
+  He_ion_fr= 1 | DOUBLE                  ! (He2+ + He+)/(He2+ + He+ + He)
+  He_ion_fr2= 1 | DOUBLE                 ! He2+/(He2+ + He+)
+  mhd_small_density= 0 | DOUBLE          ! floor in reconstructed face states
+  mhd_small_pressure= 0 | DOUBLE
+  mhd_energy= T                          ! must stay T, see above
 /
 ```
 
-### Magnetic field divergence fixes {: #par_divbfix }
-The upwind constrained transport methods  **typedivbfix='ct'** by Gardiner and Stone in _Journal of 
-Computational Physics, 205, 509-539 (2005)_ **type_ct='uct_contact'** (default),
-or by Del Zanna, L., Zanotti, O., Bucciantini, N., & Londrillo, P. in _Astronomy & 
-Astrophysics , 473, 11 (2007)_  **type_ct='uct_hll'**,
-using staggered grid for magnetic field, can preserve 
-initial div B to round off errors. A simple non-upwinding version of ct 
-is through averaging electric fields from 
-neighbors **type_ct='average'**. And it only works with HLL, HLLC, and HLLD 
-schemes in the current implementation. It works in Cartesian and non-Cartesian coordinates with or
-without grid stretching. It works with finite non-zero resistivity.
-Initial conditions and boundary conditions for
-magnetic field have to be given at corresponding cell faces instead, or vector potential 
-is given at corresponding cell edges, see examples: **tests/mhd/solar_atmosphere_2.5D**.
-Note that when using AMR, the div B preserving prolongation for CT requires even
-number of ghost cell layers and odd number of ghost layers for some slope limiters, e.g.
- mp5, is added by one to become even.
+### Magnetic field divergence {: #par_divbfix }
+AGILE's MHD is cell-centred GLM-MHD (Dedner et al. 2002, _J. Comput. Phys._
+175, 645): an extra scalar `psi` carries divergence errors away at the
+fastest wave speed and damps them at the rate set by `mhd_glm_alpha`. That is
+the only option, so upstream's `typedivbfix`, `type_ct`, `divbdiff`,
+`typedivbdiff`, `divbwave`, `source_split_divb`, `boundary_divbfix`,
+`clean_initial_divb` and `mhd_glm_extended` are not read. There is no
+staggered grid / constrained transport.
+See [Divergence B source treatments](equations.html#eq_divB_fix).
 
-In cell-center based magnetic fields, sources proportionate to the numerical monopole
-errors can be added, in a source-split way, to momemtum, energy, and induction equation 
-(the 'powel' type), or to the induction equation alone (the 'janhunen' type) for cleaning divB errors. 
-The `divbwave` switch is effective for the Riemann type solvers for multi-D MHD only. 
-The default true value corresponds to Powell divergence wave which stabilizes the Riemann solver.
+### Thermal conduction {: #par_mhd_htc }
+Thermal conduction is hyperbolic: the heat flux is evolved as an extra
+variable that relaxes towards the Spitzer value, isotropically along the
+field with `mhd_hyperbolic_thermal_conduction`, or as a full vector with a
+Braginskii perpendicular part with the `_anisotropic` variant. The
+conductivities follow from the units unless `tc_kappa_par` / `tc_kappa_perp`
+are set positive, in which case they are those constants (no
+temperature dependence). See [Hyperbolic thermal conduction](equations.html#eq_mhd_htc).
 
-Another source term strategy for monopole error control is choose 'linde' type
- to do parabolic cleaning, i.e. add source terms which diffuse the local error at the maximal
-rate still compliant with the CFL limit on the time step. This is activated
-when `divbdiff` is set to a positive number, which should be less than 2,
-and again comes in various flavors depending on which equations receive source
-terms. The choice where only the induction equation gets modified, i.e.
-`typedivbdiff='ind'` can be used. 
+### Ionisation and the equation of state {: #par_mhd_ion }
+`H_ion_fr`, `He_ion_fr` and `He_ion_fr2` set the number of particles per
+hydrogen nucleus, b = 1 + H_ion_fr + He_abundance (He_ion_fr (He_ion_fr2 + 1) + 1),
+in p = b n k_B T, which enters the temperature unit. The defaults (fully
+ionised) give the familiar b = 2 + 3 He_abundance; `He_abundance = 0` with
+`H_ion_fr = 0` gives p = n k_B T.
 
-GLM-MHD mixed hyperbolic and parabolic dampening of the divB error using an 
-additional scalar variable `Psi`.  The algorithm of 'glm' is described by
-Dedner et al. as _Equation (24)_ in 
-_Journal of Computational Physics 175, 645-673 (2002) doi:10.1006/jcph.2001.6961_. 
-The default one with parameter **mhd_glm_extended=.true.** is the extended GLM-MHD with
-divb related sources terms in momemtum and energy equation. The GLM-MHD method without the
-sources terms is used when `mhd_glm_extended=.false.`. The parameter `mhd_glm_alpha` ranging
-from 0 to 1.0 is the ratio of the diffusive to advective time scales for divb cleaning.
-You can choose 'lindejanhunen', 'lindepowel', or 'lindeglm' to use combined divb cleaning.
+Upstream's magnetic field splitting (`B0field`, `Bdip`, ...), TRAC
+(`mhd_trac*`), Hall, hyper-resistivity (`mhd_eta_hyper`, `mhd_etah`),
+internal or hydrodynamic energy, semirelativistic MHD and the splitting of a
+hydrostatic equilibrium (`has_equi_*`) are not available in AGILE.
 
-Projection scheme using multigrid Poisson solver by Teunissen and Keppens in 
-_Computer Physics Communications 245, 1068, (2019)_ can be chosen as 'multigrid' to
-remove div B part of B. If `clean_initial_divb` is set to T, the projection scheme is 
-used to remove div B once after initial condition in unstretched Cartesian CT-MHD cases.
+## FFHD list {: #par_ffhdlist }
+```fortran
+&ffhd_list
+  ffhd_gamma= 5/3 | DOUBLE               ! adiabatic index
+  ffhd_gravity= F | T                    ! compile time: gravity_field in mod_usr
+  ffhd_radiative_cooling= F | T          ! compile time: reads &rc_list
+  ffhd_hyperbolic_thermal_conduction= F | T  ! compile time: field-aligned conduction
+  ffhd_pdivb= F | T                      ! compile time: p div(b) source term
+  ffhd_source_usr= F | T                 ! compile time: addsource_usr in mod_usr
+  He_abundance= 0.1 | DOUBLE from 0 to 1 ! He/H number ratio
+  ffhd_small_density= 0 | DOUBLE         ! floor in reconstructed face states
+  ffhd_small_pressure= 0 | DOUBLE
+  ffhd_energy= T                         ! must stay T, see above
+/
+```
 
-### Magnetic field splitting strategy {: #par_MFS }
-For MHD, we implemented the possibility to use a splitting strategy following
-Tanaka, where a time-invariant background magnetic field is handled
-exactly, so that one solves for perturbed magnetic field components instead.
-This method works with HLLD, HLL and TVDLF flux and with all divb cleaning methods.
-The magnetic field splitting is activated by `B0field=T`, and the magnitude of 
-the background magnetic field can be controlled using the parameters 
-`Bdip, Bquad, Boct, Busr`. The first
-three are pre-implemented formulae for a dipole, quadrupole and octupole field
-in spherical coordinates only (the parameters set the strength of the dipole,
-quadrupole and octupole field). This is coded up in the module _set_B0.t_.
-This same module calls in addition the _usr_set_B0_ subroutine when
-`Busr` is non-zero, where it then should be used to quantify an additional
-time-independent field. This latter can be used for cartesian or
-cylindrical coordinates as well. User can possibly prescibe analytic current in 
-_usr_set_J0_ subroutine to significantly increase accuracy. Choose 
-`B0field_forcefree=T` when your background magnetic field is forcefree for better
-efficiency and accuracy.
+The frozen field direction is not a parameter: a case supplies it through
+`usr_set_nwextra` in its `mod_usr.fpp`, see
+[Setting the frozen field](equations.html#eq_ffhd_bhat). The conductivity of
+`ffhd_hyperbolic_thermal_conduction` is Spitzer's, derived from the units.
+`ffhd_pdivb` computes div(b) as a plain finite difference, which is correct
+on a Cartesian grid only. `ffhd_partial_ionization` is still accepted but
+has no effect.
 
-### The transition region adaptive conduction (TRAC) method {: #par_TRAC }
-For solar atmosphere, simulations can sometimes suffer from the huge temperature gradient in the transition region.
-If the resolution is not enough (typically 1 km), the upward evaporation might be underestimated.
-The TRAC method could be used to correct the evaporation through artificially broadening the transition region.
-Set 'mhd_trac=T' to enable this function.
-'mhd_trac_type=1' is the basic TRAC method for 1D simulation (see Johnston et al. 2019, 2020).
-When it is used for 2D or 3D simulations, the local cutoff temperature inside each block would be calculated separately.
-It is the fastest way in multi-D simulations, it is not accurate but basically, is physically correct.
-For multi-D uniform Cartesian grids, we prepared some other methods.
-'mhd_trac_type=3' is the multi-D TRAC method based on the field line tracing module.
-For multi-D simulations, it should be the most accurate one, but might be very slow.
-Considering that this TRAC modificaiton will mostly affect the transition region,
-one can use 'mhd_trac_type=5' to add a mask to limit the region where the field lines are integrated.
-Give 'mhd_trac_mask' to set the maximum height of the mask, in your unit_length.
-'mhd_trac_type=4' uses the block-based TRAC method for multi-D simulations, which should be faster than the second type.
-And 'mhd_trac_type=6' works in a similar way with the 4th type, by adding a mask on the block-based TRAC method.
-Give 'mhd_trac_finegrid' to set the distance between two adjacent traced field lines (in the unit of finest cell size).
-Note that when setting 'mhd_trac_type >=3', the direction of your gravity should follow y-dir (2D) or z-dir(3D).
+## SRHD list {: #par_srhdlist }
+```fortran
+&srhd_list
+  srhd_gamma= 5/3 | DOUBLE               ! adiabatic index (ideal gas)
+  srhd_eos= F | T                        ! F: ideal gas, T: Synge gas
+  srhd_n_tracer= 0 | INTEGER             ! compile time: passive tracers
+  srhd_source_usr= F | T                 ! compile time: addsource_usr in mod_usr
+  He_abundance= 0.1 | DOUBLE from 0 to 1 ! He/H number ratio, for the units
+  srhd_small_density= 0 | DOUBLE         ! floors, see below
+  srhd_small_pressure= 0 | DOUBLE
+/
+```
 
-'mhd_trac_type=2' is anthor TRAC method, which broadens the transition region according to a different criterion.
-Unlike Johnston TRAC method, this TRAC method has the advantage that all the calculation is done locally within the block.
-Thus, it could be used in either 1D (M)HD or multi-D MHD simulations, and is much faster than other multi-D methods.
-
-### Solve internal or hydrodynamic energy to avoid negative pressure {: #par_AIE }
-In extremely low beta plasma, internal energy or gas pressure easily goes to
-negative values when solving total energy equation, because numerical error of magnetic
- energy is comparable to the internal energy due to its extremely small fraction in the 
-total energy. We have two methods to avoid this problem. In the first method, we solve 
-internal energy equation instead of total energy equation by setting `mhd_internal_e=T`.
-This function is compatible with all finite volume and finite difference schemes we have, including
-HLL, HLLC, and HLLD, in which the Riemann flux of the internal energy is evaluted
-as the HLL flux in all intermediate states of the Riemann fan. 
-In the second method, We solve hydrodynamic energy, i.e., internal and kinetic energy, instead of
-total energy with an additional source term of Lorentz force work, by setting `mhd_hydrodynamic_e=T`,
-which has better conservation than solving internal energy.
-
-### Solve semirelativistic MHD to tackle extreme Alfven speed {: #par_semirelati }
-The Alfven speed in nonrelativistic MHD, defined as B/sqrt(mu rho), can be extremely large, even unphysically larger
-than speed of light in strong magnetic field and low density regions. Semirelativistic MHD equations
-(Gombosi et al. 2002 JCP 177, 176) as the nonrelativistic hydrodynamic limit of the relativistic MHD 
-equations solve the problem and have the same steady-state solution as nonrelativistic MHD. 
-By artificially lowering the speed of light, one can reduce the wave speeds allowing larger time steps 
-thus faster solution in explicit numerical schemes. Set 'mhd_semirelativistic=T' and 'mhd_reduced_c' 
-equals to a value smaller than light speed with physical unit to solve semirelativistic MHD. If setting
-'mhd_hydrodynamic_e=T' or 'mhd_internal_e=T', the approximate split semirelativistic MHD equations (Rempel 2017 ApJ 834, 10)
-are solved with hydrodynamic or internal energy instead of total energy. Boris simplification of 
-semirelativistic MHD equations can be solved by setting 'mhd_boris_simplification=T' and 'mhd_semirelativistic=F' 
-to get faster but less accurate solutions. 'mhd_boris_simplification=T' is working with all versions of MHD 
-equations including 'mhd_internal_e=T' and 'mhd_hydrodynamic_e=T'.
-Since semirelativistic MHD waves are very complicated, only approximate fast magnetosonic wave speed
-is implemented to use HLL or tvdlf scheme, schemes (such as HLLC and HLLD) depending on more wave speeds 
-are not yet fully compatible with semirelativistic MHD. Note that when using semirelativistic MHD, the 
-definitions of momentum and total energy are different from MHD, so call 'mhd_to_primitive' to get velocity
-and gas pressure from momentum and total energy instead of using the classic relations.
+The velocity unit is the speed of light. `srhd_small_pressure` is also the
+lower bracket of the pressure root-find in the conservative-to-primitive
+inversion; see [the srhd floors](equations.html#eq_srhd_floors) and
+[Special relativistic hydrodynamics](equations.html#eq_srhd) for the two
+equations of state.
 
 ## Synthetic EUV/SXR/whitelight emission {: #par_emissionlist }
+
+> Inherited from upstream MPI-AMRVAC and **not tested in AGILE**: no test case
+> uses it, and `mod_thermal_emission` reads cell positions on the host
+> without the geometry sync AGILE needs, so check its output before relying on
+> it.
+
 User can synthesize EUV images, EUV spectra, SXR images and whitelight images using 3D .dat files inside amrvac. 
 These can be finished easily by adding some parameters into .par file. The images/spectra will 
 be output to .vtu/.vti files when the convert_type in [Filelist](#par_filelist) is set to  'EIvtiCCmpi', 
@@ -1204,44 +1158,3 @@ region below 'R_opt_thick' (in solar radius, default value is 1) is assumed as n
   instrument_resolution_factor=INTEGER
 /
 ```
-
-
-## Splitting of the hydrostatic equilibrium
-
-set 
-```fortran
-
-        has_equi_pe0 = .true.
-        has_equi_rho0 = .true.
-
-```
-to true in ***mhd\_list***
-and implement usr\_set\_equi\_vars in mod\_ust.t file
-
-
-
-```fortran
-  subroutine usr_init()
-
-  ...
-
-    usr_set_equi_vars => special_set_equi_vars
-  
-  ...
-  end subroutine usr_init
-
-
-  subroutine special_set_equi_vars(ixI^L,ixO^L,x,w0)
-    use mod_global_parameters
-    integer, intent(in)             :: ixI^L,ixO^L
-    double precision, intent(in)    :: x(ixI^S,1:ndim)
-    double precision, intent(inout) :: w0(ixI^S,1:number_equi_vars)
-
-
-    w0(ixO^S,equi_pe0_) = ...
-    w0(ixO^S,equi_rho0_) = ...
-
-  end subroutine special_set_equi_vars
-
-```
-

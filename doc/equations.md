@@ -57,7 +57,7 @@ parameter file of a run, without rebuilding, has no effect. These are:
 
 | Module | Compile-time switches in its `_list` |
 | --- | --- |
-| `hd`   | `hd_gravity`, `hd_radiative_cooling`, `hd_n_tracer` |
+| `hd`   | `hd_gravity`, `hd_radiative_cooling`, `hd_source_usr`, `hd_n_tracer` |
 | `mhd`  | `mhd_gravity`, `mhd_radiative_cooling`, `mhd_resistivity`, `mhd_hyperbolic_thermal_conduction`, `mhd_hyperbolic_thermal_conduction_anisotropic`, `mhd_source_usr`, `mhd_energy_only`, `mhd_n_tracer` |
 | `ffhd` | `ffhd_gravity`, `ffhd_radiative_cooling`, `ffhd_hyperbolic_thermal_conduction`, `ffhd_pdivb`, `ffhd_source_usr` |
 | `srhd` | `srhd_source_usr`, `srhd_n_tracer` |
@@ -119,9 +119,10 @@ This equation module can be combined with physical sources for
 (local) optically thin radiative losses by setting **hd_radiative_cooling=.true.**,
 see the [radiative cooling](radiative_cooling.html) page. It can also be
 combined with the external gravity module by setting **hd_gravity=.true.**,
-see [Gravity](#eq_gravity) below. Both are compile-time switches, set in
-`agile.par` (see [Compile-time switches](#eq_compile_time)). `hd` has no
-switch for [user source terms](#eq_usr_source).
+see [Gravity](#eq_gravity) below, and with [user source
+terms](#eq_usr_source) by setting **hd_source_usr=.true.**. All three are
+compile-time switches, set in `agile.par` (see [Compile-time
+switches](#eq_compile_time)).
 
 `hd_list` also reads **hd_energy** and **hd_adiab**, inherited from
 MPI-AMRVAC, where `hd_energy = .false.` selects an isothermal gas with
@@ -201,8 +202,8 @@ the case stays at that depth inside the repository, so do not copy it.
 
 ### User source terms {: #eq_usr_source }
 
-`mhd`, `ffhd` and `srhd` can add a user-defined, local source term to every
-cell. It is enabled with **mhd_source_usr**/**ffhd_source_usr**/**srhd_source_usr**
+Every physics module can add a user-defined, local source term to every
+cell. It is enabled with **hd_source_usr**/**mhd_source_usr**/**ffhd_source_usr**/**srhd_source_usr**
 `= .true.` in `agile.par` (a compile-time switch), and the physics module
 then calls a subroutine named `addsource_usr` that the case's `mod_usr.fpp`
 must provide:
@@ -228,7 +229,7 @@ stage evaluates its update on, in conserved and primitive variables; `wnew`
 is the state being updated. It is always added unsplit (`qsourcesplit` is
 `.false.`), and it does not limit the time step: a stiff user source needs a
 small enough `courantpar` or `dtpar`. `tests/ffhd/TI3D` is a working example.
-`hd` has no such switch. The `usr_source` procedure pointer in
+The `usr_source` procedure pointer in
 `mod_usr_methods` is a leftover of MPI-AMRVAC and is never called.
 
 ## Magnetohydrodynamics: mhd {: #eq_mhd }

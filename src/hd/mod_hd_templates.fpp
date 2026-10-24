@@ -79,6 +79,10 @@
   logical, public                         :: hd_particles = .false.
   ${GPU_DECLARE_COPYIN('hd_particles')}$
 
+  !> switch for source user
+  logical, public                         :: hd_source_usr = .false.
+  ${GPU_DECLARE_COPYIN('hd_source_usr')}$
+
   !> Smallest gas pressure allowed in a reconstructed face state, applied by
   !> fix_prim_state. Zero, the default, clips only negative values.
   double precision, public                :: hd_small_pressure = 0.0d0
@@ -97,7 +101,7 @@
 
     namelist /hd_list/ hd_energy, hd_gamma, hd_adiab, hd_partial_ionization,&
         hd_force_diagonal, hd_particles, hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance, &
-      hd_small_pressure, hd_small_density
+      hd_source_usr, hd_small_pressure, hd_small_density
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -110,7 +114,7 @@
     if (hd_small_density < 0.0d0) call mpistop(&
        "hd_small_density should be positive.")
 
-    ${GPU_UPDATE_DEVICE('hd_energy, hd_gamma, hd_adiab, hd_partial_ionization, hd_force_diagonal, hd_particles, hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance')}$
+    ${GPU_UPDATE_DEVICE('hd_energy, hd_gamma, hd_adiab, hd_partial_ionization, hd_force_diagonal, hd_particles, hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance, hd_source_usr')}$
     ${GPU_UPDATE_DEVICE('hd_small_pressure, hd_small_density')}$
 
   end subroutine read_params
@@ -331,6 +335,9 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 #:if defined('COOLING')
   use mod_radiative_cooling, only: rc_fl, radiative_cooling_add_source
 #:endif
+#:if defined('SOURCE_USR')
+  use mod_usr, only: addsource_usr
+#:endif
   ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
@@ -357,6 +364,10 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 
 #:if defined('COOLING')
      call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
+#:endif
+
+#:if defined('SOURCE_USR')
+     call addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, .false.)
 #:endif
 
   else

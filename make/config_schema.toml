@@ -94,6 +94,13 @@ flags = ["fypp", "hash"]
 default = false
 implies = ["components.source_local"]
 
+[hd_list.hd_source_usr]
+type = "flag"
+name = "SOURCE_USR"
+flags = ["fypp", "hash"]
+default = false
+implies = ["components.source_local"]
+
 [ffhd_list]
 [ffhd_list.ffhd_pdivb]
 type = "flag"
