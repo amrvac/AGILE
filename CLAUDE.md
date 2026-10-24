@@ -1299,7 +1299,10 @@ come out identical once and suffixes the rest (`mod_physics_hd`, ...).
 `doc/ford/src/` and `doc/ford/html/` are generated/gitignored, not committed.
 The narrative `doc/*.md` pages are part of the site (`page_dir: ..` in
 `doc/ford/project.md`), as FORD pages with a `title:` header; the time
-integrators are described in `doc/time_integration.md`.
+integrators are described in `doc/time_integration.md`. Page navigation on the site is
+a "Contents" drawer rendered from `doc/contents.md` itself
+(`doc/ford/templates/info_page.html`), so a new page must be listed there to
+be reachable.
 
 ## Code style (from `doc/code_style_guide.md`)
 

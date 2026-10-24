@@ -8,6 +8,8 @@ financial support.
 * [Examples](examples.html) An overview of documented example simulations.
 * [Contributing to AGILE and its documentation](contributing.html)
 * [Documentation](documentation.html) How the documentation works.
+* [Code style guide](code_style_guide.html) Conventions for Fortran source in AGILE.
+* [Publications](publications.html) Papers related to AGILE.
 
 # General {: #general }
 * [Equations](equations.html) The equations and parameters in physics modules.
@@ -32,6 +34,10 @@ the data structures for the block-tree AMR.
 
 # IO and data analysis {: #io }
 * [File format](fileformat.html) Description of the format of AGILE data file (.dat).
+* [Dump variables to dat files](dat_convert.html) Adding extra variables to the .dat output.
+* [Setting up the python tools](python_setup.html) Installing the Python analysis tools.
+* [Reading the dat files](python_datfiles.html) Loading .dat snapshots in Python.
+* [Reading the vtk files](python_vtkfiles.html) Loading .vtu output in Python.
 * [Visualisation and analysis in Python with yt](yt_usage.html) without data conversion.
 * [Converting data files for visualization](convert.html) Brief notes on how to
 convert to Tecplot (.plt), and VTK (.vtu) data files.
