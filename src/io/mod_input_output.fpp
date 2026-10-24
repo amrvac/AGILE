@@ -1136,10 +1136,16 @@ contains
     end select
     call time_levels(t_integrator, nstep, nlevel)
 
-    ! Harmonize the parameters for dimensional splitting and source splitting
-    if(typedimsplit   =='default'.and.     dimsplit)   typedimsplit='xyyx'
-    if(typedimsplit   =='default'.and..not.dimsplit)   typedimsplit='unsplit'
-    dimsplit   = typedimsplit   /='unsplit'
+    ! Dimensional splitting is not implemented: advect sweeps all three
+    ! directions whatever idim range it is given, so the split loop in
+    ! advance would apply the full flux divergence ndim times per step.
+    ! typedimsplit='xy'/'xyyx' used to switch it on by itself, so refuse both.
+    if (dimsplit) call mpistop("dimsplit=.true. is not implemented in AGILE: &
+       &the flux update is always unsplit, leave dimsplit=.false.")
+    if (typedimsplit /= 'default' .and. typedimsplit /= 'unsplit') &
+       call mpistop("typedimsplit='"//trim(typedimsplit)//"' would switch &
+       &on dimensional splitting, which is not implemented in AGILE")
+    typedimsplit = 'unsplit'
 
     ! initialize types of split-source addition
     select case (typesourcesplit)
@@ -1173,15 +1179,6 @@ contains
       slab_uniform=.false.
     end if
 
-    if(coordinate==spherical) then
-      if(dimsplit) then
-        if(mype==0)print *&
-           ,'Warning: spherical symmetry needs dimsplit=F, resetting'
-        dimsplit=.false.
-      end if
-    end if
-
-    if (ndim==1) dimsplit=.false.
 
     ! type limiter of prolongation
     select case(typeprolonglimit)
