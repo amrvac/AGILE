@@ -35,7 +35,8 @@ contains
 @:get_cmax()
 @:get_flux()
 @:estimate_speeds_minmax()
-@:estimate_speeds_toro_pvrs()
+@:estimate_speeds_hllc()
+@:hllc_flux()
 
   ! flux scheme list : (scheme_tag, method_enum, faceflux_proc)
 #:set schemes = [ &
@@ -677,7 +678,6 @@ end subroutine finite_volume_local
     real(dp) :: flux_l(nw_flux), flux_r(nw_flux)
     real(dp) :: sL, sR, ds, wmax
     real(dp), parameter :: eps = 1e-14_dp
-    integer  :: iw
 
     call get_flux(uL, xC, flux_dim, flux_l)
     call get_flux(uR, xC, flux_dim, flux_r)
@@ -701,6 +701,24 @@ end subroutine finite_volume_local
        end if
     end if
     
+    call apply_flux_type_tvdlf(flux_l, flux_r, uL, uR, wmax, flux_dim, F)
+
+  end subroutine riemann_hll_prim
+
+
+  !> Overwrite F with the LLF flux for every variable the physics module marks
+  !> flux_tvdlf in flux_type(flux_dim,:) (in mhd: B_n and the GLM psi).
+  !> uL/uR are conservative.
+  subroutine apply_flux_type_tvdlf(flux_l, flux_r, uL, uR, wmax, flux_dim, F)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(in)    :: flux_l(nw_flux), flux_r(nw_flux)
+    real(dp), intent(in)    :: uL(nw_phys), uR(nw_phys)
+    real(dp), intent(in)    :: wmax
+    integer,  intent(in)    :: flux_dim
+    real(dp), intent(inout) :: F(nw_flux)
+
+    integer  :: iw
+
     ! overwrite with tvdlf flux if requested (faster this way)
     if ( any(flux_type(flux_dim,:) == flux_tvdlf) ) then
        do iw = 1, nw_flux
@@ -710,13 +728,15 @@ end subroutine finite_volume_local
        end do
     end if
 
-  end subroutine riemann_hll_prim
+  end subroutine apply_flux_type_tvdlf
 
 
-  !> One-face HLLC numerical flux from primitive L/R states (HD only).
-  !> Uses scalar pressure assumption; not valid for MHD (use HLLD instead).
-  !> Reference: Toro (2010), chapter 10 (Variant 2)
-  !> does not yet take flux_type(flux_dim,nw_flux) into account
+  !> One-face HLLC numerical flux from primitive L/R states.
+  !> The physics-independent frame: the outer signal speeds come from the
+  !> physics module's estimate_speeds_hllc, the star-region flux from its
+  !> hllc_flux (hd: Toro (2010) chapter 10, variant 2; mhd: Li (2005)).
+  !> Falls back to LLF where hllc_flux reports a degenerate fan, and takes
+  !> flux_type(flux_dim,nw_flux) into account like riemann_hll_prim.
   subroutine riemann_hllc_prim(uL, uR, xC, flux_dim, F)
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
@@ -725,76 +745,23 @@ end subroutine finite_volume_local
     real(dp), intent(out)   :: F(nw_flux)
 
     real(dp) :: flux_l(nw_flux), flux_r(nw_flux)
-    real(dp) :: sL, sR, s_star
-    real(dp) :: dL, dR, denom
-    real(dp) :: rhoL, rhoR, unL, unR, pL, pR
-    real(dp) :: PLR
-    real(dp) :: Dstar
-    real(dp) :: wmax
-    real(dp), parameter :: eps = 1e-14_dp
-    integer :: i
+    real(dp) :: sL, sR, wmax
+    logical  :: degenerate
 
     call get_flux(uL, xC, flux_dim, flux_l)
     call get_flux(uR, xC, flux_dim, flux_r)
 
-    call estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
+    call estimate_speeds_hllc(uL, uR, xC, flux_dim, sL, sR)
+    wmax = max(abs(sL), abs(sR))
 
-    ! cache primitive scalars before uL/uR are overwritten to conservative
-    rhoL = uL(iw_rho)
-    rhoR = uR(iw_rho)
-    unL  = uL(iw_mom(flux_dim))
-    unR  = uR(iw_mom(flux_dim))
-    pL   = uL(iw_e)
-    pR   = uR(iw_e)
+    ! converts uL/uR to conservative
+    call hllc_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
 
-    ! we re-use these later (Eq. 10.70, Eq. 10.76)
-    dL    = rhoL*(sL - unL)
-    dR    = rhoR*(sR - unR)
-    denom = dL - dR
-
-    ! needed because (Eq. 10.75) uses U_K
-    call to_conservative(uL)
-    call to_conservative(uR)
-
-    ! fall back to LLF/Rusanov if denom is ~0
-    if (abs(denom) <= eps*(abs(dL) + abs(dR) + 1._dp)) then
-      wmax = max(abs(sL), abs(sR))
+    if (degenerate) then
       F = 0.5_dp * ((flux_l + flux_r) - wmax * (uR(1:nw_flux) - uL(1:nw_flux)))
-      return
     end if
 
-    ! contact speed S* (Eq. 10.70)
-    s_star = ((pR - pL) + unL*dL - unR*dR) / denom
-
-    ! pressure-like term (Eq. 10.76)
-    PLR = 0.5_dp * (pL + pR + dL*(s_star - unL) + dR*(s_star - unR))
-
-    ! HLLC flux (Eq. 10.71) + variant 2 (Eq. 10.75)
-    if (0._dp .le. sL) then
-      F = flux_l
-      return
-    elseif (0._dp .ge. sR) then
-      F = flux_r
-      return
-    end if
-
-    if (0._dp .le. s_star) then
-      ! F_*L
-      do i = 1, nw_flux
-        Dstar = 0._dp
-        if (i .eq. iw_mom(flux_dim)) Dstar = 1._dp
-        if (i .eq. iw_e)             Dstar = s_star
-        F(i) = (s_star*(sL*uL(i) - flux_l(i)) + sL*PLR*Dstar) / (sL - s_star)
-      end do
-    else
-      ! F_*R
-      do i = 1, nw_flux
-        Dstar = 0._dp
-        if (i .eq. iw_mom(flux_dim)) Dstar = 1._dp
-        if (i .eq. iw_e)             Dstar = s_star
-        F(i) = (s_star*(sR*uR(i) - flux_r(i)) + sR*PLR*Dstar) / (sR - s_star)
-      end do
-    end if
+    call apply_flux_type_tvdlf(flux_l, flux_r, uL, uR, wmax, flux_dim, F)
 
   end subroutine riemann_hllc_prim
 

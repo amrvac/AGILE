@@ -390,10 +390,12 @@ reconstruction of the primitive variables:
   signal speed of the two face states. The most diffusive and the most
   robust; available for every physics module.
 - `'hll'`: the two-wave HLL solver. Not available for `ffhd`.
-- `'hllc'`: HLL with a restored contact wave. `hd` only.
+- `'hllc'`: HLL with a restored contact wave. `hd` (Toro 2010) and `mhd`
+  (Li 2005); not available with `MHD_ENERGY_ONLY`.
 
 Any other name stops the run, and so does a scheme the physics module does
-not support. In `mhd`, GLM's `psi` always takes the `tvdlf` flux. See the
+not support. In `mhd`, GLM's `psi` and the normal field always take the
+`tvdlf` flux, under `'hll'` and `'hllc'` alike. See the
 [table of solvers per module](equations.html#eq_list_physics).
 
 `flux_scheme` is an array with one entry per refinement level, as upstream,

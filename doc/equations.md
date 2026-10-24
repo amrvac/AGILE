@@ -32,7 +32,7 @@ Section 2.3, which is also the citable reference for AGILE 1.0.
 | --- | --- |
 | `hd`   | `LF`, `HLL`, `HLLC` |
 | `ffhd` | `LF` |
-| `mhd`  | `LF`, `HLL` |
+| `mhd`  | `LF`, `HLL`, `HLLC` |
 | `srhd` | `LF`, `HLL` |
 
 The scheme is chosen with `flux_scheme` in `&methodlist` (`'tvdlf'` for
@@ -41,9 +41,12 @@ array with one entry per refinement level, as in MPI-AMRVAC, but **AGILE
 uses only its first entry, for every level**: different schemes on
 different levels are not implemented yet. The slope limiter, `limiter`, is
 applied per level. `srhd`'s `HLL` uses the relativistic Davis (1988) min/max
-signal-speed estimate in `estimate_speeds_minmax`; `HLLC` remains `hd`-only,
-as its Toro (2010) contact-wave construction assumes a non-relativistic,
-scalar-pressure state. A solver not listed for a module in the table is
+signal-speed estimate in `estimate_speeds_minmax`. `HLLC` is a shared frame,
+`riemann_hllc_prim`, around a per-module star-region flux, `hllc_flux`: `hd`
+uses Toro's (2010) variant 2 with PVRS signal speeds, and `mhd` the solver of
+Li (2005) with the Davis fast-magnetosonic speeds of `HLL`, as upstream
+MPI-AMRVAC does. In `mhd` the normal field and GLM's `psi` still take the
+`LF` flux, exactly as under `HLL`. `srhd` has no `HLLC`. A solver not listed for a module in the table is
 not supported by it: the module has no signal-speed estimate for it, only a
 placeholder that calls `mpistop`.
 

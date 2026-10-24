@@ -609,10 +609,10 @@ end subroutine estimate_speeds_minmax
 #:enddef
 
 
-#:def estimate_speeds_toro_pvrs()
-!> Wave speed estimates for HLL/HLLC using Toro (2010) PVRS pressure estimate
+#:def estimate_speeds_hllc()
+!> Wave speed estimates for HLLC using Toro (2010) PVRS pressure estimate
 !> Implements Eq. (10.67)-(10.69)
-subroutine estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
+subroutine estimate_speeds_hllc(uL, uR, xC, flux_dim, sL, sR)
   ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
@@ -657,7 +657,93 @@ subroutine estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
 
   sL = unL - aL*qL
   sR = unR + aR*qR
-end subroutine estimate_speeds_toro_pvrs
+end subroutine estimate_speeds_hllc
+#:enddef
+
+
+#:def hllc_flux()
+!> HLLC flux for the Euler equations, given the outer signal speeds sL, sR.
+!> Reference: Toro (2010), chapter 10 (Variant 2, Eq. 10.75).
+!> uL/uR are primitive on entry and conservative on exit. degenerate is set
+!> when the contact speed cannot be formed, and F is then left for the caller
+!> to replace with its LLF fallback.
+subroutine hllc_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)    :: flux_l(nw_flux), flux_r(nw_flux)
+  real(dp), intent(in)    :: sL, sR
+  integer,  intent(in)    :: flux_dim
+  real(dp), intent(out)   :: F(nw_flux)
+  logical,  intent(out)   :: degenerate
+
+  real(dp) :: s_star
+  real(dp) :: dL, dR, denom
+  real(dp) :: rhoL, rhoR, unL, unR, pL, pR
+  real(dp) :: PLR
+  real(dp) :: Dstar
+  real(dp), parameter :: eps = 1e-14_dp
+  integer :: i
+
+  degenerate = .false.
+
+  ! cache primitive scalars before uL/uR are overwritten to conservative
+  rhoL = uL(iw_rho)
+  rhoR = uR(iw_rho)
+  unL  = uL(iw_mom(flux_dim))
+  unR  = uR(iw_mom(flux_dim))
+  pL   = uL(iw_e)
+  pR   = uR(iw_e)
+
+  ! we re-use these later (Eq. 10.70, Eq. 10.76)
+  dL    = rhoL*(sL - unL)
+  dR    = rhoR*(sR - unR)
+  denom = dL - dR
+
+  ! needed because (Eq. 10.75) uses U_K
+  call to_conservative(uL)
+  call to_conservative(uR)
+
+  ! the caller falls back to LLF/Rusanov if denom is ~0
+  if (abs(denom) <= eps*(abs(dL) + abs(dR) + 1._dp)) then
+    degenerate = .true.
+    F = 0._dp
+    return
+  end if
+
+  ! contact speed S* (Eq. 10.70)
+  s_star = ((pR - pL) + unL*dL - unR*dR) / denom
+
+  ! pressure-like term (Eq. 10.76)
+  PLR = 0.5_dp * (pL + pR + dL*(s_star - unL) + dR*(s_star - unR))
+
+  ! HLLC flux (Eq. 10.71) + variant 2 (Eq. 10.75)
+  if (0._dp .le. sL) then
+    F = flux_l
+    return
+  elseif (0._dp .ge. sR) then
+    F = flux_r
+    return
+  end if
+
+  if (0._dp .le. s_star) then
+    ! F_*L
+    do i = 1, nw_flux
+      Dstar = 0._dp
+      if (i .eq. iw_mom(flux_dim)) Dstar = 1._dp
+      if (i .eq. iw_e)             Dstar = s_star
+      F(i) = (s_star*(sL*uL(i) - flux_l(i)) + sL*PLR*Dstar) / (sL - s_star)
+    end do
+  else
+    ! F_*R
+    do i = 1, nw_flux
+      Dstar = 0._dp
+      if (i .eq. iw_mom(flux_dim)) Dstar = 1._dp
+      if (i .eq. iw_e)             Dstar = s_star
+      F(i) = (s_star*(sR*uR(i) - flux_r(i)) + sR*PLR*Dstar) / (sR - s_star)
+    end do
+  end if
+
+end subroutine hllc_flux
 #:enddef
 
 

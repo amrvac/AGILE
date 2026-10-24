@@ -770,9 +770,13 @@ contains
           end if
        case ('hllc')
           flux_method(level)=fs_hllc
-          if (physics_type=='mhd' .or. physics_type=='ffhd') then
+          if (physics_type=='ffhd' .or. physics_type=='srhd') then
              call mpistop(trim(flux_scheme(level))//" flux scheme is not compatible with "//trim(physics_type))
           end if
+#:if defined('MHD_ENERGY_ONLY')
+          ! only reconflux_muscl_llf_prim zeroes the non-energy fluxes
+          call mpistop(trim(flux_scheme(level))//" flux scheme is not compatible with MHD_ENERGY_ONLY")
+#:endif
        case ('tvdlf')
           flux_method(level)=fs_tvdlf
        case default
