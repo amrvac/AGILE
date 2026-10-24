@@ -118,7 +118,7 @@ _fillgeo_ subroutine. They are stored in the structures
 _pw(igrid)%surfaceC(ixG^T,^D)_, _pw(igrid)%surface(ixG^T,^D)_,
  _pw(igrid)%dvolume_ and _pw(igrid)%dx_.
 
-The ghost cells are updated by the subroutine `getbc` in `mod_ghostcells_update.t`. 
+The ghost cells are updated by the subroutine `getbc` in `src/mod_ghostcells_update.fpp`. 
 When a file is read or saved by AGILE, the ghost cells are usually not included.
 
 # Boundary Regions {: #disc-boundaries }

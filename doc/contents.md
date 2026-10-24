@@ -16,7 +16,7 @@ financial support.
 * [Coordinate systems](coordinate_systems.html) Cartesian, spherical,
   cylindrical and logarithmic-radius geometries, the geometric source terms
   each one adds, and the polar axis.
-* [Parameters](par.html) Description of all parameters in "amrvac.par" parameter file.
+* [Parameters](par.html) Description of all parameters in the `agile.par` parameter file.
 * [Auxiliary variables](mpiamrvac_nw.html) Description of the intended use
   for _nw, nwflux, nwaux, nwextra, nwauxio_ parameters.
 * [Command line](commandline.html) Help on command-line parameters.
