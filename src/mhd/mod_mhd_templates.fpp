@@ -167,6 +167,13 @@
   logical, public                         :: mhd_source_usr = .false.
   ${GPU_DECLARE_COPYIN('mhd_source_usr')}$
 
+  !> Smallest gas pressure allowed in a reconstructed face state, applied by
+  !> fix_prim_state. Zero, the default, clips only negative values.
+  double precision, public                :: mhd_small_pressure = 0.0d0
+  !> Smallest density allowed in a reconstructed face state
+  double precision, public                :: mhd_small_density  = 0.0d0
+  ${GPU_DECLARE_COPYIN('mhd_small_pressure,mhd_small_density')}$
+
 #:enddef
 
 #:def read_params()
@@ -182,7 +189,8 @@
       mhd_hyperbolic_thermal_conduction_anisotropic, &
       tc_kappa_par, tc_kappa_perp, &
       H_ion_fr, He_ion_fr, He_ion_fr2, &
-      mhd_energy_only
+      mhd_energy_only, &
+      mhd_small_pressure, mhd_small_density
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -191,7 +199,13 @@
     end do
 
     ${GPU_UPDATE_DEVICE('mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity')}$
+    if (mhd_small_pressure < 0.0d0) call mpistop(&
+       "mhd_small_pressure should be positive.")
+    if (mhd_small_density < 0.0d0) call mpistop(&
+       "mhd_small_density should be positive.")
+
     ${GPU_UPDATE_DEVICE('tc_kappa_par, tc_kappa_perp')}$
+    ${GPU_UPDATE_DEVICE('mhd_small_pressure, mhd_small_density')}$
 
   end subroutine read_params
 #:enddef
@@ -865,6 +879,25 @@ end subroutine addsource_geometry
   end subroutine to_conservative
 #:enddef
 
+#:def fix_prim_state()
+  !> Make a reconstructed primitive face state admissible before it is handed
+  !> to the Riemann solver. The MUSCL reconstruction limits every slot of the
+  !> state independently, so a face state can come out with a negative
+  !> density or pressure even where both neighbouring cells are admissible.
+  !> Floor both, at mhd_small_density and mhd_small_pressure in &mhd_list.
+  !> Both default to zero, in which case the max() calls only clip values
+  !> that were already negative and leave every admissible state bit-for-bit
+  !> unchanged. Only the face states are floored, not the cell averages.
+  pure subroutine fix_prim_state(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+
+    u(iw_rho) = max(u(iw_rho), mhd_small_density)
+    u(iw_e)   = max(u(iw_e),   mhd_small_pressure)
+
+  end subroutine fix_prim_state
+#:enddef
+
 #:def get_flux()
   subroutine get_flux(u, xC, flux_dim, flux)
     use mod_global_parameters, only: cmax_global
@@ -1030,6 +1063,144 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   wR = max(uL(iw_mom(flux_dim)) + cfL, uR(iw_mom(flux_dim)) + cfR)
 
 end subroutine estimate_speeds_minmax
+#:enddef
+
+
+#:def estimate_speeds_hllc()
+!> Outer signal speeds for HLLC: the same Davis (1988) fast-magnetosonic bounds
+!> HLL uses, as upstream MPI-AMRVAC does.
+subroutine estimate_speeds_hllc(uL, uR, xC, flux_dim, sL, sR)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)  :: xC(ndim)
+  integer,  intent(in)  :: flux_dim
+  real(dp), intent(out) :: sL, sR
+
+  call estimate_speeds_minmax(uL, uR, xC, flux_dim, sL, sR)
+
+end subroutine estimate_speeds_hllc
+#:enddef
+
+
+#:def hllc_flux()
+!> HLLC flux for ideal MHD after Li S., JCP 203 (2005) 344, ported from
+!> upstream MPI-AMRVAC's mhd_get_lCD/mhd_get_wCD.
+!> The contact speed is that of the HLL average state, s* = m_n/rho of U_hll,
+!> and the magnetic field in the star region is B_hll on both sides of the
+!> contact. Every slot without a star-state formula of its own (B, psi and the
+!> HYPERTC heat fluxes) takes U* = U_hll, which makes its flux exactly the HLL
+!> flux. B_n and psi are overwritten afterwards by the flux_type override in
+!> riemann_hllc_prim, so they get the same LLF flux as under 'hll' (upstream
+!> instead zeroes them in the star region).
+!> uL/uR are primitive on entry and conservative on exit. degenerate is set
+!> when sR - sL vanishes, and F is then left for the caller to replace with
+!> its LLF fallback.
+subroutine hllc_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)    :: flux_l(nw_flux), flux_r(nw_flux)
+  real(dp), intent(in)    :: sL, sR
+  integer,  intent(in)    :: flux_dim
+  real(dp), intent(out)   :: F(nw_flux)
+  logical,  intent(out)   :: degenerate
+
+  real(dp) :: whll(nw_flux)
+  real(dp) :: unL, unR, ds, s_star
+  real(dp), parameter :: eps = 1e-14_dp
+
+  degenerate = .false.
+
+  ! normal velocities, cached before uL/uR are overwritten to conservative
+  unL = uL(iw_mom(flux_dim))
+  unR = uR(iw_mom(flux_dim))
+
+  call to_conservative(uL)
+  call to_conservative(uR)
+
+  if (0._dp .le. sL) then
+    F = flux_l
+    return
+  elseif (0._dp .ge. sR) then
+    F = flux_r
+    return
+  end if
+
+  ds = sR - sL
+  if (ds <= eps*(abs(sL) + abs(sR))) then
+    degenerate = .true.
+    F = 0._dp
+    return
+  end if
+
+  ! intermediate HLL state, and the contact speed it implies
+  whll = (sR*uR(1:nw_flux) - sL*uL(1:nw_flux) + flux_l - flux_r) / ds
+  s_star = whll(iw_mom(flux_dim)) / whll(iw_rho)
+
+  if (s_star <= sL .or. s_star >= sR) then
+    ! contact speed outside the fan: fall back to the HLL flux
+    F = (sR*flux_l - sL*flux_r + sL*sR*(uR(1:nw_flux) - uL(1:nw_flux))) / ds
+    return
+  end if
+
+  ! On the contact itself take the side of the smaller sector of the fan, as
+  ! upstream does.
+  if (s_star > 0._dp .or. (s_star == 0._dp .and. -sL < sR)) then
+    call hllc_star_flux(uL, flux_l, sL, unL, s_star, whll, flux_dim, F)
+  else
+    call hllc_star_flux(uR, flux_r, sR, unR, s_star, whll, flux_dim, F)
+  end if
+
+end subroutine hllc_flux
+
+!> Flux F_*K = F_K + s_K (U_*K - U_K) of one star state, Li (2005) Eqs. 17-31.
+!> uK is conservative, unK its normal velocity.
+subroutine hllc_star_flux(uK, fK, sK, unK, s_star, whll, flux_dim, F)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: uK(nw_phys), fK(nw_flux)
+  real(dp), intent(in)  :: sK, unK, s_star
+  real(dp), intent(in)  :: whll(nw_flux)
+  integer,  intent(in)  :: flux_dim
+  real(dp), intent(out) :: F(nw_flux)
+
+  real(dp) :: ustar(nw_flux)
+  real(dp) :: inv_ds_star, rho_fac, bn_star, ptot_star, vdotb_hll
+  integer  :: idir
+
+  inv_ds_star = 1._dp / (sK - s_star)
+  rho_fac     = (sK - unK) * inv_ds_star
+  bn_star     = whll(iw_mag(flux_dim))
+
+  ! magnetic field (Eq. 31), psi and any heat flux slots: the HLL state
+  ustar = whll
+
+  ustar(iw_rho) = uK(iw_rho) * rho_fac
+#:if defined('N_TRACER')
+  #:for i in range(1, N_TRACER_+1)
+  ustar(tracer(${i}$)) = uK(tracer(${i}$)) * rho_fac
+  #:endfor
+#:endif
+
+  ! momentum (Eqs. 20-22)
+  do idir = 1, 3
+     if (idir == flux_dim) then
+        ustar(iw_mom(idir)) = ustar(iw_rho) * s_star
+     else
+        ustar(iw_mom(idir)) = (sK*uK(iw_mom(idir)) - fK(iw_mom(idir)) &
+             - bn_star*whll(iw_mag(idir))) * inv_ds_star
+     end if
+  end do
+
+  ! total pressure (Eq. 17) and energy (Eq. 31)
+  ptot_star = uK(iw_rho)*(sK - unK)*(s_star - unK) &
+       + fK(iw_mom(flux_dim)) - uK(iw_mom(flux_dim))*unK + bn_star**2
+  vdotb_hll = (whll(iw_mom(1))*whll(iw_mag(1)) + whll(iw_mom(2))*whll(iw_mag(2)) &
+       + whll(iw_mom(3))*whll(iw_mag(3))) / whll(iw_rho)
+  ustar(iw_e) = (sK*uK(iw_e) - fK(iw_e) + s_star*ptot_star - vdotb_hll*bn_star) &
+       * inv_ds_star
+
+  F = fK + sK*(ustar - uK(1:nw_flux))
+
+end subroutine hllc_star_flux
 #:enddef
 
 

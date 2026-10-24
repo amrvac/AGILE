@@ -79,6 +79,17 @@
   logical, public                         :: hd_particles = .false.
   ${GPU_DECLARE_COPYIN('hd_particles')}$
 
+  !> switch for source user
+  logical, public                         :: hd_source_usr = .false.
+  ${GPU_DECLARE_COPYIN('hd_source_usr')}$
+
+  !> Smallest gas pressure allowed in a reconstructed face state, applied by
+  !> fix_prim_state. Zero, the default, clips only negative values.
+  double precision, public                :: hd_small_pressure = 0.0d0
+  !> Smallest density allowed in a reconstructed face state
+  double precision, public                :: hd_small_density  = 0.0d0
+  ${GPU_DECLARE_COPYIN('hd_small_pressure,hd_small_density')}$
+
 #:enddef
 
 #:def read_params()
@@ -89,7 +100,8 @@
     integer                      :: n
 
     namelist /hd_list/ hd_energy, hd_gamma, hd_adiab, hd_partial_ionization,&
-        hd_force_diagonal, hd_particles, hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance
+        hd_force_diagonal, hd_particles, hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance, &
+      hd_source_usr, hd_small_pressure, hd_small_density
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -97,7 +109,13 @@
 111    close(unitpar)
     end do
 
-    ${GPU_UPDATE_DEVICE('hd_energy, hd_gamma, hd_adiab, hd_partial_ionization, hd_force_diagonal, hd_particles, hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance')}$
+    if (hd_small_pressure < 0.0d0) call mpistop(&
+       "hd_small_pressure should be positive.")
+    if (hd_small_density < 0.0d0) call mpistop(&
+       "hd_small_density should be positive.")
+
+    ${GPU_UPDATE_DEVICE('hd_energy, hd_gamma, hd_adiab, hd_partial_ionization, hd_force_diagonal, hd_particles, hd_gravity, hd_n_tracer, hd_radiative_cooling, He_abundance, hd_source_usr')}$
+    ${GPU_UPDATE_DEVICE('hd_small_pressure, hd_small_density')}$
 
   end subroutine read_params
 #:enddef
@@ -317,6 +335,9 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 #:if defined('COOLING')
   use mod_radiative_cooling, only: rc_fl, radiative_cooling_add_source
 #:endif
+#:if defined('SOURCE_USR')
+  use mod_usr, only: addsource_usr
+#:endif
   ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
@@ -343,6 +364,10 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 
 #:if defined('COOLING')
      call radiative_cooling_add_source(qdt,wCT,wCTprim,wnew,x)
+#:endif
+
+#:if defined('SOURCE_USR')
+     call addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, .false.)
 #:endif
 
   else
@@ -497,6 +522,25 @@ pure subroutine to_conservative(u)
 end subroutine to_conservative
 #:enddef
 
+#:def fix_prim_state()
+  !> Make a reconstructed primitive face state admissible before it is handed
+  !> to the Riemann solver. The MUSCL reconstruction limits every slot of the
+  !> state independently, so a face state can come out with a negative
+  !> density or pressure even where both neighbouring cells are admissible.
+  !> Floor both, at hd_small_density and hd_small_pressure in &hd_list.
+  !> Both default to zero, in which case the max() calls only clip values
+  !> that were already negative and leave every admissible state bit-for-bit
+  !> unchanged. Only the face states are floored, not the cell averages.
+  pure subroutine fix_prim_state(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+
+    u(iw_rho) = max(u(iw_rho), hd_small_density)
+    u(iw_e)   = max(u(iw_e),   hd_small_pressure)
+
+  end subroutine fix_prim_state
+#:enddef
+
 #:def get_flux()
 subroutine get_flux(u, xC, flux_dim, flux)
   ${GPU_ROUTINE_SEQ()}$
@@ -565,10 +609,10 @@ end subroutine estimate_speeds_minmax
 #:enddef
 
 
-#:def estimate_speeds_toro_pvrs()
-!> Wave speed estimates for HLL/HLLC using Toro (2010) PVRS pressure estimate
+#:def estimate_speeds_hllc()
+!> Wave speed estimates for HLLC using Toro (2010) PVRS pressure estimate
 !> Implements Eq. (10.67)-(10.69)
-subroutine estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
+subroutine estimate_speeds_hllc(uL, uR, xC, flux_dim, sL, sR)
   ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
@@ -613,7 +657,93 @@ subroutine estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
 
   sL = unL - aL*qL
   sR = unR + aR*qR
-end subroutine estimate_speeds_toro_pvrs
+end subroutine estimate_speeds_hllc
+#:enddef
+
+
+#:def hllc_flux()
+!> HLLC flux for the Euler equations, given the outer signal speeds sL, sR.
+!> Reference: Toro (2010), chapter 10 (Variant 2, Eq. 10.75).
+!> uL/uR are primitive on entry and conservative on exit. degenerate is set
+!> when the contact speed cannot be formed, and F is then left for the caller
+!> to replace with its LLF fallback.
+subroutine hllc_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)    :: flux_l(nw_flux), flux_r(nw_flux)
+  real(dp), intent(in)    :: sL, sR
+  integer,  intent(in)    :: flux_dim
+  real(dp), intent(out)   :: F(nw_flux)
+  logical,  intent(out)   :: degenerate
+
+  real(dp) :: s_star
+  real(dp) :: dL, dR, denom
+  real(dp) :: rhoL, rhoR, unL, unR, pL, pR
+  real(dp) :: PLR
+  real(dp) :: Dstar
+  real(dp), parameter :: eps = 1e-14_dp
+  integer :: i
+
+  degenerate = .false.
+
+  ! cache primitive scalars before uL/uR are overwritten to conservative
+  rhoL = uL(iw_rho)
+  rhoR = uR(iw_rho)
+  unL  = uL(iw_mom(flux_dim))
+  unR  = uR(iw_mom(flux_dim))
+  pL   = uL(iw_e)
+  pR   = uR(iw_e)
+
+  ! we re-use these later (Eq. 10.70, Eq. 10.76)
+  dL    = rhoL*(sL - unL)
+  dR    = rhoR*(sR - unR)
+  denom = dL - dR
+
+  ! needed because (Eq. 10.75) uses U_K
+  call to_conservative(uL)
+  call to_conservative(uR)
+
+  ! the caller falls back to LLF/Rusanov if denom is ~0
+  if (abs(denom) <= eps*(abs(dL) + abs(dR) + 1._dp)) then
+    degenerate = .true.
+    F = 0._dp
+    return
+  end if
+
+  ! contact speed S* (Eq. 10.70)
+  s_star = ((pR - pL) + unL*dL - unR*dR) / denom
+
+  ! pressure-like term (Eq. 10.76)
+  PLR = 0.5_dp * (pL + pR + dL*(s_star - unL) + dR*(s_star - unR))
+
+  ! HLLC flux (Eq. 10.71) + variant 2 (Eq. 10.75)
+  if (0._dp .le. sL) then
+    F = flux_l
+    return
+  elseif (0._dp .ge. sR) then
+    F = flux_r
+    return
+  end if
+
+  if (0._dp .le. s_star) then
+    ! F_*L
+    do i = 1, nw_flux
+      Dstar = 0._dp
+      if (i .eq. iw_mom(flux_dim)) Dstar = 1._dp
+      if (i .eq. iw_e)             Dstar = s_star
+      F(i) = (s_star*(sL*uL(i) - flux_l(i)) + sL*PLR*Dstar) / (sL - s_star)
+    end do
+  else
+    ! F_*R
+    do i = 1, nw_flux
+      Dstar = 0._dp
+      if (i .eq. iw_mom(flux_dim)) Dstar = 1._dp
+      if (i .eq. iw_e)             Dstar = s_star
+      F(i) = (s_star*(sR*uR(i) - flux_r(i)) + sR*PLR*Dstar) / (sR - s_star)
+    end do
+  end if
+
+end subroutine hllc_flux
 #:enddef
 
 
