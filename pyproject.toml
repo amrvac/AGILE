@@ -12,3 +12,8 @@ dependencies = [
 docs = [
     "ford>=7.0",
 ]
+analysis = [
+    "matplotlib>=3.8",
+    "numpy>=2.0",
+    "scipy>=1.12",
+]
