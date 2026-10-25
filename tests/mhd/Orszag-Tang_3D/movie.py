@@ -6,12 +6,12 @@ Reads the constant-z slices that movie.par writes (slice_type = 'dat', i.e.
 tools/python's datfile_utilities, and animates them side by side on one
 colour scale.
 
-    uv sync --extra analysis                 # numpy, matplotlib, scipy
+    uv sync --extra analysis                 # numpy, matplotlib, scipy, imageio-ffmpeg
     make arch=gnu
     for s in tvdlf hll hllc; do
         mpirun -np 8 ./agile -i movie.par movie_$s.par
     done
-    python movie.py                          # movie/ot_rho.mp4, or .gif without ffmpeg
+    python movie.py                          # movie/ot_rho.mp4 (.gif if no ffmpeg is found)
 """
 import argparse
 import glob
@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--fps", type=int, default=15)
     parser.add_argument("--dpi", type=int, default=120)
     parser.add_argument("--cmap", default="viridis")
-    parser.add_argument("--output", help="default: <dir>/ot_<var>.mp4 (.gif without ffmpeg)")
+    parser.add_argument("--output", help="default: <dir>/ot_<var>.mp4 (.gif if no ffmpeg is found)")
     parser.add_argument("--frames-dir", help="also save every frame as a PNG here")
     args = parser.parse_args()
 
@@ -116,6 +116,13 @@ def main():
             draw(n)
             fig.savefig(os.path.join(args.frames_dir, f"ot_{args.var}_{n:04d}.png"), dpi=args.dpi)
 
+    if not animation.FFMpegWriter.isAvailable():
+        # no ffmpeg on the PATH: use the binary imageio-ffmpeg ships, if installed
+        try:
+            import imageio_ffmpeg
+            matplotlib.rcParams["animation.ffmpeg_path"] = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            pass
     if animation.FFMpegWriter.isAvailable():
         writer, ext = animation.FFMpegWriter(fps=args.fps), ".mp4"
     else:
