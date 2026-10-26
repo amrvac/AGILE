@@ -260,31 +260,22 @@ contains
    ! This differentiation is necessary for OpenMP, because it does not have the
    ! equivalent of acc_attach as used in copy_or_update_pointer
    ! Every time level's view goes to the device, not only the ones nlevel
-   ! uses: getbc's kernels read psb(igrid) there.  The pointer helpers skip a
-   ! view that alloc_state left unassociated.
+   ! uses: getbc's kernels read psb(igrid) there.
    if (first_alloc) then
       ${GPU_UPDATE_DEVICE('ps(igrid), ps1(igrid), ps2(igrid), ps3(igrid), ps4(igrid), psc(igrid)')}$
    else
       ${GPU_UPDATE_DEVICE('ps(igrid)%level, psc(igrid)%level')}$
    end if
 
-   call copy_or_update(ps(igrid)%igrid)
-   call copy_or_update(ps1(igrid)%igrid)
-   call copy_or_update(ps2(igrid)%igrid)
-   call copy_or_update(ps3(igrid)%igrid)
-   call copy_or_update(ps4(igrid)%igrid)
-
-   call copy_or_update_pointer(ps(igrid)%w, no_update=.true.)
-   call copy_or_update_pointer(ps1(igrid)%w, no_update=.true.)
-   call copy_or_update_pointer(ps2(igrid)%w, no_update=.true.)
-   call copy_or_update_pointer(ps3(igrid)%w, no_update=.true.)
-   call copy_or_update_pointer(ps4(igrid)%w, no_update=.true.)
-
-   call copy_or_update_pointer(ps(igrid)%is_physical_boundary)
-   call copy_or_update_pointer(ps1(igrid)%is_physical_boundary, no_update=.true.)
-   call copy_or_update_pointer(ps2(igrid)%is_physical_boundary, no_update=.true.)
-   call copy_or_update_pointer(ps3(igrid)%is_physical_boundary, no_update=.true.)
-   call copy_or_update_pointer(ps4(igrid)%is_physical_boundary, no_update=.true.)
+   ! Only the time levels alloc_state set up (1..nlevel, or just ps when
+   ! converting) have w and is_physical_boundary associated.
+   do k = 1, merge(1, nlevel, convert)
+      psk => ps_level(k)
+      call copy_or_update(psk(igrid)%igrid)
+      call copy_or_update_pointer(psk(igrid)%w, no_update=.true.)
+      call copy_or_update_pointer(psk(igrid)%is_physical_boundary, &
+         no_update=(k > 1))
+   end do
    call copy_or_update_pointer(psc(igrid)%w, no_update=.true.)
    ! The metrics are already resident on the device for every block (bgeo and
    ! bgeoc are allocated once in initialize_vars) and were filled above, on
