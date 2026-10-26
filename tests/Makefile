@@ -32,8 +32,8 @@ FFHD_BASIC := ffhd/TI3D ffhd/spherical_pole
 FFHD_EXTENDED := ffhd/spherical ffhd/cylindrical ffhd/cylindrical_pole \
                  ffhd/log_spherical ffhd/log_cylindrical
 SRHD_BASIC := srhd/shockTube srhd/cylindrical
-SRHD_EXTENDED := srhd/spherical srhd/spherical_pole srhd/cylindrical_pole \
-                 srhd/log_spherical srhd/log_cylindrical
+SRHD_EXTENDED := srhd/jet_3D srhd/spherical srhd/spherical_pole \
+                 srhd/cylindrical_pole srhd/log_spherical srhd/log_cylindrical
 
 HD_DIRS := $(HD_BASIC) $(HD_EXTENDED)
 MHD_DIRS := $(MHD_BASIC) $(MHD_EXTENDED)
