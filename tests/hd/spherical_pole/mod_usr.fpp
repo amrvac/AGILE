@@ -287,7 +287,7 @@ contains
 
     integer, intent(in)          :: level
     double precision, intent(in) :: qt
-    double precision, intent(in) :: w(1:nw)
+    double precision, intent(in) :: w(1:nw_phys)
     double precision, intent(in) :: x(1:3)
     logical, intent(inout)       :: refineflag, coarsenflag, norefineflag,&
        nocoarsenflag

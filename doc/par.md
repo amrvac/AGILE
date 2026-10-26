@@ -753,7 +753,7 @@ subroutine usr_refine_grid(level, qt, w, x, refineflag, coarsenflag, &
      norefineflag, nocoarsenflag)
   ${GPU_ROUTINE_SEQ()}$
   integer, intent(in)          :: level
-  double precision, intent(in) :: qt, w(1:nw), x(1:ndim)  ! conserved w
+  double precision, intent(in) :: qt, w(1:nw_phys), x(1:ndim)  ! conserved w
   logical, intent(inout)       :: refineflag, coarsenflag, norefineflag, nocoarsenflag
 ```
 
