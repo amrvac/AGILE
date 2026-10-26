@@ -153,21 +153,25 @@ module mod_ghostcells_update
 
 contains
 
-  subroutine idecode(i1, i2, i3, i)
-    ${GPU_ROUTINE_VECTOR()}$
-    integer, intent(in)                       :: i
-    integer, intent(out)                      :: i1, i2, i3
-    ! .. local ..
-    integer, parameter                        :: i1min=-1, i2min=-1, i3min=-1
-    integer                                   :: id, idd
+#! Decode a neighbour code i (1..27, from iencode) into the direction offsets
+#! i1, i2, i3 in {-1,0,1}. Written inline rather than as a device routine: a
+#! call passed the kernel's private i1, i2, i3 by reference, and NVHPC could
+#! hand the routine an invalid address for them, so the unpack kernel wrote
+#! to a wild, misaligned location (compute-sanitizer: invalid __global__
+#! write). Whether it happened depended on unrelated code generation.
+#:def IDECODE(i1, i2, i3, i)
+          ${i3}$ = ceiling(dble(${i}$)/9.0d0) - 2
+          ${i2}$ = ceiling(dble(${i}$ - 9*(${i3}$+1))/3.0d0) - 2
+          ${i1}$ = ${i}$ - 9*(${i3}$+1) - 3*(${i2}$+1) - 2
+#:enddef
 
-    i3  = ceiling(dble(i)/9.0d0) - 1 + i3min
-    id  = i - 9 * (i3-i3min)
-    i2  = ceiling(dble(id)/3.0d0) - 1 + i2min
-    idd = id - 3 * (i2-i2min)
-    i1  = idd + i1min - 1
-
-  end subroutine idecode
+#! True when direction (i1,i2,i3) needs no ghost-cell exchange: the block
+#! itself (0,0,0), and edge/corner directions when diagonal ghost cells are
+#! not required. A logical expression rather than a device function, for the
+#! same reason as IDECODE: no temporaries passed by reference into a call.
+#:def SKIP_DIRECTION(i1, i2, i3)
+((${i1}$ == 0 .and. ${i2}$ == 0 .and. ${i3}$ == 0) .or. (.not. req_diagonal .and. (merge(1,0,${i1}$ /= 0) + merge(1,0,${i2}$ /= 0) + merge(1,0,${i3}$ /= 0)) > 1))
+#:enddef
 
   subroutine init_bc()
     use mod_global_parameters
@@ -1209,7 +1213,7 @@ contains
           do i3 = -1, 1
              do i2 = -1, 1
                 do i1 = -1, 1
-                   if (skip_direction([ i1,i2,i3 ])) cycle
+                   if (${SKIP_DIRECTION('i1','i2','i3')}$) cycle
                    if (neighbor_type(i1,i2,i3,igrid)==neighbor_coarse) call &
                         fill_coarse_boundary(time,igrid,i1,i2,i3)
                 end do
@@ -1266,7 +1270,7 @@ contains
              igrid = nbprocs_info%srl_nb(inb)%info%igrid(i)
              ienc = nbprocs_info%srl_nb(inb)%info%iencode(i)
              ibuf_start = nbprocs_info%srl_nb(inb)%info%ibuf_start(i)
-             call idecode( i1, i2, i3, ienc )
+             @:IDECODE(i1, i2, i3, ienc)
              iib1=idphyb(1,igrid); iib2=idphyb(2,igrid); iib3=idphyb(3,igrid)
 
              ! now fill the data and info buffers
@@ -1453,8 +1457,8 @@ contains
     ${GPU_PARALLEL_LOOP_GANG("collapse(2) private(i1,i2,i3, igrid, iib1,iib2,iib3, ipe_neighbor, ineighbor, n_i1,n_i2,n_i3, ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3, ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3, ic1,ic2,ic3, n_inc1,n_inc2,n_inc3, ipole,iB_pole, sbase1,sbase2,sbase3, sstep1,sstep2,sstep3)")}$ ${GPU_DEFAULT_PRESENT()}$
     do iigrid = 1, igridstail
        do i = 1, 27
-          call idecode( i1, i2, i3, i)
-          if (skip_direction([ i1,i2,i3 ])) cycle
+          @:IDECODE(i1, i2, i3, i)
+          if (${SKIP_DIRECTION('i1','i2','i3')}$) cycle
           igrid=igrids(iigrid)
           iib1=idphyb(1,igrid); iib2=idphyb(2,igrid); iib3=idphyb(3,igrid)
           ipe_neighbor=neighbor(2,i1,i2,i3,igrid)
@@ -1582,7 +1586,7 @@ contains
 
           ! ienc already encodes our own ghost-region offset: the sender
           ! computed it, mirrored across a pole where there is one
-          call idecode( i1, i2, i3, ienc )
+          @:IDECODE(i1, i2, i3, ienc)
 
           iib1 = idphyb(1,igrid); iib2 = idphyb(2,igrid); iib3 = idphyb(3,igrid)
 
@@ -1793,7 +1797,7 @@ contains
        do i3=-1,1
           do i2=-1,1
              do i1=-1,1
-                if (skip_direction([ i1,i2,i3 ])) cycle
+                if (${SKIP_DIRECTION('i1','i2','i3')}$) cycle
                 igrid = igrids(iigrid)
                 if (neighbor_type(i1,i2,i3,igrid)==neighbor_fine) then
                    iib1=idphyb(1,igrid);iib2=idphyb(2,igrid);iib3=idphyb(3,igrid);
@@ -1934,7 +1938,7 @@ contains
        do i3 = -1, 1
           do i2 = -1, 1
              do i1 = -1, 1
-                if (skip_direction([ i1,i2,i3 ])) cycle
+                if (${SKIP_DIRECTION('i1','i2','i3')}$) cycle
                 igrid = igrids(iigrid)
                 if (neighbor_type(i1,i2,i3,igrid)==neighbor_coarse) then
                    iib1=idphyb(1,igrid);iib2=idphyb(2,igrid);iib3=idphyb(3,igrid)
@@ -2049,22 +2053,6 @@ contains
     call nvtxEndRange
 
   end subroutine getbc
-
-  logical function skip_direction(dir)
-    ! This is a Cray compiler directive to force inlining.
-    ! Required for OpenACC at optimization levels where it would not be inlined.
-    !dir$ inlinealways skip_direction
-    ${GPU_ROUTINE_VECTOR()}$
-    integer, intent(in) :: dir(3)
-
-    if (all(dir == 0)) then
-       skip_direction = .true.
-    else if (.not. req_diagonal .and. count(dir /= 0) > 1) then
-       skip_direction = .true.
-    else
-       skip_direction = .false.
-    end if
-  end function skip_direction
 
 
   subroutine fill_coarse_boundary(time,igrid,i1,i2,i3)
