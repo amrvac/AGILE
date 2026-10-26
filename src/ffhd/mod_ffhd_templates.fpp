@@ -25,6 +25,13 @@
     + 0
 #:endif
 
+  !> Number of leading variables the MUSCL reconstruction limits (1:nw_recon).
+  !> Slots nw_recon+1:nw_phys are left to fix_prim_state, which must rebuild
+  !> them before the Riemann solver reads the face state.
+  !> ffhd reconstructs everything: get_flux reads the frozen field b1..b3 at
+  !> the faces, and it sits behind the flux variables.
+  integer, parameter, public              :: nw_recon=nw_phys
+
   !> Whether an energy equation is used
   logical, public                         :: ffhd_energy = .true.
   ${GPU_DECLARE_COPYIN('ffhd_energy')}$

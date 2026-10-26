@@ -30,6 +30,11 @@
     + 0
 #:endif
 
+  !> Number of leading variables the MUSCL reconstruction limits (1:nw_recon).
+  !> Slots nw_recon+1:nw_phys are left to fix_prim_state, which must rebuild
+  !> them before the Riemann solver reads the face state.
+  integer, parameter, public              :: nw_recon=nw_flux
+
   !> Whether an energy equation is used
   logical, public                         :: mhd_energy = .true.
   ${GPU_DECLARE_COPYIN('mhd_energy')}$

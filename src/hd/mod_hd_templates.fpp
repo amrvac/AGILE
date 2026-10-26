@@ -15,6 +15,11 @@
   integer, parameter, public              :: nw_phys=2+ndim+${N_TRACER_}$
   integer, parameter, public              :: nw_flux=2+ndim+${N_TRACER_}$
 
+  !> Number of leading variables the MUSCL reconstruction limits (1:nw_recon).
+  !> Slots nw_recon+1:nw_phys are left to fix_prim_state, which must rebuild
+  !> them before the Riemann solver reads the face state.
+  integer, parameter, public              :: nw_recon=nw_flux
+
   !> Whether an energy equation is used
   logical, public                         :: hd_energy = .true.
   ${GPU_DECLARE_COPYIN('hd_energy')}$

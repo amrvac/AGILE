@@ -588,21 +588,21 @@ end subroutine finite_volume_local
     ! face state is the cell value plus half its limited slope towards the face.
     select case (typelim)
     case (limiter_minmod)
-      do iw=1,nw_phys
+      do iw=1,nw_recon
         uL(iw,1) = u(iw,2) + 0.5_dp*minmod(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
         uR(iw,1) = u(iw,3) - 0.5_dp*minmod(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
         uL(iw,2) = u(iw,3) + 0.5_dp*minmod(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
         uR(iw,2) = u(iw,4) - 0.5_dp*minmod(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
       end do
     case (limiter_vanleer)
-      do iw=1,nw_phys
+      do iw=1,nw_recon
         uL(iw,1) = u(iw,2) + 0.5_dp*vanleer(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
         uR(iw,1) = u(iw,3) - 0.5_dp*vanleer(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
         uL(iw,2) = u(iw,3) + 0.5_dp*vanleer(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
         uR(iw,2) = u(iw,4) - 0.5_dp*vanleer(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
       end do
     case (limiter_mcbeta)
-      do iw=1,nw_phys
+      do iw=1,nw_recon
         uL(iw,1) = u(iw,2) + 0.5_dp*mcbeta(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
         uR(iw,1) = u(iw,3) - 0.5_dp*mcbeta(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
         uL(iw,2) = u(iw,3) + 0.5_dp*mcbeta(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
@@ -612,7 +612,7 @@ end subroutine finite_volume_local
       ! koren(a,b) = phi(a/b)*b is one-sided: towards a cell's right face it
       ! takes (dw+, dw-), towards its left face (dw-, dw+). Swapping them
       ! breaks mirror symmetry of the scheme.
-      do iw=1,nw_phys
+      do iw=1,nw_recon
         uL(iw,1) = u(iw,2) + 0.5_dp*koren(u(iw,3)-u(iw,2), u(iw,2)-u(iw,1))
         uR(iw,1) = u(iw,3) - 0.5_dp*koren(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
         uL(iw,2) = u(iw,3) + 0.5_dp*koren(u(iw,4)-u(iw,3), u(iw,3)-u(iw,2))
