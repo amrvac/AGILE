@@ -365,7 +365,7 @@ contains
     double precision, intent(in)    :: w(1:nw)
     logical, intent(inout) :: refineflag, coarsenflag, norefineflag, nocoarsenflag
 
-    if (x(3) < 1.1d0*zjet .and. (x(1)+x(2)**2) < rjet**2) then
+    if (x(3) < 1.1d0*zjet .and. (x(1)**2+x(2)**2) < rjet**2) then
       refineflag = .true.
       nocoarsenflag = .true.
     end if
