@@ -582,51 +582,50 @@ end subroutine finite_volume_local
     integer,  intent(in)  :: typelim
     real(dp), intent(out) :: uL(nw_phys,2), uR(nw_phys,2)
 
-    real(dp) :: sig(nw_phys,3)   ! slopes at cells 2,3,4
     integer  :: iw
 
+    ! Face 1 lies between cells 2 and 3, face 2 between cells 3 and 4. Each
+    ! face state is the cell value plus half its limited slope towards the face.
     select case (typelim)
     case (limiter_minmod)
       do iw=1,nw_phys
-        sig(iw,1) = minmod (u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))  ! cell 2
-        sig(iw,2) = minmod (u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))  ! cell 3
-        sig(iw,3) = minmod (u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))  ! cell 4
+        uL(iw,1) = u(iw,2) + 0.5_dp*minmod(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
+        uR(iw,1) = u(iw,3) - 0.5_dp*minmod(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+        uL(iw,2) = u(iw,3) + 0.5_dp*minmod(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+        uR(iw,2) = u(iw,4) - 0.5_dp*minmod(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
       end do
     case (limiter_vanleer)
       do iw=1,nw_phys
-        sig(iw,1) = vanleer(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
-        sig(iw,2) = vanleer(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
-        sig(iw,3) = vanleer(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
-     end do
+        uL(iw,1) = u(iw,2) + 0.5_dp*vanleer(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
+        uR(iw,1) = u(iw,3) - 0.5_dp*vanleer(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+        uL(iw,2) = u(iw,3) + 0.5_dp*vanleer(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+        uR(iw,2) = u(iw,4) - 0.5_dp*vanleer(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
+      end do
     case (limiter_mcbeta)
       do iw=1,nw_phys
-        sig(iw,1) = mcbeta(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
-        sig(iw,2) = mcbeta(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
-        sig(iw,3) = mcbeta(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
+        uL(iw,1) = u(iw,2) + 0.5_dp*mcbeta(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
+        uR(iw,1) = u(iw,3) - 0.5_dp*mcbeta(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+        uL(iw,2) = u(iw,3) + 0.5_dp*mcbeta(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+        uR(iw,2) = u(iw,4) - 0.5_dp*mcbeta(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
       end do
-     case (limiter_koren)
+    case (limiter_koren)
+      ! koren(a,b) = phi(a/b)*b is one-sided: towards a cell's right face it
+      ! takes (dw+, dw-), towards its left face (dw-, dw+). Swapping them
+      ! breaks mirror symmetry of the scheme.
       do iw=1,nw_phys
-        sig(iw,1) = koren(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2))
-        sig(iw,2) = koren(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
-        sig(iw,3) = koren(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
-     end do
+        uL(iw,1) = u(iw,2) + 0.5_dp*koren(u(iw,3)-u(iw,2), u(iw,2)-u(iw,1))
+        uR(iw,1) = u(iw,3) - 0.5_dp*koren(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+        uL(iw,2) = u(iw,3) + 0.5_dp*koren(u(iw,4)-u(iw,3), u(iw,3)-u(iw,2))
+        uR(iw,2) = u(iw,4) - 0.5_dp*koren(u(iw,4)-u(iw,3), u(iw,5)-u(iw,4))
+      end do
     case default  ! Fallback: Godunov (piecewise constant)
-      do iw=1,nw_phys
-        sig(iw,1)=0._dp
-        sig(iw,2)=0._dp
-        sig(iw,3)=0._dp
-      end do
+      uL(:,1) = u(:,2)
+      uR(:,1) = u(:,3)
+      uL(:,2) = u(:,3)
+      uR(:,2) = u(:,4)
     end select
 
-    ! Face 1: between cells 2 and 3
-    uL(:,1) = u(:,2) + 0.5_dp*sig(:,1)
-    uR(:,1) = u(:,3) - 0.5_dp*sig(:,2)
-
-    ! Face 2: between cells 3 and 4
-    uL(:,2) = u(:,3) + 0.5_dp*sig(:,2)
-    uR(:,2) = u(:,4) - 0.5_dp*sig(:,3)
-
-    ! The slopes above were limited slot by slot, so a state can come out
+    ! The slopes were limited slot by slot, so a state can come out
     ! inadmissible or -- where the physics carries auxiliary variables --
     ! internally inconsistent. Repair it here, once, rather than in each of the
     ! three Riemann solvers: this is the single producer of face states.
