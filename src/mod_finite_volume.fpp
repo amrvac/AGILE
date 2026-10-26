@@ -46,7 +46,7 @@ contains
 
   subroutine finite_volume_local(qdt, dtfactor, ixImin1,ixImin2,&
     ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-    ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb, fluxfix)
+    ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
     use mod_global_parameters
     use mod_comm_lib, only: mpistop
 
@@ -58,10 +58,6 @@ contains
     ! remember, old names map as: wCT => bga, wnew => bgb
     type(block_grid_t)                                    :: bga
     type(block_grid_t)                                    :: bgb
-    !> Store the fluxes on faces at a refinement-level jump for fix_conserve.
-    !> Only the blocks in igrids_levjump have such faces; all others take the
-    !> kernel variant without the stores.
-    logical, intent(in)                                   :: fluxfix
     ! .. local ..
     integer                :: n, iigrid, ix1,ix2,ix3
     double precision       :: uprim(nw_phys, ixImin1:ixImax1,ixImin2:ixImax2,&
@@ -81,35 +77,19 @@ contains
     select case (method)
 #:for scheme_tag, method_enum, faceflux_proc in schemes
     case (${method_enum}$)
-      if (fluxfix) then
-        call finite_volume_local_${scheme_tag}$(qdt, dtfactor, ixImin1,ixImin2,&
-              ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-              ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb, &
-              igrids_nolevjump, igridstail_nolevjump)
-        call finite_volume_local_${scheme_tag}$_ff(qdt, dtfactor, ixImin1,ixImin2,&
-              ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-              ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb, &
-              igrids_levjump, igridstail_levjump)
-      else
-        call finite_volume_local_${scheme_tag}$(qdt, dtfactor, ixImin1,ixImin2,&
-              ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-              ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb, &
-              igrids_active, igridstail_active)
-      end if
+      call finite_volume_local_${scheme_tag}$(qdt, dtfactor, ixImin1,ixImin2,&
+            ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
+            ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
 #:endfor
     case default
       call mpistop("finite_volume_local: unknown flux scheme")
     end select
 end subroutine finite_volume_local
 
-#! fluxfix: also store the fluxes on faces at a refinement-level jump into
-#! pflux for fix_conserve. The stores sit in the innermost loop and cost
-#! noticeably even on blocks where they never fire, so they are compiled into
-#! a separate _ff variant that only runs on blocks that need them.
-#:def FV_KERNEL(scheme_tag, faceflux_proc, fluxfix)
-  subroutine finite_volume_local_${scheme_tag}$${'_ff' if fluxfix else ''}$(qdt, dtfactor, ixImin1,ixImin2,&
+#:def FV_KERNEL(scheme_tag, faceflux_proc)
+  subroutine finite_volume_local_${scheme_tag}$(qdt, dtfactor, ixImin1,ixImin2,&
      ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-     ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb, glist, nglist)
+     ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
     use mod_global_parameters
     use mod_fix_conserve
 
@@ -121,14 +101,9 @@ end subroutine finite_volume_local
     ! remember, old names map as: wCT => bga, wnew => bgb
     type(block_grid_t)                                    :: bga
     type(block_grid_t)                                    :: bgb
-    !> the blocks to update, glist(1:nglist)
-    integer, intent(in)                                   :: glist(max_blocks)
-    integer, intent(in)                                   :: nglist
     ! .. local ..
     integer                :: n, iigrid, ix1,ix2,ix3
-#:if fluxfix
     integer                :: nx1,nx2,nx3, nxCo1,nxCo2,nxCo3
-#:endif
     double precision       :: uprim(nw_phys, ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3)
     real(dp)               :: tmp(nw_phys,5)
@@ -153,22 +128,15 @@ end subroutine finite_volume_local
     ! not even proportional to one under LOG_RADIUS.
     real(dp)               :: dloc(ndim)
 #:endif
-#:if fluxfix
     real(dp)       :: fC1(2,ixImin2:ixOmax2,ixImin3:ixOmax3,1:nwflux)
     real(dp)       :: fC2(2,ixImin1:ixOmax1,ixImin3:ixOmax3,1:nwflux)
     real(dp)       :: fC3(2,ixImin1:ixOmax1,ixImin2:ixOmax2,1:nwflux)
-#:endif
     integer, parameter     :: max_batch=4096
     integer                :: nbatches, ibatch, igrid_beg, igrid_end
-#:if fluxfix
     integer        :: neighbor_type_1m, neighbor_type_1p, neighbor_type_2m,&
               neighbor_type_2p, neighbor_type_3m, neighbor_type_3p
-#:endif
     !-----------------------------------------------------------------------------
 
-    if (nglist == 0) return
-
-#:if fluxfix
     nx1=ixMhi1-ixMlo1+1
     nx2=ixMhi2-ixMlo2+1
     nx3=ixMhi3-ixMlo3+1
@@ -178,17 +146,16 @@ end subroutine finite_volume_local
     nxCo3=nx3/2
 
     ${GPU_ENTER_DATA_COPYIN('nxCo1,nxCo2,nxCo3')}$
-#:endif
     ! batch-launch the kernels (oom issue when many ~30000 blocks):
-    nbatches = (nglist + max_batch - 1) / max_batch ! ceiling division
+    nbatches = (igridstail_active + max_batch - 1) / max_batch ! ceiling division
     
     do ibatch = 1, nbatches
        igrid_beg = (ibatch-1) * max_batch + 1
-       igrid_end = min(ibatch * max_batch, nglist)
+       igrid_end = min(ibatch * max_batch, igridstail_active)
 
-       ${GPU_PARALLEL_LOOP_GANG("private(uprim, inv_dr, dr, n, xlo, typelim, ix1, ix2, ix3" + (", fC1, fC2, fC3, neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, neighbor_type_3p" if fluxfix else "") + ")")}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(uprim, inv_dr, dr, n, xlo, typelim, ix1, ix2, ix3, fC1, fC2, fC3, neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, neighbor_type_3p)")}$ ${GPU_DEFAULT_PRESENT()}$
        do iigrid = igrid_beg, igrid_end
-          n = glist(iigrid)
+          n = igrids_active(iigrid)
 
           dr  = rnode(rpdx1_:rnodehi, n)
           inv_dr  = 1/dr
@@ -199,14 +166,12 @@ end subroutine finite_volume_local
           !but they technically only have an igrid dependence so I
           !thought it would be better to simply declare them via local
           !variable which will reduce the call overhead ~NX^3
-#:if fluxfix
           neighbor_type_1m = neighbor_type(-1,0,0,n)
           neighbor_type_1p = neighbor_type( 1,0,0,n)
           neighbor_type_2m = neighbor_type(0,-1,0,n)
           neighbor_type_2p = neighbor_type(0, 1,0,n)
           neighbor_type_3m = neighbor_type(0,0,-1,n)
           neighbor_type_3p = neighbor_type(0,0, 1,n)
-#:endif
 
           ${GPU_LOOP_VECTOR("collapse(ndim)")}$
           do ix3=ixImin3,ixImax3 
@@ -285,7 +250,6 @@ end subroutine finite_volume_local
                 ! what lets fix_conserve divide by the *coarse* cell's volume
                 ! and sum the four fine faces without a volume ratio, since the
                 ! fine face areas add up to the coarse one exactly.
-#:if fluxfix
                 select case (neighbor_type_1m)
                 case (neighbor_fine)
 #:if GEOM == 'Cartesian'
@@ -302,9 +266,7 @@ end subroutine finite_volume_local
                    if (ix1.eq.ixOmin1) fC1(1,ix2,ix3,1:nw_flux) = - qdt * bgeo%surfaceC(ix1-1, ix2, ix3, 1, n) * f(:,1)
 #:endif
                 end select
-#:endif
 
-#:if fluxfix
                 select case (neighbor_type_1p)
                 case (neighbor_fine)
 #:if GEOM == 'Cartesian'
@@ -321,7 +283,6 @@ end subroutine finite_volume_local
                    if (ix1.eq.ixOmax1) fC1(2,ix2,ix3,1:nw_flux) = qdt * bgeo%surfaceC(ix1, ix2, ix3, 1, n) * f(:,2)
 #:endif
                 end select
-#:endif
 
                 tmp = uprim(1:nw_phys, ix1, ix2-2:ix2+2, ix3)
                 xlocC(1:ndim,1) = xloc(1:ndim)
@@ -345,7 +306,6 @@ end subroutine finite_volume_local
                 ! what lets fix_conserve divide by the *coarse* cell's volume
                 ! and sum the four fine faces without a volume ratio, since the
                 ! fine face areas add up to the coarse one exactly.
-#:if fluxfix
                 select case (neighbor_type_2m)
                 case (neighbor_fine)
 #:if GEOM == 'Cartesian'
@@ -362,9 +322,7 @@ end subroutine finite_volume_local
                    if (ix2.eq.ixOmin2) fC2(1,ix1,ix3,1:nw_flux) = - qdt * bgeo%surfaceC(ix1, ix2-1, ix3, 2, n) * f(:,1)
 #:endif
                 end select
-#:endif
 
-#:if fluxfix
                 select case (neighbor_type_2p)
                 case (neighbor_fine)
 #:if GEOM == 'Cartesian'
@@ -381,7 +339,6 @@ end subroutine finite_volume_local
                    if (ix2.eq.ixOmax2) fC2(2,ix1,ix3,1:nw_flux) = qdt * bgeo%surfaceC(ix1, ix2, ix3, 2, n) * f(:,2)
 #:endif
                 end select
-#:endif
 
                 tmp = uprim(1:nw_phys, ix1, ix2, ix3-2:ix3+2)
                 xlocC(1:ndim,1) = xloc(1:ndim)
@@ -405,7 +362,6 @@ end subroutine finite_volume_local
                 ! what lets fix_conserve divide by the *coarse* cell's volume
                 ! and sum the four fine faces without a volume ratio, since the
                 ! fine face areas add up to the coarse one exactly.
-#:if fluxfix
                 select case (neighbor_type_3m)
                 case (neighbor_fine)
 #:if GEOM == 'Cartesian'
@@ -422,9 +378,7 @@ end subroutine finite_volume_local
                    if (ix3.eq.ixOmin3) fC3(1,ix1,ix2,1:nw_flux) = - qdt * bgeo%surfaceC(ix1, ix2, ix3-1, 3, n) * f(:,1)
 #:endif
                 end select
-#:endif
 
-#:if fluxfix
                 select case (neighbor_type_3p)
                 case (neighbor_fine)
 #:if GEOM == 'Cartesian'
@@ -441,7 +395,6 @@ end subroutine finite_volume_local
                    if (ix3.eq.ixOmax3) fC3(2,ix1,ix2,1:nw_flux) = qdt * bgeo%surfaceC(ix1, ix2, ix3, 3, n) * f(:,2)
 #:endif
                 end select
-#:endif
 
 #:if GEOM != 'Cartesian'
                    ! Add the geometric (curvature) source terms that the
@@ -521,7 +474,6 @@ end subroutine finite_volume_local
 
           ! Reduce fluxes to be stored for the coarse neighbor case
           ! Direction 1
-#:if fluxfix
           select case (neighbor_type_1m)
               case (neighbor_coarse)
                   ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
@@ -535,9 +487,7 @@ end subroutine finite_volume_local
                     end do
                   end do
           end select
-#:endif
 
-#:if fluxfix
           select case (neighbor_type_1p)
               case (neighbor_coarse)
                   ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
@@ -551,10 +501,8 @@ end subroutine finite_volume_local
                      end do
                   end do
           end select
-#:endif
 
           ! Direction 2
-#:if fluxfix
           select case (neighbor_type_2m)
               case (neighbor_coarse)
                   ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
@@ -568,9 +516,7 @@ end subroutine finite_volume_local
                     end do
                   end do
           end select
-#:endif
 
-#:if fluxfix
           select case (neighbor_type_2p)
               case (neighbor_coarse)
                   ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
@@ -584,10 +530,8 @@ end subroutine finite_volume_local
                      end do
                   end do
           end select
-#:endif
           
           ! Direction 3
-#:if fluxfix
           select case (neighbor_type_3m)
               case (neighbor_coarse)
                   ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
@@ -601,9 +545,7 @@ end subroutine finite_volume_local
                     end do
                   end do
           end select
-#:endif
 
-#:if fluxfix
           select case (neighbor_type_3p)
               case (neighbor_coarse)
                   ${GPU_LOOP_VECTOR('collapse(ndim-1)')}$
@@ -617,20 +559,17 @@ end subroutine finite_volume_local
                      end do
                   end do
           end select
-#:endif
 
        end do
     end do
 
-  end subroutine finite_volume_local_${scheme_tag}$${'_ff' if fluxfix else ''}$
+  end subroutine finite_volume_local_${scheme_tag}$
   #:enddef
 
 
 #:for scheme_tag, method_enum, faceflux_proc in schemes
-#:for fluxfix in [False, True]
-#:call FV_KERNEL(scheme_tag, faceflux_proc, fluxfix)
+#:call FV_KERNEL(scheme_tag, faceflux_proc)
 #:endcall
-#:endfor
 #:endfor
 
 

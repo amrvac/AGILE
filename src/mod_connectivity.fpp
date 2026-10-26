@@ -24,12 +24,6 @@ module mod_connectivity
    integer, dimension(:), allocatable :: igrids_passive
    ${GPU_DECLARE_CREATE('igrids, igrids_active, igrids_passive')}$
 
-   ! igrids_active split by whether a block has a face neighbour on another
-   ! refinement level (see split_active_by_levjump)
-   integer, dimension(:), allocatable :: igrids_levjump
-   integer, dimension(:), allocatable :: igrids_nolevjump
-   ${GPU_DECLARE_CREATE('igrids_levjump, igrids_nolevjump')}$
-
    ! phys boundary indices
    integer, dimension(:,:), allocatable :: idphyb
    ${GPU_DECLARE_CREATE('idphyb')}$
@@ -38,8 +32,6 @@ module mod_connectivity
    integer :: igridstail
    integer :: igridstail_active
    integer :: igridstail_passive
-   integer :: igridstail_levjump = 0
-   integer :: igridstail_nolevjump = 0
    ${GPU_DECLARE_CREATE('igridstail, igridstail_active, igridstail_passive')}$
 
    integer, dimension(3) :: nrecv_fc, nsend_fc
@@ -737,41 +729,6 @@ module mod_connectivity
      i1  = idd + i1min - 1
 
    end subroutine idecode
-
-   !> Split igrids_active into the blocks that have a face neighbour on a
-   !> coarser or finer level, whose boundary fluxes fix_conserve needs, and the
-   !> rest. finite_volume_local runs the flux-storing kernel only on the first.
-   !> Uses neighbor_type, so call it after build_connectivity and after
-   !> igrids_active has been set.
-   subroutine split_active_by_levjump()
-      integer :: iigrid, igrid, idir, jump(3)
-      logical :: levjump
-
-      igridstail_levjump   = 0
-      igridstail_nolevjump = 0
-      do iigrid = 1, igridstail_active
-         igrid = igrids_active(iigrid)
-         levjump = .false.
-         do idir = 1, 3
-            jump = 0
-            jump(idir) = -1
-            levjump = levjump .or. any(neighbor_type(jump(1),jump(2),jump(3),igrid) &
-                 == [neighbor_coarse, neighbor_fine])
-            jump(idir) = 1
-            levjump = levjump .or. any(neighbor_type(jump(1),jump(2),jump(3),igrid) &
-                 == [neighbor_coarse, neighbor_fine])
-         end do
-         if (levjump) then
-            igridstail_levjump = igridstail_levjump + 1
-            igrids_levjump(igridstail_levjump) = igrid
-         else
-            igridstail_nolevjump = igridstail_nolevjump + 1
-            igrids_nolevjump(igridstail_nolevjump) = igrid
-         end if
-      end do
-      ${GPU_UPDATE_DEVICE('igrids_levjump, igrids_nolevjump')}$
-
-   end subroutine split_active_by_levjump
 
 
  end module mod_connectivity
