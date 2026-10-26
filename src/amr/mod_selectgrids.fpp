@@ -125,6 +125,7 @@ contains
   !     Check if user wants to deactivate grids at all and return if not:
         if (.not. have_flag_hook) then
            ${GPU_UPDATE_DEVICE('igrids_active, igrids_passive, igridstail_active, igridstail_passive')}$
+           call split_active_by_levjump()
            return
         end if
   
@@ -185,6 +186,7 @@ contains
         end do
 
    ${GPU_UPDATE_DEVICE('igrids_active, igrids_passive, igridstail_active, igridstail_passive')}$
+   call split_active_by_levjump()
         
         contains
   !=============================================================================

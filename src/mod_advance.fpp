@@ -427,7 +427,8 @@ contains
         qtC, &                          ! scalar related to time stepping
         bg(ka), &                       ! first block grid
         qt,  &                          ! scalar related to time stepping
-        bg(kb) &                        ! second block grid
+        bg(kb), &                       ! second block grid
+        fix_conserve_at_step &          ! store level-jump fluxes for fix_conserve
         )
 
     ! Off for the predictor of Predictor_Corrector, and with a single level
