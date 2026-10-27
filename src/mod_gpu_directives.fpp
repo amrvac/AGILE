@@ -136,15 +136,24 @@ use openacc, only : acc_is_present
 
 #:def GPU_PARALLEL_LOOP_GANG(clauses='')
 #! see comments on GPU_PARALLEL_LOOP
+#! NVHPC compiles teams distribute with a nested parallel do in generic mode
+#! (inner region outlined, ~255 registers per thread), so use loop there;
+#! see GPU_LOOP_VECTOR
 #if defined(__NVCOMPILER)
-!$omp target teams distribute ${clauses}$
+!$omp target teams loop ${clauses}$
 #else
 !$omp target teams distribute ${clauses}$ defaultmap(present:aggregrate) defaultmap(present:allocatable) defaultmap(present:pointer)
 #endif
 #:enddef
 
 #:def GPU_LOOP_VECTOR(clauses='')
+#! bind(parallel) is needed: without it NVHPC's dependence analysis can
+#! serialise the loop onto one thread per team
+#if defined(__NVCOMPILER)
+!$omp loop bind(parallel) ${clauses}$
+#else
 !$omp parallel do ${clauses}$
+#endif
 #:enddef
 
 #:def GPU_LOOP_SEQ()
