@@ -1278,8 +1278,8 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   (`to_primitive`/`to_conservative` called from a `collapse`d loop in
   `specialbound_usr` returning nonsense).
 
-- **Under NVHPC the OpenMP gang/vector macros expand to `target teams loop`
-  and `loop bind(parallel)`, not `teams distribute` and `parallel do`.**
+- **The OpenMP gang/vector macros expand to `target teams loop` and
+  `loop bind(parallel)`, not `teams distribute` and `parallel do`.**
   nvfortran compiles `teams distribute` with a nested `parallel do` in
   generic mode: the inner region becomes an outlined device function (the
   `NVFORTRAN-W-0155` "Passing external procedure as argument" warning), and
@@ -1290,8 +1290,9 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   own dependence analysis on the finite-volume kernel, gave up on its
   private temporaries, and launched it with one thread per team, 25x slower,
   without any error. A returning `W-0155` warning means the generic-mode
-  pattern is back. Other compilers keep `distribute`/`parallel do` until they
-  have been benchmarked with `loop`.
+  pattern is back. `loop` leaves the mapping to the compiler, so this has
+  only been measured with nvfortran; benchmark other compilers (e.g. on
+  LUMI) before assuming the same gain.
 
 ## API documentation (FORD)
 
