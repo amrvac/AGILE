@@ -63,7 +63,7 @@
    ! back out of them has to apply r_of_s - see check_blast_fits.
    geometry           = 'logCylindrical'
    log_r0             =  0.2d0
-   max_blocks         =  4096
+   max_blocks         =  512
    ! Three levels, refined on density and energy, so that the shell is tracked
    ! at the finest level as it crosses the axis - which drives the restricting
    ! and prolonging pole paths on blocks that are regridded as the shock moves

@@ -63,7 +63,7 @@
    ! back out of them has to apply r_of_s - see check_blast_fits.
    geometry           = 'logCylindrical'
    log_r0             =  0.2d0
-   max_blocks         =  4096
+   max_blocks         =  64
    ! Two levels, the refined region a half-turn wedge in phi (see
    ! usr_refine_grid), so that a block touching the axis on one side meets a
    ! block of the other level across it. That is what puts the restricting and
