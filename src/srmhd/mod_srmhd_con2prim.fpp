@@ -572,9 +572,17 @@ contains
         real(dp), intent(in) :: rho, eps
         real(dp) ::p
 
-        !srmhd_gamma=5.0_dp/3.0_dp
         p=(srmhd_gamma-1)*rho*eps
     end function ideal_eos
+
+    ! see http://dx.doi.org/10.1016/j.jcp.2011.01.020 equation 5
+    pure function synge_eos(rho,eps) result(p)
+        ${GPU_ROUTINE_SEQ()}$
+        real(dp), intent(in) :: rho, eps
+        real(dp) ::p
+        
+        p=(srmhd_gamma-1)*rho/2*eps*(2 + eps)/(1 + eps)
+    end function synge_eos
 
 
 
@@ -636,7 +644,9 @@ contains
 
 
         if (.not. srmhd_eos) then 
-            p_hat = (srmhd_gamma-1)*rho_hat*eps_hat !(43)
+            p_hat = ideal_eos(rho_hat, eps_hat) !(43)
+        else
+            p_hat = synge_eos(rho_hat, eps_hat) !(43)
         end if
 
 

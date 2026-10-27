@@ -63,9 +63,9 @@
   ${GPU_DECLARE_COPYIN('srmhd_glm_alpha')}$
 
 
-!   !> Number of tracer species
-!   integer, public                         :: srmhd_n_tracer = 0
-!   ${GPU_DECLARE_COPYIN('srmhd_n_tracer')}$
+  !> Number of tracer species
+  integer, public                         :: srmhd_n_tracer = 0
+  ${GPU_DECLARE_COPYIN('srmhd_n_tracer')}$
 
   !> The adiabatic index
   double precision, public                :: srmhd_gamma = 5.d0/3.0d0
@@ -108,7 +108,7 @@
 
     namelist /srmhd_list/ srmhd_eos,srmhd_gamma, &
       He_abundance, srmhd_source_usr, &
-      srmhd_small_pressure, srmhd_small_density, srmhd_glm_alpha
+      srmhd_small_pressure, srmhd_small_density, srmhd_glm_alpha, srmhd_n_tracer
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -121,11 +121,9 @@
     if (srmhd_small_density < 0.0d0) call mpistop(&
        "srmhd_small_density should be positive.")
 
-    if (srmhd_eos) call mpistop(&
-       "Synge gas isn't implemented for srmhd yet, sorry.")
 
 
-    ${GPU_UPDATE_DEVICE('srmhd_eos, srmhd_gamma, He_abundance, srmhd_source_usr, srmhd_glm_alpha')}$
+    ${GPU_UPDATE_DEVICE('srmhd_eos, srmhd_gamma, He_abundance, srmhd_source_usr, srmhd_glm_alpha, srmhd_n_tracer')}$
     ${GPU_UPDATE_DEVICE('srmhd_small_pressure, srmhd_small_density')}$
 
   end subroutine read_params
@@ -466,12 +464,6 @@
     
     real(dp) :: vel(3), si
     real(dp) :: v_sqr, b_sqr, v_dot_b
-
-    ! cmax_global=1
-    ! if (u(lfac_) <= 0.0_dp .or. any(u /= u)) then
-    ! print *, 'get_flux bad input, flux_dim =', flux_dim, ' u =', u
-    ! error stop
-    ! end if
 
 
     vel(1) = u(iw_mom(1)) / u(lfac_)
