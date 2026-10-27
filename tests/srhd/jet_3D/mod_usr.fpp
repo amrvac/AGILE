@@ -1,5 +1,5 @@
 #:mute
-#:include "../../../src/mod_gpu_directives.fpp"
+#:include "mod_gpu_directives.fpp"
 #:endmute
 
 module mod_usr
@@ -362,10 +362,10 @@ contains
     integer, intent(in)             :: level
     double precision, intent(in)    :: qt
     double precision, intent(in)    :: x(1:3)
-    double precision, intent(in)    :: w(1:nw)
+    double precision, intent(in)    :: w(1:nw_phys)
     logical, intent(inout) :: refineflag, coarsenflag, norefineflag, nocoarsenflag
 
-    if (x(3) < 1.1d0*zjet .and. (x(1)+x(2)**2) < rjet**2) then
+    if (x(3) < 1.1d0*zjet .and. (x(1)**2+x(2)**2) < rjet**2) then
       refineflag = .true.
       nocoarsenflag = .true.
     end if

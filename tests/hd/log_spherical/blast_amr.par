@@ -48,7 +48,7 @@
    ! so theta runs over [pi/4, 3pi/4] and phi over [0, pi/2] below. The domain
    ! deliberately stays away from the polar axis and from r = 0.
    geometry           = 'logSpherical'
-   max_blocks         =  4096
+   max_blocks         =  1024
 
    ! Three levels, refined on density and energy by the default Lohner
    ! estimator (refine_criterion = 3). The expanding shell is a sharp feature

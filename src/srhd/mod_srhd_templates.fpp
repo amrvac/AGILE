@@ -15,6 +15,11 @@
   integer, parameter, public              :: nw_phys=2+ndim+2+${N_TRACER_}$
   integer, parameter, public              :: nw_flux=2+ndim+${N_TRACER_}$
   
+  !> Number of leading variables the MUSCL reconstruction limits (1:nw_recon).
+  !> Slots nw_recon+1:nw_phys are left to fix_prim_state, which must rebuild
+  !> them before the Riemann solver reads the face state.
+  integer, parameter, public              :: nw_recon=nw_flux
+
   !> Whether synge eos is used
   logical, public                         :: srhd_eos = .false.
   ${GPU_DECLARE_COPYIN('srhd_eos')}$
@@ -195,6 +200,12 @@
     ! MUST be after the possible tracers (which have fluxes)
     xi_  = var_set_auxvar('xi','xi')
     lfac_= var_set_auxvar('lfac','lfac')
+
+    ! muscl_reconstruct_prim limits only slots 1:nw_recon and leaves xi and
+    ! lfac to fix_prim_state, so every flux variable has to come before them
+    if (nwflux > nw_recon .or. xi_ <= nw_recon .or. lfac_ <= nw_recon) &
+         call mpistop("srhd phys_init: flux variables must occupy 1:nw_recon "//&
+         "and the auxiliaries xi, lfac come after them")
     ${GPU_UPDATE_DEVICE('xi_,lfac_')}$
 
     ! set number of variables which need update ghostcells

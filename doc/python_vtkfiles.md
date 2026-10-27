@@ -85,7 +85,7 @@ the last 4 digits of the filename, the argument `coord` translates to `0.00D00` 
 
 Once the data is loaded into the instance `ds`, you can access it with
 `ds.varname` where `varname` is a variable name chosen in your
-AMRVAC parameter-file.  Pythons powerful introspection makes it really
+AGILE parameter file (`agile.par`).  Pythons powerful introspection makes it really
 easy to see what is available in the data: just type `ds.` and hit the *tab* key to see the
 available variable names.
 

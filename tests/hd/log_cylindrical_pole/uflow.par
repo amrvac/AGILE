@@ -63,7 +63,7 @@
    ! back out of them has to apply r_of_s - see check_blast_fits.
    geometry           = 'logCylindrical'
    log_r0             =  0.2d0
-   max_blocks         =  4096
+   max_blocks         =  64
    refine_max_level   =  1
    block_nx1          =  8
    block_nx2          =  8

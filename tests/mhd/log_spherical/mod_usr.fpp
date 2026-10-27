@@ -1,5 +1,5 @@
 #:mute
-#:include "../../../src/mod_gpu_directives.fpp"
+#:include "mod_gpu_directives.fpp"
 #:endmute
 
 !> Curvilinear MHD tests on a spherical mesh, away from the axis: two runs

@@ -50,7 +50,7 @@
    ! be even, because the block on the far side of the axis is found by
    ! shifting the phi block index by half of it.
    geometry           = 'cylindrical'
-   max_blocks         =  4096
+   max_blocks         =  512
    ! Three levels, refined on density and energy, so that the shell is tracked
    ! at the finest level as it crosses the axis - which drives the restricting
    ! and prolonging pole paths on blocks that are regridded as the shock moves

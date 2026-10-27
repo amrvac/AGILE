@@ -20,6 +20,13 @@ fypp_flags += -n
 
 fypp_flags += -M $(agile)/make
 
+# Let a case's mod_usr.fpp write #:include "mod_gpu_directives.fpp" without a
+# path relative to the repo, which would break as soon as the case directory
+# lives anywhere else. fypp looks next to the including file first, so the
+# relative includes under src/ are unaffected.
+fypp_include_dirs := $(agile)/src
+fypp_flags += $(addprefix -I ,$(fypp_include_dirs))
+
 $(info Fypp flags: $(fypp_flags))
 
 source_files := $(shell find $(agile)/src -name '*.fpp') mod_usr.fpp
@@ -34,7 +41,7 @@ define fypp_rule
 $(patsubst %.fpp, $(build_dir)/f90/%.f90, $(notdir $(1))): $(1)
 	@mkdir -p $$(@D)
 	@echo -e "Precompiling $(_magenta)$$(<:$(agile)/src/%=%)$(_reset)"
-	@python $(agile)/make/fypp-deps.py $$< $$@
+	@python $(agile)/make/fypp-deps.py $(addprefix -I ,$(fypp_include_dirs)) $$< $$@
 	@fypp $(fypp_flags) $$<  $$@
 endef
 

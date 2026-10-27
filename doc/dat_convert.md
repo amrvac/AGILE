@@ -6,7 +6,7 @@ There are two ways to add variables to the dat files:
 This method adds extra variables in the dat file (which is also used for restart).  
 
 This method  consists in:
-1. Assign an index in the variable list w in `usr_init` subroutine (in `mod_usr.t`) using `var_set_extravar`
+1. Assign an index in the variable list w in `usr_init` subroutine (in `mod_usr.fpp`) using `var_set_extravar`
 2. Implement one of the user methods which are called every timestep: `usr_process_grid`, `usr_modify_output`,...
  and set there  the extra variables (and properly assign the pointer to the implemented subroutine  in `usr_init`).
 

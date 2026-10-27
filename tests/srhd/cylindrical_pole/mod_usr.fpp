@@ -1,5 +1,5 @@
 #:mute
-#:include "../../../src/mod_gpu_directives.fpp"
+#:include "mod_gpu_directives.fpp"
 #:endmute
 
 !> Uniform, sub-luminal Cartesian SRHD flow on a cylindrical mesh through the

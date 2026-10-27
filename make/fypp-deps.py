@@ -33,6 +33,11 @@ def parse_arguments():
         """)
     parser.add_argument("input")
     parser.add_argument("target")
+    parser.add_argument("-I", dest="include_dirs", action="append", default=[],
+                        type=Path, metavar="DIR",
+                        help="""Directory searched for included files, after the
+                        directory of the including file (the same order fypp
+                        uses for its own -I). May be given more than once.""")
 
     return parser.parse_args()
 
@@ -47,7 +52,19 @@ class CircularDependencyError(Exception):
         return f"Circular dependency detected in `{self.file}`: starting from `{self.visited[0]}`:\n" + indent(cycle, "  - ")
 
 
-def scan_deps(input_path: Path, visited: list[Path] | None = None) -> set[Path]:
+def resolve_include(filename: str, including: Path, include_dirs: list[Path]) -> Path:
+    """Find an included file as fypp does: next to the including file first,
+    then in each -I directory in turn."""
+    for directory in [including.parent, *include_dirs]:
+        candidate = directory / filename
+        if candidate.is_file():
+            return candidate.resolve()
+    raise FileNotFoundError(f"`{filename}` included from `{including}`, searched in "
+                            + ", ".join(f"`{d}`" for d in [including.parent, *include_dirs]))
+
+
+def scan_deps(input_path: Path, include_dirs: list[Path],
+              visited: list[Path] | None = None) -> set[Path]:
     visited = visited or list()
     if input_path in visited:
         raise CircularDependencyError(visited, input_path)
@@ -58,9 +75,9 @@ def scan_deps(input_path: Path, visited: list[Path] | None = None) -> set[Path]:
     with input_path.open("r") as fid:
         for line in fid:
             if m := INCLUDE_EX.match(line):
-                d = (input_path.parent / m["filename"]).resolve()
+                d = resolve_include(m["filename"], input_path, include_dirs)
                 deps.add(d)
-                deps.update(scan_deps(d, visited))
+                deps.update(scan_deps(d, include_dirs, visited))
 
     visited.pop()
 
@@ -72,7 +89,7 @@ if __name__ == "__main__":
     input_path = Path(args.input)
 
     try:
-        deps = scan_deps(input_path)
+        deps = scan_deps(input_path, args.include_dirs)
     except (CircularDependencyError, FileNotFoundError) as e:
         print(f"Error scanning `{input_path}`:\n   ", e)
         sys.exit(-1)

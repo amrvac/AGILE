@@ -2,6 +2,16 @@
 #:include "mod_gpu_directives.fpp"
 #:endmute
 !> Module containing all the time stepping schemes
+!>
+!> advect implements every explicit time integrator of MPI-AMRVAC, selected by
+!> time_stepper and time_integrator in &methodlist: Forward_Euler;
+!> Predictor_Corrector, ssprk2 and RK2_alfa; ssprk3 and RK3_BT; ssprk4 and
+!> rk4; ssprk5.  Each is a sequence of advect1 stages, which add dtfactor*dt
+!> times the spatial operator on one time level of bg to another, and of
+!> bg_assign/bg_accum combinations of the levels.  How many levels a scheme
+!> holds, and so how many bg is allocated with, is time_levels in
+!> mod_global_parameters.  See the "Time integration" page for the schemes,
+!> their stability limits and memory cost.
 module mod_advance
 
   implicit none
@@ -13,6 +23,18 @@ module mod_advance
   public :: advance
   public :: process
   public :: process_advanced
+
+  !> bgd = a1*bg1 [+ a2*bg2 [+ a3*bg3]]: a pointwise combination of time
+  !> levels between stages, generated below for one to three sources
+  interface bg_assign
+     module procedure bg_assign1, bg_assign2, bg_assign3
+  end interface bg_assign
+
+  !> bgd = s*bgd + a1*bg1 [+ a2*bg2 [+ a3*bg3]]: the in-place form of
+  !> bg_assign, generated below for one to three sources
+  interface bg_accum
+     module procedure bg_accum1, bg_accum2, bg_accum3
+  end interface bg_accum
 
 contains
 
@@ -105,63 +127,145 @@ contains
        end do
     end if
 
- istep = 0
+    istep = 0
 
- select case (t_stepper)
-  
+    ! Each scheme is a sequence of advect1 stages and pointwise combinations
+    ! of the time levels, transcribed from upstream MPI-AMRVAC's advect with
+    ! ps -> bg(1), ps1 -> bg(2), ps2 -> bg(3).  How many levels a scheme may
+    ! use is fixed by time_levels in mod_global_parameters.
+    select case (t_stepper)
+
+    case (onestep)
+       select case (t_integrator)
+       case (Forward_Euler)
+          call advect1(1.0d0, idimmin,idimmax, global_time,2, global_time,1)
+
+       case default
+          call mpistop("unkown onestep time_integrator in advect")
+       end select
+
+    case (twostep)
+       select case (t_integrator)
+       case (Predictor_Corrector)
+          ! PC or explicit midpoint; the predictor is not refluxed
+          fix_conserve_at_step = .false.
+          call advect1(0.5d0, idimmin,idimmax, global_time,1, global_time,2)
+          fix_conserve_at_step = time_advance .and. levmax>levmin
+          call advect1(1.0d0, idimmin,idimmax, global_time+0.5d0*dt,2,&
+               global_time,1)
+
+       case (RK2_alf)
+          ! RK2 with alfa parameter, where rk_a21=alfa
+          call advect1(rk_a21, idimmin,idimmax, global_time,1, global_time,2)
+          call bg_accum(bg(1), 1.0d0-rk_b1/rk_a21, rk_b1/rk_a21, bg(2))
+          call advect1(rk_b2, idimmin,idimmax, global_time+rk_a21*dt,2,&
+               global_time+rk_b1*dt,1)
+
+       case (ssprk2)
+          ! ssprk2 or Heun's method
+          call advect1(1.0d0, idimmin,idimmax, global_time,1, global_time,2)
+          call bg_accum(bg(1), 0.5d0, 0.5d0, bg(2))
+          call advect1(0.5d0, idimmin,idimmax, global_time+dt,2,&
+               global_time+0.5d0*dt,1)
+
+       case default
+          call mpistop("unkown twostep time_integrator in advect")
+       end select
+
     case (threestep)
        select case (t_integrator)
-       ! AGILE this is our integrator (default threestep)
        case (ssprk3)
           ! this is SSPRK(3,3) Gottlieb-Shu 1998 or SSP(3,2) depending on ssprk_order (3 vs 2)
-          
-          call advect1(flux_method,rk_beta11, idimmin,idimmax,global_time,ps,&
-               bg(1),global_time,ps1,bg(2))
+          call advect1(rk_beta11, idimmin,idimmax, global_time,1,&
+               global_time,2)
+          call bg_assign(bg(3), rk_alfa21, bg(1), rk_alfa22, bg(2))
+          call advect1(rk_beta22, idimmin,idimmax, global_time+rk_c2*dt,2,&
+               global_time+rk_alfa22*rk_c2*dt,3)
+          call bg_accum(bg(1), rk_alfa31, rk_alfa33, bg(3))
+          call advect1(rk_beta33, idimmin,idimmax, global_time+rk_c3*dt,3,&
+               global_time+(1.0d0-rk_beta33)*dt,1)
 
-          ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
-          do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
-             ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
-             do iw = 1, nw
-                do ix3 = ixGlo3, ixGhi3 
-                   do ix2 = ixGlo2, ixGhi2 
-                      do ix1 = ixGlo1, ixGhi1 
-                         bg(3)%w(ix1,ix2,ix3,iw,igrid) = rk_alfa21 * bg(1)%w(ix1,ix2,&
-                              ix3,iw,igrid) + rk_alfa22 * bg(2)%w(ix1,ix2,ix3,iw,igrid)
-                      end do
-                   end do
-                end do
-             end do
-             if(stagger_grid) ps2(igrid)%ws=rk_alfa21*ps(igrid)%ws+&
-                  rk_alfa22*ps1(igrid)%ws
-          end do
-
-          call advect1(flux_method,rk_beta22, idimmin,idimmax,&
-               global_time+rk_c2*dt,ps1,bg(2),global_time+rk_alfa22*rk_c2*dt,ps2,&
-               bg(3))
-
-          ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
-          do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
-             ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
-             do iw = 1, nw
-                do ix3 = ixGlo3, ixGhi3 
-                   do ix2 = ixGlo2, ixGhi2 
-                      do ix1 = ixGlo1, ixGhi1 
-                         bg(1)%w(ix1,ix2,ix3,iw,igrid) = rk_alfa31 * bg(1)%w(ix1,ix2,&
-                              ix3,iw,igrid) + rk_alfa33 * bg(3)%w(ix1,ix2,ix3,iw,igrid)
-                      end do
-                   end do
-                end do
-             end do
-             if(stagger_grid) ps(igrid)%ws=rk_alfa31*ps(igrid)%ws+&
-                  rk_alfa33*ps2(igrid)%ws
-          end do
-
-          call advect1(flux_method,rk_beta33, idimmin,idimmax,&
-               global_time+rk_c3*dt,ps2,bg(3),global_time+(1.0d0-rk_beta33)*dt,&
-               ps,bg(1))
+       case (RK3_BT)
+          ! general threestep RK from its Butcher table (rk3_switch), with
+          ! level 4 holding dt*k1
+          call advect1(rk3_a21, idimmin,idimmax, global_time,1, global_time,2)
+          call bg_assign(bg(4), 1.0d0/rk3_a21, bg(2), -1.0d0/rk3_a21, bg(1))
+          call bg_assign(bg(3), 1.0d0, bg(1), rk3_a31, bg(4))
+          call advect1(rk3_a32, idimmin,idimmax, global_time+rk3_c2*dt,2,&
+               global_time+rk3_a31*dt,3)
+          ! ps = ps + b1*ps3 + b2*(ps2 - (ps + a31*ps3))/a32, upstream's form
+          call bg_accum(bg(1), 1.0d0-rk3_b2/rk3_a32,&
+               rk3_b1-rk3_b2*rk3_a31/rk3_a32, bg(4), rk3_b2/rk3_a32, bg(3))
+          call advect1(rk3_b3, idimmin,idimmax, global_time+rk3_c3*dt,3,&
+               global_time+(1.0d0-rk3_b3)*dt,1)
 
        case default
           call mpistop("unkown threestep time_integrator in advect")
+       end select
+
+    case (fourstep)
+       select case (t_integrator)
+       case (ssprk4)
+          ! SSPRK(4,3) by Spiteri & Ruuth, or SSP(4,2), depending on
+          ! ssprk_order (3 vs 2); stable up to CFL 2 and 3 respectively
+          call advect1(rk_beta11, idimmin,idimmax, global_time,1,&
+               global_time,2)
+          call bg_assign(bg(3), rk_alfa21, bg(1), rk_alfa22, bg(2))
+          call advect1(rk_beta22, idimmin,idimmax, global_time+rk_c2*dt,2,&
+               global_time+rk_alfa22*rk_c2*dt,3)
+          call bg_assign(bg(2), rk_alfa31, bg(1), rk_alfa33, bg(3))
+          call advect1(rk_beta33, idimmin,idimmax, global_time+rk_c3*dt,3,&
+               global_time+rk_alfa33*rk_c3*dt,2)
+          call bg_accum(bg(1), rk_alfa41, rk_alfa44, bg(2))
+          call advect1(rk_beta44, idimmin,idimmax, global_time+rk_c4*dt,2,&
+               global_time+(1.0d0-rk_beta44)*dt,1)
+
+       case (rk4)
+          ! the classical RK(4,4); levels 2, 3, 4 become u+dt/2*k1,
+          ! u+dt/2*k2, u+dt*k3
+          call bg_assign(bg(3), 1.0d0, bg(1))
+          call bg_assign(bg(4), 1.0d0, bg(1))
+          call advect1(0.5d0, idimmin,idimmax, global_time,1, global_time,2)
+          call advect1(0.5d0, idimmin,idimmax, global_time+0.5d0*dt,2,&
+               global_time,3)
+          call advect1(1.0d0, idimmin,idimmax, global_time+0.5d0*dt,3,&
+               global_time,4)
+          ! ps = (-ps + ps1 + 2*ps2 + ps3)/3
+          call bg_accum(bg(1), -1.0d0/3.0d0, 1.0d0/3.0d0, bg(2),&
+               2.0d0/3.0d0, bg(3), 1.0d0/3.0d0, bg(4))
+          call advect1(1.0d0/6.0d0, idimmin,idimmax, global_time+dt,4,&
+               global_time+dt*5.0d0/6.0d0,1)
+
+       case default
+          call mpistop("unkown fourstep time_integrator in advect")
+       end select
+
+    case (fivestep)
+       select case (t_integrator)
+       case (ssprk5)
+          ! SSPRK(5,4) by Spiteri & Ruuth
+          call advect1(rk_beta11, idimmin,idimmax, global_time,1,&
+               global_time,2)
+          call bg_assign(bg(3), rk_alfa21, bg(1), rk_alfa22, bg(2))
+          call advect1(rk_beta22, idimmin,idimmax, global_time+rk_c2*dt,2,&
+               global_time+rk_alfa22*rk_c2*dt,3)
+          call bg_assign(bg(2), rk_alfa31, bg(1), rk_alfa33, bg(3))
+          call advect1(rk_beta33, idimmin,idimmax, global_time+rk_c3*dt,3,&
+               global_time+rk_alfa33*rk_c3*dt,2)
+          call bg_assign(bg(4), rk_alfa53, bg(3), rk_alfa54, bg(2))
+          call bg_assign(bg(3), rk_alfa41, bg(1), rk_alfa44, bg(2))
+          call advect1(rk_beta44, idimmin,idimmax, global_time+rk_c4*dt,2,&
+               global_time+rk_alfa44*rk_c4*dt,3)
+          ! ps = ps3 + alfa55*ps2 + (beta54/beta44)*(ps2 - (alfa41*ps +
+          ! alfa44*ps1)), upstream's form, with the bracket expanded
+          call bg_accum(bg(1), -rk_alfa41*rk_beta54/rk_beta44, 1.0d0, bg(4),&
+               rk_alfa55+rk_beta54/rk_beta44, bg(3),&
+               -rk_alfa44*rk_beta54/rk_beta44, bg(2))
+          call advect1(rk_beta55, idimmin,idimmax, global_time+rk_c5*dt,3,&
+               global_time+(1.0d0-rk_beta55)*dt,1)
+
+       case default
+          call mpistop("unkown fivestep time_integrator in advect")
        end select
 
     case default
@@ -169,6 +273,70 @@ contains
     end select
 
   end subroutine advect
+
+#:for n in [1, 2, 3]
+  #:set args = ', '.join('a{0}, bg{0}'.format(i) for i in range(1, n+1))
+  #:set coefs = ', '.join('a{0}'.format(i) for i in range(1, n+1))
+  #:set srcs = ', '.join('bg{0}'.format(i) for i in range(1, n+1))
+  #:set sum = ' &\n                        + '.join('a{0} * bg{0}%w(ix1,ix2,ix3,iw,igrid)'.format(i) for i in range(1, n+1))
+  !> bgd = sum of ${n}$ scaled time levels, on every active block, ghost
+  !> cells included.  The destination is never read, so it may hold anything
+  !> beforehand.
+  subroutine bg_assign${n}$(bgd, ${args}$)
+    use mod_global_parameters
+
+    type(block_grid_t), intent(inout) :: bgd
+    double precision, intent(in)      :: ${coefs}$
+    type(block_grid_t), intent(in)    :: ${srcs}$
+
+    integer :: iigrid, igrid, ix1,ix2,ix3, iw
+
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
+    do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
+       ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
+       do iw = 1, nw
+          do ix3 = ixGlo3, ixGhi3
+             do ix2 = ixGlo2, ixGhi2
+                do ix1 = ixGlo1, ixGhi1
+                   bgd%w(ix1,ix2,ix3,iw,igrid) = ${sum}$
+                end do
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine bg_assign${n}$
+
+  !> bgd = s*bgd plus the sum of ${n}$ scaled time levels, on every active
+  !> block, ghost cells included.  A separate shape from bg_assign so that
+  !> the destination is never also passed as a source.
+  subroutine bg_accum${n}$(bgd, s, ${args}$)
+    use mod_global_parameters
+
+    type(block_grid_t), intent(inout) :: bgd
+    double precision, intent(in)      :: s, ${coefs}$
+    type(block_grid_t), intent(in)    :: ${srcs}$
+
+    integer :: iigrid, igrid, ix1,ix2,ix3, iw
+
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
+    do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
+       ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
+       do iw = 1, nw
+          do ix3 = ixGlo3, ixGhi3
+             do ix2 = ixGlo2, ixGhi2
+                do ix1 = ixGlo1, ixGhi1
+                   bgd%w(ix1,ix2,ix3,iw,igrid) = s * bgd%w(ix1,ix2,ix3,iw,igrid) &
+                        + ${sum}$
+                end do
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine bg_accum${n}$
+
+#:endfor
 
   !> Implicit global update step within IMEX schemes, advance psa=psb+dtfactor*qdt*F_im(psa)
   subroutine global_implicit_update(dtfactor,qdt,qtC,psa,psb)
@@ -213,8 +381,9 @@ contains
 
   end subroutine evaluate_implicit
 
-  !> Integrate all grids by one partial step
-  subroutine advect1(method,dtfactor,idimmin,idimmax,qtC,psa,bga,qt,psb,bgb)
+  !> Integrate all grids by one partial step: time level kb += dtfactor*dt
+  !> times the flux divergence and sources evaluated on time level ka
+  subroutine advect1(dtfactor,idimmin,idimmax,qtC,ka,qt,kb)
     use mod_global_parameters
     use mod_ghostcells_update
     use mod_fix_conserve
@@ -223,17 +392,16 @@ contains
     use mod_usr_methods
 
     integer, intent(in)          :: idimmin,idimmax
-    integer :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
-    type(state), target          :: psa(max_blocks) !< Compute fluxes based on this state
-    type(state), target          :: psb(max_blocks) !< Update solution on this state
-    type(block_grid_t)           :: bga !< Compute fluxes based on this state
-    type(block_grid_t)           :: bgb !< Update solution on this state
     double precision, intent(in) :: dtfactor !< Advance over dtfactor * dt
-    double precision, intent(in) :: qtC
-    double precision, intent(in) :: qt
-    integer, intent(in)          :: method(nlevelshi)
+    double precision, intent(in) :: qtC !< Time of level ka
+    integer, intent(in)          :: ka  !< Compute fluxes based on this level
+    double precision, intent(in) :: qt  !< Time of level kb before the update
+    integer, intent(in)          :: kb  !< Update solution on this level
+
+    integer :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
     double precision             :: qdt
     integer                      :: iigrid, igrid
+    type(state), dimension(:), pointer, contiguous :: psb
 
     istep = istep+1
 
@@ -257,18 +425,17 @@ contains
         ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixOmin1,ixOmin2,ixOmin3,&
            ixOmax1,ixOmax2,ixOmax3, idimmin,idimmax, & !bounds for some arrays
         qtC, &                          ! scalar related to time stepping
-        bga, &                          ! first block grid
+        bg(ka), &                       ! first block grid
         qt,  &                          ! scalar related to time stepping
-        bgb  &                          ! second block grid
+        bg(kb) &                        ! second block grid
         )
 
-    ! AGILE: todo
-    ! if (fix_conserve_global .and. fix_conserve_at_step) then
-
-    ! JESSENEW 
-    call recvflux(idimmin,idimmax)
-    call sendflux(idimmin,idimmax)
-    call fix_conserve(bgb%istep,idimmin,idimmax,1,nwflux)
+    ! Off for the predictor of Predictor_Corrector, and with a single level
+    if (fix_conserve_at_step) then
+       call recvflux(idimmin,idimmax)
+       call sendflux(idimmin,idimmax)
+       call fix_conserve(kb,idimmin,idimmax,1,nwflux)
+    end if
 
     !   if(stagger_grid) then
     !     call fix_edges(psb,idimmin,idimmax)
@@ -281,7 +448,8 @@ contains
     ! end if
 
     
-    ! For all grids: fill ghost cells
+    ! For all grids: fill ghost cells; getbc finds level kb from the views
+    psb => ps_level(kb)
     call getbc(qt+qdt,qdt,psb,iwstart,nwgc,phys_req_diagonal)
 
   end subroutine advect1
