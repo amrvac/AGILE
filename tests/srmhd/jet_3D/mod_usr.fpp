@@ -90,6 +90,10 @@ contains
        w_(:,:,:,iw_mom(3)) = 0.0d0
      endwhere
 
+     w_(:,:,:,iw_mag(1)) = 0.0d0
+     w_(:,:,:,iw_mag(2)) = 0.0d0
+     w_(:,:,:,iw_mag(3)) = 0.0d0
+
      if(srmhd_n_tracer>0)then
        do itr=1,srmhd_n_tracer
           where(x_(:,:,:,3)<zjet.and.(x_(:,:,:,1)**2+x_(:,:,:,2)**2)<rjet**2)
