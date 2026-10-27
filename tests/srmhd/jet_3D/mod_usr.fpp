@@ -150,13 +150,13 @@ contains
   !     pL=pjet
   !     !!call srmhd_get_enthalpy_eos(rhoL,pL,rhohL)
   !     if(srmhd_eos) then
-  !       E_th = pL*inv_gamma_1
+  !       E_th = pL*1/(srmhd_gamma-1)
   !       E    = E_th+dsqrt(E_th**2+rhoL**2)
   !       rhohL = 0.5_dp*((srmhd_gamma+1.0_dp)*E &
-  !                  - gamma_1*rhoL*(rhoL/E))
+  !                  - (srmhd_gamma-1)*rhoL*(rhoL/E))
   !       p = (srmhd_gamma-1)*rho/2*eps*(2 + eps)/(1 + eps)
   !     else
-  !       rhohL = rhoL+gamma_to_gamma_1*pL
+  !       rhohL = rhoL+srmhd_gamma/(srmhd_gamma-1)*pL
   !     end if
   !     hjet=rhohL/rhojet
   !     bracket=(lfacjet**2*rhojet*hjet-lfacjet*rhojet)*unit_density*unit_velocity**2
@@ -172,12 +172,12 @@ contains
   !     pL=pb
   !     !!call srmhd_get_enthalpy_eos(rhoL,pL,rhohL)
   !     if(srmhd_eos) then
-  !       E_th = pL*inv_gamma_1
+  !       E_th = pL*1/(srmhd_gamma-1)
   !       E    = E_th+dsqrt(E_th**2+rhoL**2)
   !       rhohL = 0.5_dp*((srmhd_gamma+1.0_dp)*E &
-  !                  - gamma_1*rhoL*(rhoL/E))
+  !                  - (srmhd_gamma-1)*rhoL*(rhoL/E))
   !     else
-  !       rhohL = rhoL+gamma_to_gamma_1*pL
+  !       rhohL = rhoL+srmhd_gamma/(srmhd_gamma-1)*pL
   !     end if
   !     hb=rhohL/rhob
   !     etar=rhojet*hjet*lfacjet**2/(rhob*hb)
@@ -252,13 +252,13 @@ contains
                if (x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2 < rjet**2) then
                                  
                   if(srmhd_eos) then
-                     E_th = pjet * inv_gamma_1
+                     E_th = pjet * 1/(srmhd_gamma-1)
                      E    = E_th + dsqrt(E_th**2+rhojet**2)
                      ! writing rho/E on purpose, for numerics 
                      rhoh = 0.5_dp * ((srmhd_gamma+1.0_dp) * E &
-                          - gamma_1 * rhojet * (rhojet/E))
+                          - (srmhd_gamma-1) * rhojet * (rhojet/E))
                   else
-                     rhoh = rhojet + gamma_to_gamma_1*pjet
+                     rhoh = rhojet + srmhd_gamma/(srmhd_gamma-1)*pjet
                   end if
 
                   w(ix1,ix2,ix3,iw_rho)    = rhojet*lfacjet
