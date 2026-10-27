@@ -94,15 +94,15 @@ contains
      w_(:,:,:,iw_mag(2)) = 0.0d0
      w_(:,:,:,iw_mag(3)) = 0.0d0
 
-     if(srmhd_n_tracer>0)then
-       do itr=1,srmhd_n_tracer
-          where(x_(:,:,:,3)<zjet.and.(x_(:,:,:,1)**2+x_(:,:,:,2)**2)<rjet**2)
-            w_(:,:,:,tracer(itr)) = w_(:,:,:,iw_rho)*lfacjet
-          elsewhere
-            w_(:,:,:,tracer(itr)) = 0.0d0
-          endwhere
-       enddo
-     endif
+    !  if(srmhd_n_tracer>0)then
+    !    do itr=1,srmhd_n_tracer
+    !       where(x_(:,:,:,3)<zjet.and.(x_(:,:,:,1)**2+x_(:,:,:,2)**2)<rjet**2)
+    !         w_(:,:,:,tracer(itr)) = w_(:,:,:,iw_rho)*lfacjet
+    !       elsewhere
+    !         w_(:,:,:,tracer(itr)) = 0.0d0
+    !       endwhere
+    !    enddo
+    !  endif
     end associate
 
     call phys_to_conserved(ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3,&
@@ -280,24 +280,24 @@ contains
          end do
       end do
 
-      if(srmhd_n_tracer>0)then
-         do iw=1,srmhd_n_tracer
-#ifndef _OPENMP
-            ${GPU_LOOP_VECTOR("collapse(3)")}$
-#endif
-            do ix3 = ixOmin3, ixOmax3
-               do ix2 = ixOmin2, ixOmax2
-                  do ix1 = ixOmin1, ixOmax1
-                     if (x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2<rjet**2) then
-                        w(ix1,ix2,ix3,tracer(iw))    = w(ix1,ix2,ix3,iw_rho)
-                     else
-                        w(ix1,ix2,ix3,tracer(iw))    = 0.0d0
-                     endif
-                  end do
-               end do
-            end do
-         enddo
-      endif
+!       if(srmhd_n_tracer>0)then
+!          do iw=1,srmhd_n_tracer
+! #ifndef _OPENMP
+!             ${GPU_LOOP_VECTOR("collapse(3)")}$
+! #endif
+!             do ix3 = ixOmin3, ixOmax3
+!                do ix2 = ixOmin2, ixOmax2
+!                   do ix1 = ixOmin1, ixOmax1
+!                      if (x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2<rjet**2) then
+!                         w(ix1,ix2,ix3,tracer(iw))    = w(ix1,ix2,ix3,iw_rho)
+!                      else
+!                         w(ix1,ix2,ix3,tracer(iw))    = 0.0d0
+!                      endif
+!                   end do
+!                end do
+!             end do
+!          enddo
+!       endif
 
       ! Curently broken, cannot call anything here.      
       ! ! switch to conserved in ghost cells
