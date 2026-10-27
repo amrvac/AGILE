@@ -1278,8 +1278,8 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   (`to_primitive`/`to_conservative` called from a `collapse`d loop in
   `specialbound_usr` returning nonsense).
 
-- **The OpenMP gang/vector macros expand to `target teams loop` and
-  `loop bind(parallel)`, not `teams distribute` and `parallel do`.**
+- **Under NVHPC the OpenMP gang/vector macros expand to `target teams loop`
+  and `loop bind(parallel)`, not `teams distribute` and `parallel do`.**
   nvfortran compiles `teams distribute` with a nested `parallel do` in
   generic mode: the inner region becomes an outlined device function (the
   `NVFORTRAN-W-0155` "Passing external procedure as argument" warning), and
@@ -1290,9 +1290,13 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   own dependence analysis on the finite-volume kernel, gave up on its
   private temporaries, and launched it with one thread per team, 25x slower,
   without any error. A returning `W-0155` warning means the generic-mode
-  pattern is back. `loop` leaves the mapping to the compiler, so this has
-  only been measured with nvfortran; benchmark other compilers (e.g. on
-  LUMI) before assuming the same gain.
+  pattern is back. Other compilers keep `distribute`/`parallel do`, and
+  should until benchmarked: LLVM flang (and so AMD's `amdflang`) lowers a
+  nested `loop bind(parallel)` to a worksharing `do` with no enclosing
+  `parallel` (`GenericLoopConversion.cpp`), which leaves one thread per
+  team, and Cray CCE documents the same `bind(parallel)` -> `do` mapping
+  with no `loop`-specific optimisation. MFC's `omp_macros.fpp` likewise uses
+  `loop` for NVHPC only.
 
 ## API documentation (FORD)
 

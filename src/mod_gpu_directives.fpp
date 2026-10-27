@@ -136,20 +136,26 @@ use openacc, only : acc_is_present
 
 #:def GPU_PARALLEL_LOOP_GANG(clauses='')
 #! see comments on GPU_PARALLEL_LOOP
-#! loop rather than distribute: teams distribute with a nested parallel do is
-#! compiled in generic mode (inner region outlined, ~255 registers per
-#! thread under NVHPC); see GPU_LOOP_VECTOR
+#! NVHPC compiles teams distribute with a nested parallel do in generic mode
+#! (inner region outlined, ~255 registers per thread), so use loop there;
+#! see GPU_LOOP_VECTOR. Not for other compilers: flang and CCE lower a
+#! nested loop bind(parallel) to a worksharing do with no enclosing
+#! parallel, which leaves one thread per team.
 #if defined(__NVCOMPILER)
 !$omp target teams loop ${clauses}$
 #else
-!$omp target teams loop ${clauses}$ defaultmap(present:aggregrate) defaultmap(present:allocatable) defaultmap(present:pointer)
+!$omp target teams distribute ${clauses}$ defaultmap(present:aggregrate) defaultmap(present:allocatable) defaultmap(present:pointer)
 #endif
 #:enddef
 
 #:def GPU_LOOP_VECTOR(clauses='')
 #! bind(parallel) is needed: without it NVHPC's dependence analysis can
 #! serialise the loop onto one thread per team
+#if defined(__NVCOMPILER)
 !$omp loop bind(parallel) ${clauses}$
+#else
+!$omp parallel do ${clauses}$
+#endif
 #:enddef
 
 #:def GPU_LOOP_SEQ()
