@@ -1,5 +1,5 @@
 #:mute
-#:include "../../../src/mod_gpu_directives.fpp"
+#:include "mod_gpu_directives.fpp"
 #:endmute
 
 !> thermal instability test problem copied from amrvac/tests/demo/thermal_instability_HD/

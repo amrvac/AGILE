@@ -22,18 +22,18 @@ SUITE ?= basic
 
 HD_BASIC := hd/KH3D-SMR hd/spherical hd/cylindrical_pole hd/log_spherical \
             hd/log_cylindrical_pole
-HD_EXTENDED := hd/KH3D hd/RT3D hd/KH3D_tracer hd/sphere_advection hd/TRML \
-               hd/cloud_crushing hd/cylindrical hd/spherical_pole \
-               hd/log_cylindrical hd/log_spherical_pole
+HD_EXTENDED := hd/KH3D hd/KH3D-SMR-integrators hd/RT3D hd/KH3D_tracer \
+               hd/sphere_advection hd/TRML hd/cloud_crushing hd/cylindrical \
+               hd/spherical_pole hd/log_cylindrical hd/log_spherical_pole
 MHD_BASIC := mhd/Orszag-Tang_3D mhd/cylindrical_pole
-MHD_EXTENDED := mhd/blast_wave_Cartesian_3D mhd/spherical mhd/cylindrical \
+MHD_EXTENDED := mhd/blast_wave_Cartesian_3D mhd/BrioWu mhd/spherical mhd/cylindrical \
                 mhd/spherical_pole mhd/log_spherical mhd/log_cylindrical
 FFHD_BASIC := ffhd/TI3D ffhd/spherical_pole
 FFHD_EXTENDED := ffhd/spherical ffhd/cylindrical ffhd/cylindrical_pole \
                  ffhd/log_spherical ffhd/log_cylindrical
 SRHD_BASIC := srhd/shockTube srhd/cylindrical
-SRHD_EXTENDED := srhd/spherical srhd/spherical_pole srhd/cylindrical_pole \
-                 srhd/log_spherical srhd/log_cylindrical
+SRHD_EXTENDED := srhd/jet_3D srhd/spherical srhd/spherical_pole \
+                 srhd/cylindrical_pole srhd/log_spherical srhd/log_cylindrical
 
 HD_DIRS := $(HD_BASIC) $(HD_EXTENDED)
 MHD_DIRS := $(MHD_BASIC) $(MHD_EXTENDED)

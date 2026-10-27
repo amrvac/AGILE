@@ -8,13 +8,15 @@ financial support.
 * [Examples](examples.html) An overview of documented example simulations.
 * [Contributing to AGILE and its documentation](contributing.html)
 * [Documentation](documentation.html) How the documentation works.
+* [Code style guide](code_style_guide.html) Conventions for Fortran source in AGILE.
+* [Publications](publications.html) Papers related to AGILE.
 
 # General {: #general }
 * [Equations](equations.html) The equations and parameters in physics modules.
 * [Coordinate systems](coordinate_systems.html) Cartesian, spherical,
   cylindrical and logarithmic-radius geometries, the geometric source terms
   each one adds, and the polar axis.
-* [Parameters](par.html) Description of all parameters in "amrvac.par" parameter file.
+* [Parameters](par.html) Description of all parameters in the `agile.par` parameter file.
 * [Auxiliary variables](mpiamrvac_nw.html) Description of the intended use
   for _nw, nwflux, nwaux, nwextra, nwauxio_ parameters.
 * [Command line](commandline.html) Help on command-line parameters.
@@ -22,6 +24,8 @@ financial support.
 # Discretization methods and AMR strategy {: #discretization }
 * [Discretization](discretization.html) The equation and its discretization, the
 basic variables, the structure of the grid, boundaries, ghost cells.
+* [Time integration](time_integration.html) The time integration schemes,
+  their order, stability limit and memory cost, and how to add one.
 * [AMR aspects](amrstructure.html) Some essential info on global parameters and
 the data structures for the block-tree AMR.
 
@@ -30,6 +34,10 @@ the data structures for the block-tree AMR.
 
 # IO and data analysis {: #io }
 * [File format](fileformat.html) Description of the format of AGILE data file (.dat).
+* [Dump variables to dat files](dat_convert.html) Adding extra variables to the .dat output.
+* [Setting up the python tools](python_setup.html) Installing the Python analysis tools.
+* [Reading the dat files](python_datfiles.html) Loading .dat snapshots in Python.
+* [Reading the vtk files](python_vtkfiles.html) Loading .vtu output in Python.
 * [Visualisation and analysis in Python with yt](yt_usage.html) without data conversion.
 * [Converting data files for visualization](convert.html) Brief notes on how to
 convert to Tecplot (.plt), and VTK (.vtu) data files.

@@ -10,7 +10,7 @@ You can join the mailing-list by [subscribing](https://ls.kuleuven.be/cgi-bin/wa
 
 If you find issues or have feature requests specific to AGILE, its best to do this by raising a [github issue](https://github.com/amrvac/AGILE/issues).   
 
-# Is there a way I can define my own parameters somewhere in mod_usr.t and configure them through `agile.par` ? {: #faq-own-parameters }
+# Is there a way I can define my own parameters somewhere in mod_usr.fpp and configure them through `agile.par` ? {: #faq-own-parameters }
 Indeed, there is a quick and time-saving way to read your own parameters without having to give an explicit value in the usr file and recompile each time. Instead, add this in your usr file : 
 
 1. at the end of the usr_init subroutine, add this line : call params_read(par_files)

@@ -613,6 +613,10 @@ module mod_global_parameters
   !> How many sub-steps the time integrator takes
   integer :: nstep
 
+  !> How many time levels of bg the time integrator needs: its number of
+  !> registers, which is not its number of sub-steps (see time_levels)
+  integer :: nlevel
+
   !> Which flux scheme of spatial discretization to use (per grid level)
   integer, allocatable :: flux_method(:)
 
@@ -847,6 +851,40 @@ module mod_global_parameters
   type(state), pointer :: block
   ${GPU_DECLARE_CREATE('block')}$
 contains
+
+  !> Sub-steps and time levels of a time integrator, the single place either
+  !> is defined.  A stage reads one register and updates another in place, and
+  !> the two must differ because the flux stencil reads neighbours, so the
+  !> level count is the number of distinct registers the scheme's sequence in
+  !> advect touches - fewer than its stages for the low-storage SSP schemes,
+  !> more for RK3_BT and the IMEX family.  bg is allocated with nlevels.
+  pure subroutine time_levels(integrator, nstages, nlevels)
+    integer, intent(in)  :: integrator
+    integer, intent(out) :: nstages, nlevels
+
+    select case (integrator)
+    case (Forward_Euler, IMEX_Euler, IMEX_SP)
+       nstages = 1; nlevels = 2
+    case (Predictor_Corrector, RK2_alf, ssprk2)
+       nstages = 2; nlevels = 2
+    case (IMEX_Midpoint, IMEX_Trapezoidal, IMEX_222)
+       nstages = 2; nlevels = 3
+    case (ssprk3)
+       nstages = 3; nlevels = 3
+    case (RK3_BT, IMEX_CB3a)
+       nstages = 3; nlevels = 4
+    case (IMEX_ARS3, IMEX_232)
+       nstages = 3; nlevels = 5
+    case (ssprk4)
+       nstages = 4; nlevels = 3
+    case (rk4)
+       nstages = 4; nlevels = 4
+    case (ssprk5)
+       nstages = 5; nlevels = 4
+    case default
+       nstages = 0; nlevels = 0
+    end select
+  end subroutine time_levels
 
   !> Cross product of two vectors
   pure subroutine cross_product(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
