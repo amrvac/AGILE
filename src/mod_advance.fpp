@@ -97,7 +97,7 @@ contains
     fix_conserve_at_step = time_advance .and. levmax>levmin
     
     ! copy w instead of wold because of potential use of dimsplit or sourcesplit
-    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_PRESENT('bg, bg(1), bg(2)')}$
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
        do iw = 1, nw
@@ -112,7 +112,7 @@ contains
     end do
     
     if(stagger_grid) then
-       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_PRESENT('ps1, ps')}$
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
        do iigrid=1,igridstail; igrid=igrids(iigrid);
           ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
           do iw = 1, nws
@@ -291,7 +291,7 @@ contains
 
     integer :: iigrid, igrid, ix1,ix2,ix3, iw
 
-    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
     do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
        ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
        do iw = 1, nw
@@ -319,7 +319,7 @@ contains
 
     integer :: iigrid, igrid, ix1,ix2,ix3, iw
 
-    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
     do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
        ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$
        do iw = 1, nw

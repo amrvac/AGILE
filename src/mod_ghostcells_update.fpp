@@ -1171,7 +1171,7 @@ contains
 
     ! fill physical-boundary ghost cells before internal ghost-cell values exchange
     if(bcphys.and. .not.stagger_grid) then
-       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
        do iigrid = 1, igridstail; igrid=igrids(iigrid);
           if (.not.phyboundblock(igrid)) cycle
           call fill_boundary_before_gc(psb(igrid),igrid,time,qdt)
@@ -1180,7 +1180,7 @@ contains
 
 
     ! prepare coarse values to send to coarser neighbors
-    ${GPU_PARALLEL_LOOP_GANG("private(igrid, CoFiratio, i1, i2, i3)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid, CoFiratio, i1, i2, i3)")}$
     do iigrid = 1, igridstail; igrid=igrids(iigrid);
        if (any(neighbor_type(:,:,:,igrid)==neighbor_coarse)) then
 
@@ -1265,7 +1265,7 @@ contains
 
     ! fill the SRL send buffers on GPU
     do inb = 1, nbprocs_info%nbprocs_srl
-       ${GPU_PARALLEL_LOOP_GANG("private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, iib2, iib3, ixSmin1, ixSmin2, ixSmin3, ixSmax1, ixSmax2, ixSmax3, Nx1, Nx2, Nx3, ipole, iB_pole, n_i1, n_i2, n_i3, sbase1, sbase2, sbase3, sstep1, sstep2, sstep3)")}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, iib2, iib3, ixSmin1, ixSmin2, ixSmin3, ixSmax1, ixSmax2, ixSmax3, Nx1, Nx2, Nx3, ipole, iB_pole, n_i1, n_i2, n_i3, sbase1, sbase2, sbase3, sstep1, sstep2, sstep3)")}$
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
              igrid = nbprocs_info%srl_nb(inb)%info%igrid(i)
              ienc = nbprocs_info%srl_nb(inb)%info%iencode(i)
@@ -1324,7 +1324,7 @@ contains
 
     ! fill the C send buffers on GPU (send_restrict)
     do inb = 1, nbprocs_info%nbprocs_c
-       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3,igrid,ibuf_start,iib1,iib2,iib3,ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3)")}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3,igrid,ibuf_start,iib1,iib2,iib3,ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3)")}$
        do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%course_nb(inb)%info%igrid(i)
@@ -1454,7 +1454,7 @@ contains
 
     ! fill ghost-cell values of sibling blocks and if neighbor is coarser (f2c)
     ! same process case
-    ${GPU_PARALLEL_LOOP_GANG("collapse(2) private(i1,i2,i3, igrid, iib1,iib2,iib3, ipe_neighbor, ineighbor, n_i1,n_i2,n_i3, ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3, ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3, ic1,ic2,ic3, n_inc1,n_inc2,n_inc3, ipole,iB_pole, sbase1,sbase2,sbase3, sstep1,sstep2,sstep3)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP_GANG("collapse(2) private(i1,i2,i3, igrid, iib1,iib2,iib3, ipe_neighbor, ineighbor, n_i1,n_i2,n_i3, ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3, ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3, ic1,ic2,ic3, n_inc1,n_inc2,n_inc3, ipole,iB_pole, sbase1,sbase2,sbase3, sstep1,sstep2,sstep3)")}$
     do iigrid = 1, igridstail
        do i = 1, 27
           @:IDECODE(i1, i2, i3, i)
@@ -1577,7 +1577,7 @@ contains
 
     ! unpack the MPI buffers
     do inb = 1, nbprocs_info%nbprocs_srl
-      ${GPU_PARALLEL_LOOP_GANG("private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, iib2, iib3, ixRmin1, ixRmin2, ixRmin3, ixRmax1, ixRmax2, ixRmax3, Nx1, Nx2, Nx3)")}$ ${GPU_INDEPENDENT()}$ ${GPU_DEFAULT_PRESENT()}$
+      ${GPU_PARALLEL_LOOP_GANG("private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, iib2, iib3, ixRmin1, ixRmin2, ixRmin3, ixRmax1, ixRmax2, ixRmax3, Nx1, Nx2, Nx3)")}$ ${GPU_INDEPENDENT()}$
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%srl_nb(inb)%info_rcv%buffer( 3 * (i - 1) + 1 )
@@ -1630,7 +1630,7 @@ contains
 
     ! unpack the MPI buffers, fine neighbor, (f_recv), recv_restrict
     do inb = 1, nbprocs_info%nbprocs_f
-       ${GPU_PARALLEL_LOOP_GANG("private(igrid, inc1, inc2, inc3, ibuf_start, iib1, iib2, iib3, ixRmin1, ixRmin2, ixRmin3, ixRmax1, ixRmax2, ixRmax3, Nx1, Nx2, Nx3)")}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid, inc1, inc2, inc3, ibuf_start, iib1, iib2, iib3, ixRmin1, ixRmin2, ixRmin3, ixRmax1, ixRmax2, ixRmax3, Nx1, Nx2, Nx3)")}$
        do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%fine_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 1 )
@@ -1691,7 +1691,7 @@ contains
 
     ! fill the F (neighbor is finer) send buffer on GPU (send_prolong)
     do inb = 1, nbprocs_info%nbprocs_f
-       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3,i1,i2,i3,igrid,ibuf_start,iib1,iib2,iib3,ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3)")}$ ${GPU_INDEPENDENT()}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3,i1,i2,i3,igrid,ibuf_start,iib1,iib2,iib3,ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3)")}$ ${GPU_INDEPENDENT()}$
        do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%fine_nb(inb)%info%igrid(i)
@@ -1792,7 +1792,7 @@ contains
 
 
     ! fill coarse ghost-cell values of finer neighbors in the same processor
-    ${GPU_PARALLEL_LOOP_GANG("collapse(4) private(iib1,iib2,iib3,igrid,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3, inc1,inc2,inc3, ineighbor,ipe_neighbor, n_i1,n_i2,n_i3, n_inc1,n_inc2,n_inc3, ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3, ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP_GANG("collapse(4) private(iib1,iib2,iib3,igrid,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3, inc1,inc2,inc3, ineighbor,ipe_neighbor, n_i1,n_i2,n_i3, n_inc1,n_inc2,n_inc3, ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3, ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3)")}$
     do iigrid=1,igridstail
        do i3=-1,1
           do i2=-1,1
@@ -1892,7 +1892,7 @@ contains
 
     ! unpack the MPI buffers, coarse neighbor, (c_recv), recv_prolong
     do inb = 1, nbprocs_info%nbprocs_c
-       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,inc1,inc2,inc3,igrid,ibuf_start,iib1,iib2,iib3,ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3)")}$ ${GPU_INDEPENDENT()}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,inc1,inc2,inc3,igrid,ibuf_start,iib1,iib2,iib3,ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3)")}$ ${GPU_INDEPENDENT()}$
        do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%course_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 1 )
@@ -1932,7 +1932,7 @@ contains
     end do
 
     ! do prolongation on the ghost-cell values based on the received coarse values from coarser neighbors (f2c)
-    ${GPU_PARALLEL_LOOP_GANG("collapse(4) private(igrid, iib1,iib2,iib3, ixFimin1,ixFimin2,ixFimin3,ixFimax1,ixFimax2,ixFimax3, dxFi1,dxFi2,dxFi3, dxCo1,dxCo2,dxCo3, invdxCo1,invdxCo2,invdxCo3, xFimin1,xFimin2,xFimin3, xComin1,xComin2,xComin3)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP_GANG("collapse(4) private(igrid, iib1,iib2,iib3, ixFimin1,ixFimin2,ixFimin3,ixFimax1,ixFimax2,ixFimax3, dxFi1,dxFi2,dxFi3, dxCo1,dxCo2,dxCo3, invdxCo1,invdxCo2,invdxCo3, xFimin1,xFimin2,xFimin3, xComin1,xComin2,xComin3)")}$
     do iigrid=1, igridstail
        !      inline variant of call gc_prolong(igrid)
        do i3 = -1, 1
@@ -2033,7 +2033,7 @@ contains
     ! this second pass, but it keeps corner-ghost handling complete and
     ! matches upstream for setups this fork does not yet exercise.
     if(bcphys.and. .not.stagger_grid) then
-       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
        do iigrid = 1, igridstail; igrid=igrids(iigrid);
           if (.not.phyboundblock(igrid)) cycle
           call fill_boundary_after_gc(psb(igrid),igrid,time,qdt)

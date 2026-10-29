@@ -153,7 +153,7 @@ end subroutine finite_volume_local
        igrid_beg = (ibatch-1) * max_batch + 1
        igrid_end = min(ibatch * max_batch, igridstail_active)
 
-       ${GPU_PARALLEL_LOOP_GANG("private(uprim, inv_dr, dr, n, xlo, typelim, ix1, ix2, ix3, fC1, fC2, fC3, neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, neighbor_type_3p)")}$ ${GPU_DEFAULT_PRESENT()}$
+       ${GPU_PARALLEL_LOOP_GANG("private(uprim, inv_dr, dr, n, xlo, typelim, ix1, ix2, ix3, fC1, fC2, fC3, neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, neighbor_type_3p)")}$
        do iigrid = igrid_beg, igrid_end
           n = igrids_active(iigrid)
 

@@ -41,7 +41,7 @@
    ! so theta runs over [pi/4, 3pi/4] and phi over [0, pi/2] below. The domain
    ! deliberately stays away from the polar axis and from r = 0.
    geometry           = 'spherical'
-   max_blocks         =  4096
+   max_blocks         =  64
    refine_max_level   =  1
    block_nx1          =  8
    block_nx2          =  8

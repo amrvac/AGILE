@@ -616,7 +616,7 @@ module mod_fix_conserve
          if (ng == 0) cycle
          select case (idims)
          case (1)
-           ${GPU_PARALLEL_LOOP_GANG("private(imsg)")}$ ${GPU_DEFAULT_PRESENT()}$
+           ${GPU_PARALLEL_LOOP_GANG("private(imsg)")}$
            do k = 1,ng
              imsg = snd_group(k,iside,1)
              ${GPU_LOOP_VECTOR("collapse(3)")}$
@@ -631,7 +631,7 @@ module mod_fix_conserve
              end do
            end do
          case (2)
-           ${GPU_PARALLEL_LOOP_GANG("private(imsg)")}$ ${GPU_DEFAULT_PRESENT()}$
+           ${GPU_PARALLEL_LOOP_GANG("private(imsg)")}$
            do k = 1,ng
              imsg = snd_group(k,iside,2)
              ${GPU_LOOP_VECTOR("collapse(3)")}$
@@ -646,7 +646,7 @@ module mod_fix_conserve
              end do
            end do
          case (3)
-           ${GPU_PARALLEL_LOOP_GANG("private(imsg)")}$ ${GPU_DEFAULT_PRESENT()}$
+           ${GPU_PARALLEL_LOOP_GANG("private(imsg)")}$
            do k = 1,ng
              imsg = snd_group(k,iside,3)
              ${GPU_LOOP_VECTOR("collapse(3)")}$
@@ -1010,7 +1010,7 @@ module mod_fix_conserve
      ! implicit firstprivate OpenACC gives an unlisted scalar in a parallel
      ! region: the rule does cover them, but a half-populated list is
      ! indistinguishable from an oversight.
-     ${GPU_PARALLEL_LOOP_GANG("private(igrid, idims, iside, i1,i2,i3, ix, ic1,ic2,ic3, inc1,inc2,inc3, ineighbor, ipe_neighbor, iotherside, ixmin1,ixmin2,ixmin3, ixmax1,ixmax2,ixmax3, ix1,ix2,ix3, iw)")}$ ${GPU_DEFAULT_PRESENT()}$
+     ${GPU_PARALLEL_LOOP_GANG("private(igrid, idims, iside, i1,i2,i3, ix, ic1,ic2,ic3, inc1,inc2,inc3, ineighbor, ipe_neighbor, iotherside, ixmin1,ixmin2,ixmin3, ixmax1,ixmax2,ixmax3, ix1,ix2,ix3, iw)")}$
      do iigrid=1,igridstail
        igrid=igrids(iigrid)
 
