@@ -110,101 +110,101 @@ contains
 
   end subroutine initonegrid_usr
 
-  ! subroutine print_params()
-  !   implicit none
-  !   character(len=*), parameter :: fmt = '(A20,1X,SP,ES12.2)'
-  !   character(len=20) :: printsettingformat
-  !   double precision :: rhoL,pL,rhohL,E_th,E
-  !   double precision :: hjet,bracket,hb,etar,vhead,tcross
+  subroutine print_params()
+    implicit none
+    character(len=*), parameter :: fmt = '(A20,1X,SP,ES12.2)'
+    character(len=20) :: printsettingformat
+    double precision :: rhoL,pL,rhohL,E_th,E
+    double precision :: hjet,bracket,hb,etar,vhead,tcross
 
 
-  !  printsettingformat='(1x,A50,ES15.7,A7)'
+   printsettingformat='(1x,A50,ES15.7,A7)'
 
-  !   print *, '------------------ PARAMETERS ------------------'
-  !     write(*,*) "Jet (Seo et al ApJ 2021, 920, 144) setup:"
-  !     write(*,printsettingformat) "dimensionless jet radius ",rjet," input"
-  !     write(*,printsettingformat) "dimensionless jet length ",zjet," input"
-  !     write(*,printsettingformat) "dimensionless density in medium ",rhob," input"
-  !     write(*,printsettingformat) "density in jet: via  ",etarho," input"
-  !     write(*,printsettingformat) "dimensionless pressure background ",pb," input"
-  !     write(*,printsettingformat) "pressure in jet: via ",zetap," input"
-  !     write(*,printsettingformat) "jet lorentz factor ",lfacjet," input"
-  !     print fmt,  'srmhd_gamma',       srmhd_gamma
-  !     write(*,*) "Deduced dimensionless values:"
-  !     write(*,printsettingformat) "jet density  ",rhojet," output"
-  !     write(*,printsettingformat) "jet pressure ",pjet," output"
-  !     write(*,printsettingformat) "jet velocity ",vjet," output"
-  !   print *, '------------------------------------------------'
-  !   write(*,*) "units from"
-  !     write(*,*) "SI_unit ",SI_unit," should be false!!"
-  !     write(*,printsettingformat) "unit_velocity ",unit_velocity," fixed"
-  !     write(*,printsettingformat) "unit n ",unit_numberdensity," input"
-  !     write(*,printsettingformat) "unit length ",unit_length," input"
-  !     write(*,printsettingformat) "He-abundance ",He_abundance," input"
-  !     write(*,printsettingformat) "unit rho ",unit_density," output"
-  !     write(*,printsettingformat) "unit p ",unit_pressure," output"
-  !     write(*,printsettingformat) "unit time ",unit_time," output"
-  !   print *, '------------------------------------------------'
+    print *, '------------------ PARAMETERS ------------------'
+      write(*,*) "Jet (Seo et al ApJ 2021, 920, 144) setup:"
+      write(*,printsettingformat) "dimensionless jet radius ",rjet," input"
+      write(*,printsettingformat) "dimensionless jet length ",zjet," input"
+      write(*,printsettingformat) "dimensionless density in medium ",rhob," input"
+      write(*,printsettingformat) "density in jet: via  ",etarho," input"
+      write(*,printsettingformat) "dimensionless pressure background ",pb," input"
+      write(*,printsettingformat) "pressure in jet: via ",zetap," input"
+      write(*,printsettingformat) "jet lorentz factor ",lfacjet," input"
+      print fmt,  'srmhd_gamma',       srmhd_gamma
+      write(*,*) "Deduced dimensionless values:"
+      write(*,printsettingformat) "jet density  ",rhojet," output"
+      write(*,printsettingformat) "jet pressure ",pjet," output"
+      write(*,printsettingformat) "jet velocity ",vjet," output"
+    print *, '------------------------------------------------'
+    write(*,*) "units from"
+      write(*,*) "SI_unit ",SI_unit," should be false!!"
+      write(*,printsettingformat) "unit_velocity ",unit_velocity," fixed"
+      write(*,printsettingformat) "unit n ",unit_numberdensity," input"
+      write(*,printsettingformat) "unit length ",unit_length," input"
+      write(*,printsettingformat) "He-abundance ",He_abundance," input"
+      write(*,printsettingformat) "unit rho ",unit_density," output"
+      write(*,printsettingformat) "unit p ",unit_pressure," output"
+      write(*,printsettingformat) "unit time ",unit_time," output"
+    print *, '------------------------------------------------'
 
-  !     rhoL=rhojet
-  !     pL=pjet
-  !     !!call srmhd_get_enthalpy_eos(rhoL,pL,rhohL)
-  !     if(srmhd_eos) then
-  !       E_th = pL*1/(srmhd_gamma-1)
-  !       E    = E_th+dsqrt(E_th**2+rhoL**2)
-  !       rhohL = 0.5_dp*((srmhd_gamma+1.0_dp)*E &
-  !                  - (srmhd_gamma-1)*rhoL*(rhoL/E))
-  !       p = (srmhd_gamma-1)*rho/2*eps*(2 + eps)/(1 + eps)
-  !     else
-  !       rhohL = rhoL+srmhd_gamma/(srmhd_gamma-1)*pL
-  !     end if
-  !     hjet=rhohL/rhojet
-  !     bracket=(lfacjet**2*rhojet*hjet-lfacjet*rhojet)*unit_density*unit_velocity**2
-  !     Qjet=dpi*(rjet*unit_length)**2*vjet*unit_velocity*bracket
-  !     bracket=(lfacjet**2*(rhojet*unit_density)*hjet*(vjet*unit_velocity)**2+pjet*unit_pressure)
-  !     Mdotjet=dpi*(rjet*unit_length)**2*bracket
-  !     p0val=rhob*unit_density*unit_velocity**2
-  !     t0val=rjet*unit_length/unit_velocity
-  !     ! switch to years
-  !     t0val=t0val/(365.0d0*24.0d0*60.0d0*60.0d0)
+      rhoL=rhojet
+      pL=pjet
+      !!call srmhd_get_enthalpy_eos(rhoL,pL,rhohL)
+      if(srmhd_eos) then
+        E_th = pL*1/(srmhd_gamma-1)
+        E    = E_th+dsqrt(E_th**2+rhoL**2)
+        rhohL = 0.5_dp*((srmhd_gamma+1.0_dp)*E &
+                   - (srmhd_gamma-1)*rhoL*(rhoL/E))
+
+      else
+        rhohL = rhoL+srmhd_gamma/(srmhd_gamma-1)*pL
+      end if
+      hjet=rhohL/rhojet
+      bracket=(lfacjet**2*rhojet*hjet-lfacjet*rhojet)*unit_density*unit_velocity**2
+      Qjet=dpi*(rjet*unit_length)**2*vjet*unit_velocity*bracket
+      bracket=(lfacjet**2*(rhojet*unit_density)*hjet*(vjet*unit_velocity)**2+pjet*unit_pressure)
+      Mdotjet=dpi*(rjet*unit_length)**2*bracket
+      p0val=rhob*unit_density*unit_velocity**2
+      t0val=rjet*unit_length/unit_velocity
+      ! switch to years
+      t0val=t0val/(365.0d0*24.0d0*60.0d0*60.0d0)
       
-  !     rhoL=rhob
-  !     pL=pb
-  !     !!call srmhd_get_enthalpy_eos(rhoL,pL,rhohL)
-  !     if(srmhd_eos) then
-  !       E_th = pL*1/(srmhd_gamma-1)
-  !       E    = E_th+dsqrt(E_th**2+rhoL**2)
-  !       rhohL = 0.5_dp*((srmhd_gamma+1.0_dp)*E &
-  !                  - (srmhd_gamma-1)*rhoL*(rhoL/E))
-  !     else
-  !       rhohL = rhoL+srmhd_gamma/(srmhd_gamma-1)*pL
-  !     end if
-  !     hb=rhohL/rhob
-  !     etar=rhojet*hjet*lfacjet**2/(rhob*hb)
-  !     vhead=(vjet*unit_velocity)*dsqrt(etar)/(dsqrt(etar)+one)
-  !     tcross=rjet*unit_length/vhead
-  !     ! switch to years 
-  !     tcross=tcross/(365.0d0*24.0d0*60.0d0*60.0d0)
+      rhoL=rhob
+      pL=pb
+      !!call srmhd_get_enthalpy_eos(rhoL,pL,rhohL)
+      if(srmhd_eos) then
+        E_th = pL*1/(srmhd_gamma-1)
+        E    = E_th+dsqrt(E_th**2+rhoL**2)
+        rhohL = 0.5_dp*((srmhd_gamma+1.0_dp)*E &
+                   - (srmhd_gamma-1)*rhoL*(rhoL/E))
+      else
+        rhohL = rhoL+srmhd_gamma/(srmhd_gamma-1)*pL
+      end if
+      hb=rhohL/rhob
+      etar=rhojet*hjet*lfacjet**2/(rhob*hb)
+      vhead=(vjet*unit_velocity)*dsqrt(etar)/(dsqrt(etar)+one)
+      tcross=rjet*unit_length/vhead
+      ! switch to years 
+      tcross=tcross/(365.0d0*24.0d0*60.0d0*60.0d0)
 
-  !     write(*,*) "Deduced values (with dimensions):"
-  !     write(*,printsettingformat) "p0 value  ",p0val," output"
-  !     write(*,printsettingformat) "t0 value in years ",t0val," output"
-  !     write(*,printsettingformat) "tcross in years ",tcross," output"
-  !     write(*,printsettingformat) "one crossing time is in code units",rjet*unit_length/vhead/unit_time," output"
-  !     write(*,printsettingformat) "jet power  ",Qjet," output"
-  !     write(*,printsettingformat) "jet thrust ",Mdotjet," output"
-  !     write(*,printsettingformat) "pb in cgs",pb*unit_pressure," output"
-  !     write(*,printsettingformat) "Tb in K",pb*unit_pressure &
-  !                /((2.0d0+3.0d0*He_abundance)*unit_numberdensity*kB_cgs)," output"
-  !     write(*,*) "Deduced values (dimensionless):"
-  !     write(*,printsettingformat) "jet enthalpy ",hjet," output"
-  !     write(*,printsettingformat) "background enthalpy ",hb," output"
-  !     write(*,printsettingformat) "vhead/c ",vhead/unit_velocity," output"
-  !     write(*,printsettingformat) "pb/p0",pb*unit_pressure/p0val," in-output"
-  !   print *, '------------------------------------------------'
+      write(*,*) "Deduced values (with dimensions):"
+      write(*,printsettingformat) "p0 value  ",p0val," output"
+      write(*,printsettingformat) "t0 value in years ",t0val," output"
+      write(*,printsettingformat) "tcross in years ",tcross," output"
+      write(*,printsettingformat) "one crossing time is in code units",rjet*unit_length/vhead/unit_time," output"
+      write(*,printsettingformat) "jet power  ",Qjet," output"
+      write(*,printsettingformat) "jet thrust ",Mdotjet," output"
+      write(*,printsettingformat) "pb in cgs",pb*unit_pressure," output"
+      write(*,printsettingformat) "Tb in K",pb*unit_pressure &
+                 /((2.0d0+3.0d0*He_abundance)*unit_numberdensity*kB_cgs)," output"
+      write(*,*) "Deduced values (dimensionless):"
+      write(*,printsettingformat) "jet enthalpy ",hjet," output"
+      write(*,printsettingformat) "background enthalpy ",hb," output"
+      write(*,printsettingformat) "vhead/c ",vhead/unit_velocity," output"
+      write(*,printsettingformat) "pb/p0",pb*unit_pressure/p0val," in-output"
+    print *, '------------------------------------------------'
 
 
-  ! end subroutine
+  end subroutine
 
   subroutine set_parameters_usr()
     use mod_global_parameters
