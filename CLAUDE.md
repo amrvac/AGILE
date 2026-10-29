@@ -60,6 +60,15 @@ make clean                 # remove this case's build products
 - `OPENACC` and `OPENMP` are mutually exclusive GPU offload backend switches
   (`make` errors out if both are given); neither flag gives a plain CPU
   build, where every `GPU_*` directive macro expands to nothing.
+- `NOGPUDIRECT=1` (only meaningful with `OPENACC` or `OPENMP`) stages MPI
+  buffers through the host instead of handing device pointers to MPI. **Use
+  it when all ranks share a single GPU.** Without it, a workstation with one
+  GTX 1660 Ti (nvhpc 26.9, HPC-X) runs `tests/hd/KH3D` correctly on one
+  rank but loses mass deterministically on two or more (`mean(rho)` 5.42 at
+  2 ranks, 5.37 at 4, against 5.5), whichever MPI build or UCX transport is
+  used; with `NOGPUDIRECT=1` it passes at 1, 2 and 4 ranks. The cause is not
+  understood, so treat this as a workaround, not a known limit. Multi-GPU
+  machines (e.g. the GPU CI) keep GPU-direct.
 - Physics-relevant compile-time options (which physics module, the coordinate
   system, tracers, gravity, cooling, thermal conduction, etc.) are declared in
   `agile.par` and turned into `config.mk`/fypp defines by
@@ -85,15 +94,31 @@ absolute).
 
 ```bash
 cd tests
-make hd            # run all hd/* test cases
-make mhd           # run all mhd/* test cases
-make ffhd          # run all ffhd/* test cases
-make srhd          # run all srhd/* test cases
-make srmhd         # run all srmhd/* test cases
+make hd            # run the basic hd/* test cases
+make mhd           # run the basic mhd/* test cases
+make ffhd          # run the basic ffhd/* test cases
+make srhd          # run the basic srhd/* test cases
+make SUITE=all hd  # basic and extended hd/* cases
+make SUITE=all list # print the directories a SUITE selects
 make -j4 hd         # run in parallel
 make -s hd          # suppress "Entering/leaving directory" noise
 make clean          # clean all test build artifacts
 ```
+
+The test directories are split into two suites in `tests/Makefile`: each
+physics module has a `*_BASIC` and a `*_EXTENDED` list. `SUITE` (a make
+variable or environment variable, like `arch`) selects `basic` (the default),
+`extended` or `all`. The split is per directory, because a directory is one
+build and builds dominate the cost. The basic suite keeps one Cartesian case
+per physics plus the curvilinear cases whose checks nothing else provides
+(`hd/spherical` for refluxing, `hd/log_cylindrical_pole` for `log_r0`, ...).
+Naming a single directory (`make hd/spherical`) runs it regardless of `SUITE`.
+
+In CI (`.github/workflows/tests.yml` and `gpu.yml`) pushes and PRs run the
+basic suite. The full suite (`all`) runs weekly on master (Sunday 02:00
+UTC), on a PR carrying the `full-tests` label (adding the label triggers the
+run), and from a manual run, whose `suite` input chooses between
+`basic`, `extended` and `all` (`gh workflow run tests.yml -f suite=all --ref <branch>`).
 
 To run a single case's test directly:
 
@@ -108,7 +133,8 @@ This is also what CI does, via `tests/test_runner.sh <target>` (used as
 
 Add a new test case by copying an existing case directory (`mod_usr.fpp`,
 `agile.par`/`test.par`, `test.make`, `correct_output/`) and registering it in
-`tests/Makefile` under the appropriate `*_DIRS` variable.
+`tests/Makefile` under the appropriate `*_BASIC` or `*_EXTENDED` variable (extended unless
+it covers something no basic case does).
 
 ## Coordinate systems
 
@@ -534,7 +560,7 @@ device kernel and reads `bgeo` there like the rest of the AMR machinery.
 `modify_IC`, `getintbc` (when `usr_internal_bc` is
 set), `process`/`process_advanced` (when the `usr_process_*_grid` hooks are
 set), `usr_modify_output` in `src/agile.fpp`, `prolong_grid`/`prolong_2nd`
-(when `prolongprimitive` or `fix_small_values` is on), and `alloc_node` itself
+(when `prolongprimitive` is on), and `alloc_node` itself
 just before `set_B0_grid`/`phys_set_equi_vars`, which read positions on the
 host.
 
@@ -1042,14 +1068,117 @@ Consequences:
   `correct_output/blast.log` changed when the frozen field moved to
   `usr_set_nwextra`.
 
+## Time integration
+
+Set `time_stepper` and `time_integrator` in `&methodlist`. `advect` in
+`src/mod_advance.fpp` implements these; the default `time_integrator` of each
+`time_stepper` is in bold, and the overall default is `twostep`, so
+`Predictor_Corrector`:
+
+| `time_stepper` | `time_integrator` | order | stages | time levels |
+|---|---|---|---|---|
+| `onestep` | **`Forward_Euler`** | 1 | 1 | 2 |
+| `twostep` | **`Predictor_Corrector`** | 2 | 2 | 2 |
+| `twostep` | `ssprk2` | 2 | 2 | 2 |
+| `twostep` | `RK2_alfa` (`rk2_alfa` in (0,1]) | 2 | 2 | 2 |
+| `threestep` | **`ssprk3`** (`ssprk_order` 3 or 2) | 3 / 2 | 3 | 3 |
+| `threestep` | `RK3_BT` (`rk3_switch` 1-4: Ralston, Wray, Heun, Nyström) | 3 | 3 | 4 |
+| `fourstep` | **`ssprk4`** (`ssprk_order` 3: Spiteri-Ruuth, 2: SSP(4,2)) | 3 / 2 | 4 | 3 |
+| `fourstep` | `rk4` (classical) | 4 | 4 | 4 |
+| `fivestep` | **`ssprk5`** (Spiteri-Ruuth (5,4)) | 4 | 5 | 4 |
+
+That is every explicit scheme upstream MPI-AMRVAC has. `read_par_files` also
+parses the IMEX family and fills its coefficients, but stops at startup for
+it: there is nothing implicit to integrate here, since every
+`phys_implicit_update` is the dummy in `src/physics/mod_physics.fpp`.
+
+The SSP schemes are stable to different Courant numbers relative to forward
+Euler (ssprk4: 2 at order 3, 3 at order 2), but AGILE does not rescale
+`courantpar` per scheme, so a run has to raise it itself to profit.
+
+**Stages and time levels are different numbers, and only the second costs
+memory.** `nstep` counts sub-steps (flux evaluations). `nlevel` counts the
+solution copies the scheme holds at once, its registers, and `initialize_vars`
+allocates `bg(1:nlevel)`. Each level is `nw` times the block size times
+`max_blocks` doubles, all device-resident, so it often decides how large
+`max_blocks` can be on a GPU. The two counts disagree in both directions:
+ssprk4 is 4 stages in 3 levels, while RK3_BT is 3 stages needing 4 levels.
+`alloc_node` used to size the levels from the integrator in one place while
+`bg` was sized from `nstep` in another, which left RK3_BT and the IMEX schemes
+pointing past the end of `bg`.
+
+Both numbers now come from one table, `time_levels` in
+`src/mod_global_parameters.fpp`. **A new scheme adds its row there**, a `case`
+branch in `advect`, and its name to the accepted list in `read_par_files`.
+Everything else follows from `nlevel`: `bg` allocation, the `ps1..ps4` views
+that `alloc_node` points at `bg(2..nlevel)` through `ps_level`
+(`src/mod_physicaldata.fpp`), and the guard in `alloc_state` that stops on a
+view beyond `size(bg)`.
+
+Within `advect` a scheme is written as upstream writes it, with `ps`, `ps1`,
+`ps2`, `ps3` becoming time levels 1, 2, 3, 4:
+
+- `advect1(dtfactor, ..., qtC, ka, qt, kb)` adds `dtfactor*dt` times the
+  update evaluated on level `ka` to level `kb`. The two must differ, because
+  the flux stencil reads neighbouring cells.
+- `bg_assign(bgd, a1, bg1[, a2, bg2[, a3, bg3]])` (`bgd = sum`) and
+  `bg_accum(bgd, s, a1, bg1[, ...])` (`bgd = s*bgd + sum`) are the pointwise
+  combinations between stages. They are generic names over device kernels
+  that fypp generates for one to three sources, so each reads only the
+  arrays it uses. There are two shapes so that a destination is never also
+  passed as a source argument, and is never read where its coefficient would
+  be zero.
+
+The schemes are tested on the AMR case of `tests/hd/KH3D-SMR`, not on a
+uniform grid, because the static refinement is what puts refluxing at every
+stage under test. `tests/hd/KH3D-SMR` itself (basic suite) runs ssprk3,
+ssprk4 and the default, Predictor_Corrector: its `pc.par` sets no
+`time_stepper`, so the same test also checks the default.
+`tests/hd/KH3D-SMR-integrators` (extended suite) is the same case with one
+par file per scheme and coefficient variant: all twelve, including
+`ssprk_order = 2` for ssprk3 and ssprk4, and two `rk3_switch` tableaus
+(Wray, Nyström). It is a directory of its own, rather than par files added
+to `KH3D-SMR`, because the suite split is per directory.
+
+Refluxing runs after every stage except the predictor of
+`Predictor_Corrector` (as upstream), and only when the mesh has more than one
+level (`fix_conserve_at_step`).
+
+## MHD units
+
+- `unit_magneticfield = sqrt(4 pi unit_pressure)` is set in `phys_units`
+  (it was left at 1 before, which scaled the Braginskii kappa_perp through
+  `htc_Cchi` by the field unit). `H_ion_fr`, `He_ion_fr`, `He_ion_fr2` in
+  `&mhd_list` enter b = 1 + H_ion_fr + He_abundance (...), the particles per
+  hydrogen nucleus in p = b n kB T; the defaults give the old
+  b = 2 + 3 He_abundance, and `He_abundance = 0, H_ion_fr = 0` gives
+  Legolas' p = n k T.
+
 ## Writing a new simulation case (`mod_usr.fpp`)
 
 Every case directory has a `mod_usr.fpp` defining `module mod_usr` with a
 `usr_init()` subroutine that:
 1. registers callbacks by assigning the procedure pointers declared in
    `src/mod_usr_methods.fpp` (e.g. `usr_init_one_grid`, `usr_special_bc`,
-   `usr_source`, `usr_process_grid`, `usr_refine_threshold`, ...),
+   `usr_process_grid`, `usr_refine_threshold`, ...),
 2. calls `phys_activate()` last.
+
+Hooks that run on the GPU are not procedure pointers but routines the core
+calls by name from `mod_usr`, compiled in by a switch in `agile.par`:
+`gravity_field` (`*_gravity`), `addsource_usr` (`*_source_usr`; the
+`usr_source` pointer is a leftover and never called), `usr_refine_grid`
+(`refine_usr`) and `usr_set_nwextra` (ffhd). They are marked with
+`${GPU_ROUTINE_SEQ()}$`, so `mod_usr.fpp` starts with
+
+```fortran
+#:include "mod_gpu_directives.fpp"
+```
+
+by bare file name: `make/30-fypp.mk` passes `-I $(agile)/src` to fypp (and
+`make/fypp-deps.py` searches the same directories for its dependency
+rules), so the include works wherever the case directory is. The tests used
+to write `"../../../src/mod_gpu_directives.fpp"`, which only worked at that
+depth inside the repository.
 
 The coordinate system comes from `geometry` in `agile.par` (see "Coordinate
 systems" above); `usr_init()` does not need to call `set_coordinate_system`
@@ -1117,6 +1246,18 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
 
 ## Bug-hunting notes
 
+- **A reduction variable must not be passed by reference into a routine
+  called from the reduced loop.** `forcedrefine_grid` combined the per-block
+  refine/coarsen flags with `reduction(.or.:refineflag) ...` on the vector
+  loop over a block's cells and passed those same flags as `intent(inout)`
+  arguments to `usr_refine_grid`. The callee then wrote to the shared
+  variable, not the lane's reduction copy, and only the first cell's value
+  survived: a `usr_refine_grid` rule was applied to one cell per block, the
+  mesh came out lopsided, and nothing complained. CPU builds were unaffected,
+  which is what made it look like a physics asymmetry. The call now takes
+  per-cell `private` flags that the loop body combines into the reduction
+  variables itself; the loop stays vectorised.
+
 - **When CPU is correct and one GPU compiler is wrong and the failure is
   deterministic, it is a miscompile — bisect the kernel's directives
   mechanically, do not reason about which construct "should" be at fault.**
@@ -1165,6 +1306,26 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   (`to_primitive`/`to_conservative` called from a `collapse`d loop in
   `specialbound_usr` returning nonsense).
 
+- **Under NVHPC the OpenMP gang/vector macros expand to `target teams loop`
+  and `loop bind(parallel)`, not `teams distribute` and `parallel do`.**
+  nvfortran compiles `teams distribute` with a nested `parallel do` in
+  generic mode: the inner region becomes an outlined device function (the
+  `NVFORTRAN-W-0155` "Passing external procedure as argument" warning), and
+  every kernel takes ~255 registers per thread and ~9 KB of shared memory,
+  however simple. On a GTX 1660 Ti, KH3D at 192^3 took 58.0 s against
+  OpenACC's 45.3 s, with the ghost-cell kernels 4x slower; with `loop` it
+  took 46.4 s. `bind(parallel)` is not optional: without it nvfortran ran its
+  own dependence analysis on the finite-volume kernel, gave up on its
+  private temporaries, and launched it with one thread per team, 25x slower,
+  without any error. A returning `W-0155` warning means the generic-mode
+  pattern is back. Other compilers keep `distribute`/`parallel do`, and
+  should until benchmarked: LLVM flang (and so AMD's `amdflang`) lowers a
+  nested `loop bind(parallel)` to a worksharing `do` with no enclosing
+  `parallel` (`GenericLoopConversion.cpp`), which leaves one thread per
+  team, and Cray CCE documents the same `bind(parallel)` -> `do` mapping
+  with no `loop`-specific optimisation. MFC's `omp_macros.fpp` likewise uses
+  `loop` for NVHPC only.
+
 ## API documentation (FORD)
 
 Source-level API docs are generated with [FORD](https://forddocs.readthedocs.io/)
@@ -1178,14 +1339,18 @@ doc/ford/build_docs.sh   # preprocesses src/*.fpp with fypp, then runs ford
 firefox doc/ford/html/index.html
 ```
 
-`doc/ford/docgen.par` picks one representative build (`PHYS='mhd'`, most
-optional features on) to preprocess with, since the `#:if PHYS == '...'`
-splicing described above means only one physics module's variant of the
-shared files can be documented per pass. `doc/ford/src/` and
-`doc/ford/html/` are generated/gitignored, not committed. The narrative
-`doc/*.md` pages are not yet wired into the FORD site (`page_dir`) — they
-still use Doxygen-specific `{#label}`/`@ref`/`[TOC]` syntax that needs
-converting first.
+`build_docs.sh` preprocesses every file once per physics module
+(`doc/ford/docgen_{mhd,hd,ffhd,srhd}.par`), since the `#:if PHYS == '...'`
+splicing described above means one pass only shows one physics module's
+variant of the shared files; `merge_physics_variants.py` keeps files that
+come out identical once and suffixes the rest (`mod_physics_hd`, ...).
+`doc/ford/src/` and `doc/ford/html/` are generated/gitignored, not committed.
+The narrative `doc/*.md` pages are part of the site (`page_dir: ..` in
+`doc/ford/project.md`), as FORD pages with a `title:` header; the time
+integrators are described in `doc/time_integration.md`. Page navigation on the site is
+a "Contents" drawer rendered from `doc/contents.md` itself
+(`doc/ford/templates/info_page.html`), so a new page must be listed there to
+be reachable.
 
 ## Code style (from `doc/code_style_guide.md`)
 

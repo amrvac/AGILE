@@ -25,6 +25,13 @@
     + 0
 #:endif
 
+  !> Number of leading variables the MUSCL reconstruction limits (1:nw_recon).
+  !> Slots nw_recon+1:nw_phys are left to fix_prim_state, which must rebuild
+  !> them before the Riemann solver reads the face state.
+  !> ffhd reconstructs everything: get_flux reads the frozen field b1..b3 at
+  !> the faces, and it sits behind the flux variables.
+  integer, parameter, public              :: nw_recon=nw_phys
+
   !> Whether an energy equation is used
   logical, public                         :: ffhd_energy = .true.
   ${GPU_DECLARE_COPYIN('ffhd_energy')}$
@@ -97,6 +104,13 @@
   logical, public                         :: ffhd_source_usr = .false.
   ${GPU_DECLARE_COPYIN('ffhd_source_usr')}$
 
+  !> Smallest gas pressure allowed in a reconstructed face state, applied by
+  !> fix_prim_state. Zero, the default, clips only negative values.
+  double precision, public                :: ffhd_small_pressure = 0.0d0
+  !> Smallest density allowed in a reconstructed face state
+  double precision, public                :: ffhd_small_density  = 0.0d0
+  ${GPU_DECLARE_COPYIN('ffhd_small_pressure,ffhd_small_density')}$
+
 #:enddef
 
 #:def read_params()
@@ -107,7 +121,8 @@
     integer                      :: n
 
     namelist /ffhd_list/ ffhd_energy, ffhd_gamma, ffhd_partial_ionization, ffhd_gravity, &
-          ffhd_radiative_cooling, ffhd_hyperbolic_thermal_conduction, ffhd_source_usr, ffhd_pdivb, He_abundance
+          ffhd_radiative_cooling, ffhd_hyperbolic_thermal_conduction, ffhd_source_usr, ffhd_pdivb, He_abundance, &
+      ffhd_small_pressure, ffhd_small_density
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -115,7 +130,13 @@
 111    close(unitpar)
     end do
 
+    if (ffhd_small_pressure < 0.0d0) call mpistop(&
+       "ffhd_small_pressure should be positive.")
+    if (ffhd_small_density < 0.0d0) call mpistop(&
+       "ffhd_small_density should be positive.")
+
     ${GPU_UPDATE_DEVICE('ffhd_energy, ffhd_gamma, ffhd_partial_ionization, ffhd_gravity, ffhd_radiative_cooling, ffhd_hyperbolic_thermal_conduction, ffhd_source_usr, ffhd_pdivb, He_abundance')}$
+    ${GPU_UPDATE_DEVICE('ffhd_small_pressure, ffhd_small_density')}$
 
 
   end subroutine read_params
@@ -502,6 +523,25 @@ pure subroutine to_conservative(u)
   u(iw_mom(1)) = u(iw_rho) * u(iw_mom(1))
   
 end subroutine to_conservative
+#:enddef
+
+#:def fix_prim_state()
+  !> Make a reconstructed primitive face state admissible before it is handed
+  !> to the Riemann solver. The MUSCL reconstruction limits every slot of the
+  !> state independently, so a face state can come out with a negative
+  !> density or pressure even where both neighbouring cells are admissible.
+  !> Floor both, at ffhd_small_density and ffhd_small_pressure in &ffhd_list.
+  !> Both default to zero, in which case the max() calls only clip values
+  !> that were already negative and leave every admissible state bit-for-bit
+  !> unchanged. Only the face states are floored, not the cell averages.
+  pure subroutine fix_prim_state(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+
+    u(iw_rho) = max(u(iw_rho), ffhd_small_density)
+    u(iw_e)   = max(u(iw_e),   ffhd_small_pressure)
+
+  end subroutine fix_prim_state
 #:enddef
 
 #:def get_flux()

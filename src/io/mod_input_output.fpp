@@ -770,9 +770,13 @@ contains
           end if
        case ('hllc')
           flux_method(level)=fs_hllc
-          if (physics_type=='mhd' .or. physics_type=='ffhd') then
+          if (physics_type=='ffhd' .or. physics_type=='srhd') then
              call mpistop(trim(flux_scheme(level))//" flux scheme is not compatible with "//trim(physics_type))
           end if
+#:if defined('MHD_ENERGY_ONLY')
+          ! only reconflux_muscl_llf_prim zeroes the non-energy fluxes
+          call mpistop(trim(flux_scheme(level))//" flux scheme is not compatible with MHD_ENERGY_ONLY")
+#:endif
        case ('tvdlf')
           flux_method(level)=fs_tvdlf
        case default
@@ -802,7 +806,6 @@ contains
     select case (time_stepper)
     case ("onestep")
        t_stepper=onestep
-       nstep=1
        if (time_integrator=='default') then
           time_integrator="Forward_Euler"
        end if
@@ -821,7 +824,6 @@ contains
        use_imex_scheme=(t_integrator==IMEX_Euler.or.t_integrator==IMEX_SP)
     case ("twostep")
        t_stepper=twostep
-       nstep=2
        if (time_integrator=='default') then
           time_integrator="Predictor_Corrector"
        endif
@@ -854,7 +856,6 @@ contains
        endif
     case ("threestep")
        t_stepper=threestep
-       nstep=3
        if (time_integrator=='default') then
           time_integrator='ssprk3'
        endif
@@ -996,7 +997,6 @@ contains
           IMEX_232.or.t_integrator==IMEX_CB3a)
     case ("fourstep")
        t_stepper=fourstep
-       nstep=4
        if (time_integrator=='default') then
           time_integrator="ssprk4"
        endif
@@ -1043,7 +1043,6 @@ contains
        endif
     case ("fivestep")
        t_stepper=fivestep
-       nstep=5
        if (time_integrator=='default') then
           time_integrator="ssprk5"
        end if
@@ -1128,10 +1127,29 @@ contains
        call mpistop("Unknown time_stepper in read_par_files")
     end select
 
-    ! Harmonize the parameters for dimensional splitting and source splitting
-    if(typedimsplit   =='default'.and.     dimsplit)   typedimsplit='xyyx'
-    if(typedimsplit   =='default'.and..not.dimsplit)   typedimsplit='unsplit'
-    dimsplit   = typedimsplit   /='unsplit'
+    ! The coefficients above are kept for every upstream scheme, but advect
+    ! implements only the explicit ones; the IMEX schemes would need a
+    ! physics module with an implicit update.  Stop here rather than at the
+    ! first time step.
+    select case (t_integrator)
+    case (Forward_Euler, Predictor_Corrector, RK2_alf, ssprk2, ssprk3, &
+          RK3_BT, ssprk4, rk4, ssprk5)
+    case default
+       call mpistop("time_integrator='"//trim(time_integrator)//&
+          "' is not implemented in AGILE")
+    end select
+    call time_levels(t_integrator, nstep, nlevel)
+
+    ! Dimensional splitting is not implemented: advect sweeps all three
+    ! directions whatever idim range it is given, so the split loop in
+    ! advance would apply the full flux divergence ndim times per step.
+    ! typedimsplit='xy'/'xyyx' used to switch it on by itself, so refuse both.
+    if (dimsplit) call mpistop("dimsplit=.true. is not implemented in AGILE: &
+       &the flux update is always unsplit, leave dimsplit=.false.")
+    if (typedimsplit /= 'default' .and. typedimsplit /= 'unsplit') &
+       call mpistop("typedimsplit='"//trim(typedimsplit)//"' would switch &
+       &on dimensional splitting, which is not implemented in AGILE")
+    typedimsplit = 'unsplit'
 
     ! initialize types of split-source addition
     select case (typesourcesplit)
@@ -1165,15 +1183,6 @@ contains
       slab_uniform=.false.
     end if
 
-    if(coordinate==spherical) then
-      if(dimsplit) then
-        if(mype==0)print *&
-           ,'Warning: spherical symmetry needs dimsplit=F, resetting'
-        dimsplit=.false.
-      end if
-    end if
-
-    if (ndim==1) dimsplit=.false.
 
     ! type limiter of prolongation
     select case(typeprolonglimit)
@@ -1398,6 +1407,18 @@ contains
       end do
     end if
 
+    ! the heat-flux vector has no boundary types of its own: at a reflecting
+    ! wall its normal component flips with the normal momentum
+    if (allocated(iw_qvec)) then
+      do idim=1,ndim
+        do iside=1,2
+          iB=2*idim-2+iside
+          if (typeboundary(iw_mom(idim),iB)==bc_asymm) &
+             typeboundary(iw_qvec(idim),iB)=bc_asymm
+        end do
+      end do
+    end if
+
     if (any(typeboundary == 0)) then
       call mpistop("Not all boundary conditions have been defined")
     end if
@@ -1492,6 +1513,10 @@ contains
         if(physics_type=='mhd' .or. physics_type=='srmhd') then
           typeboundary(iw_mag(idim),iB)=bc_asymm
           typeboundary(iw_mag(phi_),iB)=bc_asymm
+          if(allocated(iw_qvec)) then
+            typeboundary(iw_qvec(idim),iB)=bc_asymm
+            typeboundary(iw_qvec(phi_),iB)=bc_asymm
+          end if
         end if
       end do
     end do
@@ -1760,6 +1785,9 @@ contains
     end do
 
     if (mype==0) then
+       write(unitterm, '(A30,A,A,A,I0,A,I0,A)') 'time_integrator: ', ' ',&
+           trim(time_integrator), ' (', nstep, ' stages, ', nlevel,&
+           ' time levels)'
        write(unitterm, '(A30,A,A)') 'restart_from_file: ', ' ',&
            trim(restart_from_file)
        write(unitterm, '(A30,L1)') 'converting: ', convert
@@ -2483,7 +2511,11 @@ contains
               ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
                  1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
             end if
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+            ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
+#:else
             ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
+#:endif
           else
             call mpi_send_wrapper([ ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,&
                 n_values ], 2*ndim+1, MPI_INTEGER, ipe, itag, icomm, ierrmpi)
@@ -2561,7 +2593,11 @@ contains
           ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
              1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
         end if
+#:if defined('FILL_NWEXTRA_ANALYTIC')
+        ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
+#:else
         ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
+#:endif
       end do
     end if
 

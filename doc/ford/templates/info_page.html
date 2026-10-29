@@ -1,21 +1,35 @@
 <!-- -*- mode: jinja2 -*- -->
 
-{# AGILE override of FORD's stock info_page.html. Identical to upstream except
-   that the left "nav-side" table-of-contents is suppressed on the narrative
-   front page (page/index.html, where `page == pages`), which is the site's
-   landing page and reads better full-width. Every other narrative page keeps
-   the sidebar. #}
+{# AGILE override of FORD's stock info_page.html. Instead of FORD's flat,
+   always-visible list of every narrative page (which ran over the text on
+   phones and grows unordered with every new page), each page gets:
+
+   - a "Contents" button opening a Bootstrap offcanvas drawer whose body is
+     doc/contents.md itself, so the curated, grouped index there is the one
+     place that decides the page navigation -- a new page must be listed in
+     doc/contents.md to be reachable from it. The script at the bottom folds
+     each of its h1 groups into a <details>, opening the one holding the
+     current page;
+   - an "On this page" list of the page's own h1/h2 headings, in a sticky
+     right-hand column on wide screens and at the bottom of the drawer
+     otherwise.
+
+   The text column takes the full width below the xl breakpoint. Without
+   JavaScript the drawer still shows contents.md, unfolded. #}
 
 {% extends "base.html" %}
 {% block title %}{{ page.title }} &ndash; {{ project }}{% endblock title %}
 {% block body %}
-  {% set show_sidebar = pages.subpages and pages != page %}
   <div class="row">
     <h1>{{ page.title }}</h1>
     <div class="container p-2 mb-4 bg-light border rounded-3">
-      <div class="row align-items-center justify-content-between">
-        <div class="col">
-          <ul class="list-inline" style="margin-bottom:0px; display:inline">
+      <div class="row align-items-center justify-content-between gy-2">
+        <div class="col-12 col-md-auto">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="offcanvas"
+                  data-bs-target="#doc-nav" aria-controls="doc-nav">
+            <i class="fa-solid fa-bars"></i> Contents
+          </button>
+          <ul class="list-inline ms-2" style="margin-bottom:0px; display:inline">
             {% if page.author %}
               <li class="list-inline-item" id="author"><i class="fa fa-pencil"></i> {{ page.author }}</li>
             {% endif %}
@@ -24,9 +38,9 @@
             {% endif %}
           </ul>
         </div>
-        <div class="col">
+        <div class="col-12 col-md">
           <nav aria-label="breadcrumb">
-            <ol class="breadcrumb justify-content-end mb-0">
+            <ol class="breadcrumb justify-content-md-end mb-0">
               {% for item in page.hierarchy %}
                 <li class="breadcrumb-item">{{ item | relurl(page_url) }}</li>
               {% endfor %}
@@ -38,32 +52,97 @@
     </div>
   </div>
 
-  <div class="row">
-    {% if show_sidebar %}
-      <div class="col-3">
-        <div class="card card-body bg-light" id="sidebar-toc">
-          <ul class="nav flex-column align-items">
-            <li class="nav-item">
-              <a class="nav-link{% if pages==page %} active disabled{% endif %}" href="{{ pages.url | relurl(page_url) }}">{{ pages.title }}</a>
-            </li>
-          </ul>
-          <hr>
-          <nav class="nav nav-pills flex-column">
-            {% for subpage in pages.subpages recursive %}
-              <a class="nav-link{% if subpage==page %} active disabled{% endif %}" href="{{ subpage.url | relurl(page_url) }}">{{ subpage.title }}</a>
-              {% if subpage.subpages %}
-                <nav class="nav nav-pills flex-column">
-                  {{ loop(subpage.subpages) }}
-                </nav>
-              {% endif %}
-            {% endfor %}
-          </nav>
-        </div>
+  <div class="offcanvas offcanvas-start" tabindex="-1" id="doc-nav" aria-labelledby="doc-nav-label">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title" id="doc-nav-label">
+        <a href="{{ pages.url | relurl(page_url) }}">{{ pages.title }}</a>
+      </h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body">
+      <div class="doc-nav-groups">
+        {% for subpage in pages.subpages %}
+          {% if subpage.filename.name == 'contents' %}{{ subpage.contents }}{% endif %}
+        {% endfor %}
       </div>
-    {% endif %}
-
-    <div class="{{ 'col-9' if show_sidebar else 'col-12' }}" id='text'>
-      {{ page.contents }}
+      <div class="doc-onpage d-xl-none" hidden>
+        <hr>
+        <h6>On this page</h6>
+        <ul class="doc-onpage-list"></ul>
+      </div>
     </div>
   </div>
+
+  <div class="row">
+    <div class="col-12 col-xl-9" id='text'>
+      {{ page.contents }}
+    </div>
+    <div class="col-xl-3 d-none d-xl-block">
+      <nav class="doc-onpage doc-onpage-side" hidden>
+        <h6>On this page</h6>
+        <ul class="doc-onpage-list"></ul>
+      </nav>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var here = location.pathname.split("/").pop() || "index.html";
+
+      // Fold each h1 group of contents.md into a <details>, collapsed unless
+      // it holds the current page.
+      var groups = document.querySelector("#doc-nav .doc-nav-groups");
+      Array.prototype.slice.call(groups.querySelectorAll("h1")).forEach(function (h) {
+        var details = document.createElement("details");
+        var summary = document.createElement("summary");
+        summary.textContent = h.textContent;
+        details.appendChild(summary);
+        h.parentNode.insertBefore(details, h);
+        var next = h.nextElementSibling;
+        h.remove();
+        while (next && next.tagName !== "H1") {
+          var after = next.nextElementSibling;
+          details.appendChild(next);
+          next = after;
+        }
+      });
+      groups.querySelectorAll("a[href]").forEach(function (a) {
+        if (a.getAttribute("href").split("#")[0] === here) {
+          a.classList.add("active");
+          a.setAttribute("aria-current", "page");
+          var d = a.closest("details");
+          if (d) d.open = true;
+        }
+      });
+
+      // "On this page": the page's own h1/h2 headings, when there are enough
+      // of them to be worth listing.
+      var heads = document.querySelectorAll("#text h1, #text h2");
+      if (heads.length < 3) return;
+      heads.forEach(function (h, i) {
+        if (!h.id) h.id = "sec-" + i;   // headings written without {: #id }
+      });
+      document.querySelectorAll(".doc-onpage").forEach(function (box) {
+        var list = box.querySelector(".doc-onpage-list");
+        heads.forEach(function (h) {
+          var li = document.createElement("li");
+          if (h.tagName === "H2") li.className = "sub";
+          var a = document.createElement("a");
+          a.href = "#" + h.id;
+          a.textContent = h.textContent;
+          li.appendChild(a);
+          list.appendChild(li);
+        });
+        box.hidden = false;
+      });
+      // A jump from inside the drawer should also close it. (Not via
+      // data-bs-dismiss, which would cancel the link's navigation.)
+      var drawer = document.getElementById("doc-nav");
+      drawer.querySelectorAll(".doc-onpage a").forEach(function (a) {
+        a.addEventListener("click", function () {
+          bootstrap.Offcanvas.getOrCreateInstance(drawer).hide();
+        });
+      });
+    })();
+  </script>
 {% endblock body %}

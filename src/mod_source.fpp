@@ -74,7 +74,7 @@ contains
 
       select case (sourcesplit)
       case (sourcesplit_sfs)
-         ${GPU_PARALLEL_LOOP_GANG("private(n, dr)")}$ ${GPU_DEFAULT_PRESENT()}$
+         ${GPU_PARALLEL_LOOP_GANG("private(n, dr)")}$
          do iigrid=1,igridstail_active
             n = igrids_active(iigrid)            
             dr  = rnode(rpdx1_:rnodehi, n)

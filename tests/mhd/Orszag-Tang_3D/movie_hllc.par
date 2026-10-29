@@ -1,0 +1,7 @@
+ &filelist
+   base_filename    = 'hllc'
+ /
+
+ &methodlist
+   flux_scheme     = 20*'hllc'
+ /

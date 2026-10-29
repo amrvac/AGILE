@@ -2,7 +2,7 @@ title: Auxiliary variables (nw...)
 
 # List of auxiliary variables {: #list }
 This document describes the differences and the intended use of the **nwaux,
-nwextra** parameters. These global parameters are defined in the `mod_variables.t`
+nwextra** parameters. These global parameters are defined in the `src/mod_variables.fpp`
 
 ## nw {: #nw }
 This global parameter sets the total number of variables, determining the
@@ -49,7 +49,7 @@ refinement or coarsening. The current (Newtonian) physics modules of AMRVAC have
 ## nwextra {: #nwextra }
 An extra set of _nwextra_ variables can be defined in addition to the
 presently available ones in physics modules by using the function 
-var_set_extravar (from mod_variables.t) in usr_init of mod_usr.t. Like 
+var_set_extravar (from src/mod_variables.fpp) in usr_init of mod_usr.fpp. Like 
 auxiliaries, they are not advanced (no fluxes need to be
 defined for them in _get_flux_), there are no boundary conditions
 imposed on them, and they should not be used for basing
@@ -65,10 +65,10 @@ They work to facilitate the understanding of simulation processes.
 Only for post-processing purposes on saved snapshots from the code, one may
 want to compute additional auxiliary variables for visualization. Hence, only
 at the [convert-stage](convert.html) (from .dat data file to any of the available 
-formats in the _convert_ subroutine in src/amrvacio/convert.t file) do we 
+formats in the _generate_plotfile_ subroutine in src/io/mod_convert_files.fpp) do we 
 need to enlarge the data size from _nw_ to _nw+nwauxio_, and their calculation is to be done in
 the pointed _usr_aux_output_ subroutine, for which the default interface is given
-in the mod_usr_methods.t module. Correspondingly, the names have to be
+in the src/mod_usr_methods.fpp module. Correspondingly, the names have to be
 given in the pointed _usr_add_aux_names_ subroutine strings.
 This means that normally _nwauxio=0_, but it can be at convert stage set to 
 a nonzero value in the _filelist_ part of the par- file.

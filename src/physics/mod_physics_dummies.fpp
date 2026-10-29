@@ -26,8 +26,8 @@ end subroutine estimate_speeds_minmax
 #:enddef
 
 
-#:def estimate_speeds_toro_pvrs()
-subroutine estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
+#:def estimate_speeds_hllc()
+subroutine estimate_speeds_hllc(uL, uR, xC, flux_dim, sL, sR)
 #ifndef _CRAYFTN
   use mod_comm_lib, only: mpistop
 #endif
@@ -38,12 +38,35 @@ subroutine estimate_speeds_toro_pvrs(uL, uR, xC, flux_dim, sL, sR)
   real(dp), intent(out) :: sL, sR
 
 #ifndef _CRAYFTN
-  call mpistop("estimate_speeds_toro_pvrs not implemented for this physics module")
+  call mpistop("estimate_speeds_hllc not implemented for this physics module")
 #endif
   sL = -1._dp
   sR = -1._dp
 
-end subroutine estimate_speeds_toro_pvrs
+end subroutine estimate_speeds_hllc
+#:enddef
+
+
+#:def hllc_flux()
+subroutine hllc_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
+#ifndef _CRAYFTN
+  use mod_comm_lib, only: mpistop
+#endif
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)    :: flux_l(nw_flux), flux_r(nw_flux)
+  real(dp), intent(in)    :: sL, sR
+  integer,  intent(in)    :: flux_dim
+  real(dp), intent(out)   :: F(nw_flux)
+  logical,  intent(out)   :: degenerate
+
+#ifndef _CRAYFTN
+  call mpistop("hllc_flux not implemented for this physics module")
+#endif
+  F = 0._dp
+  degenerate = .true.
+
+end subroutine hllc_flux
 #:enddef
 
 

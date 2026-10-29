@@ -30,7 +30,7 @@ contains
     double precision :: dtmin_mype, factor, dx1,dx2,dx3, dtmax
 
     double precision :: dxinv(1:ndim), cmaxtot, cmax, u(1:nw_phys), cmax_mype
-    double precision :: xloc(1:ndim), qdtnew
+    double precision :: xloc(1:ndim), qdtnew, dxloc(1:ndim)
 
     if (dtpar<=zero) then
        dtmin_mype=bigdouble
@@ -43,7 +43,7 @@ contains
 
           dxinv(1)=one/dx1;dxinv(2)=one/dx2;dxinv(3)=one/dx3;
 
-          ${GPU_LOOP_VECTOR("collapse(ndim) reduction(min:dtmin_mype) private(u, xloc, cmaxtot, cmax, idims, qdtnew" + (", dxinv" if GEOM != 'Cartesian' else "") + ")")}$
+          ${GPU_LOOP_VECTOR("collapse(ndim) reduction(min:dtmin_mype) private(u, xloc, cmaxtot, cmax, idims, qdtnew, dxloc" + (", dxinv" if GEOM != 'Cartesian' else "") + ")")}$
           do ix3=ixMlo3,ixMhi3 
              do ix2=ixMlo2,ixMhi2 
                 do ix1=ixMlo1,ixMhi1 
@@ -68,7 +68,8 @@ contains
 #:if defined('SOURCE_DT')
                    u = bg(1)%w(ix1,ix2,ix3,1:nw_phys,igrid)
                    xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, igrid)
-                   call phys_get_dt(u, xloc, one/dxinv(1:ndim), qdtnew)
+                   dxloc(1:ndim) = one/dxinv(1:ndim)
+                   call phys_get_dt(u, xloc, dxloc, qdtnew)
                    dtmin_mype = min( dtmin_mype, qdtnew )
 #:endif
 

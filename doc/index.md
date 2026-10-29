@@ -22,19 +22,13 @@ numerical schemes. The emphasis is on (near) conservation laws and on
 shock-dominated problems in particular. A number of *physics modules* are
 included; the hydrodynamics and the magnetohydrodynamics module are most
 frequently used. Users can add their own physics module or modify existing ones.
-At present, the framework supports only 3D simulations, in Cartesian,
+At present, the framework supports full AMR 3D simulations, in Cartesian,
 spherical, cylindrical, or logarithmic-radius spherical/cylindrical grid
 geometries (the curvilinear ones including the polar axis) -- see [Coordinate
 systems](coordinate_systems.html).  
 
 AGILE is written in Fortran 2003, uses OpenACC or OpenMP target offloading (selectable at build time) for GPU offloading, and MPI for parallelization.
 
-The philosophy behind AGILE is to use a single versatile code with options
-and switches for various problems. The advantage of such a general approach is
-easier maintenance, the compatibility of different parts, and the automatic
-extension of new features to existing applications. AGILE is not a
-fool-proof black-box design. A user needs to write subroutines for initial
-conditions, and for source terms or special boundary conditions when needed.
 AGILE's initial condition and IO subroutines are largely compatible with MPI-AMRVAC, 
 enabling a quick transition of existing setups.  
 
@@ -64,6 +58,13 @@ Initial development was supported by the Netherlands eScience Center under grant
 Version 1.0 can be referenced via 
 [ArXiv id 2607.19277](https://arxiv.org/abs/2607.19277)
 (submitted to RASTI, in review) 
+
+**Building AGILE was a lot of work and you might still encounter
+issues. Therefore, when you use AGILE for the first time for scientific
+publications, we request that you involve an original co-author in your
+research (defined via the AGILE 1.0 author list).**
+
+And as always: have fun using AGILE and do great science!
 
 We acknowledge significant prior work on the upstream MPI-AMRVAC/VAC/BHAC codes ([bhac.science](http://bhac.science), [amrvac.org](http://amrvac.org)) with past contributors listed under <https://amrvac.org/md_doc_2acknowledgments.html>.  
 

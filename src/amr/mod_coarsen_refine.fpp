@@ -656,7 +656,7 @@ contains
     ! Pack every outgoing chunk in one kernel.  bgc(1)%w carries the grid index
     ! last, so the block can be selected by a device-side index.
     if (n_cf_snd > 0) then
-      ${GPU_PARALLEL_LOOP_GANG("private(igrid,ibuf)")}$ ${GPU_DEFAULT_PRESENT()}$
+      ${GPU_PARALLEL_LOOP_GANG("private(igrid,ibuf)")}$
       do k = 1, n_cf_snd
          igrid = cf_snd_igrid(k)
          ibuf  = cf_snd_ibuf(k)
@@ -711,7 +711,7 @@ contains
 
     ! Apply every incoming chunk in one kernel.
     if (n_cf_rcv > 0) then
-      ${GPU_PARALLEL_LOOP_GANG("private(igrid,ibuf,ic1,ic2,ic3)")}$ ${GPU_DEFAULT_PRESENT()}$
+      ${GPU_PARALLEL_LOOP_GANG("private(igrid,ibuf,ic1,ic2,ic3)")}$
       do k = 1, n_cf_rcv
          igrid = cf_rcv_igrid(k)
          ibuf  = cf_rcv_ibuf(k)

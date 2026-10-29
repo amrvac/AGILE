@@ -76,8 +76,9 @@ contains
     integer, intent(in) :: igrid
   
     integer :: level, ig1,ig2,ig3, ign1,ign2,ign3, ixCoGmin1,ixCoGmin2,&
-       ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3, i1,i2,i3
+       ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3, i1,i2,i3, k
     logical :: first_alloc
+    type(state), dimension(:), pointer, contiguous :: psk
 
     ixCoGmin1=1;ixCoGmin2=1;ixCoGmin3=1;
     ixCoGmax1=(ixGhi1-2*nghostcells)/2+2*nghostcells
@@ -97,28 +98,12 @@ contains
        call alloc_state_coarse(igrid, psc(igrid), ixCoGmin1,ixCoGmin2,&
           ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3)
        if(.not.convert) then
-        ! allocate arrays for temp solution 1
-        call alloc_state(igrid, ps1(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,&
-           ixGhi3, .false.)
-
-        ! allocate temporary solution space
-        select case (t_integrator)
-        case(ssprk3,ssprk4,IMEX_Midpoint,IMEX_Trapezoidal,IMEX_222)
-          call alloc_state(igrid, ps2(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
+        ! point the views of the integrator's other time levels at bg
+        do k = 2, nlevel
+          psk => ps_level(k)
+          call alloc_state(igrid, psk(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
              ixGhi2,ixGhi3, .false.)
-        case(RK3_BT,rk4,ssprk5,IMEX_CB3a)
-          call alloc_state(igrid, ps2(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
-             ixGhi2,ixGhi3, .false.)
-          call alloc_state(igrid, ps3(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
-             ixGhi2,ixGhi3, .false.)
-        case(IMEX_ARS3,IMEX_232)
-          call alloc_state(igrid, ps2(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
-             ixGhi2,ixGhi3, .false.)
-          call alloc_state(igrid, ps3(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
-             ixGhi2,ixGhi3, .false.)
-          call alloc_state(igrid, ps4(igrid), ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
-             ixGhi2,ixGhi3, .false.)
-        end select
+        end do
       end if
   
     end if
@@ -131,18 +116,10 @@ contains
     psc(igrid)%w(:,:,:,1)=1.d0
     if(phys_trac) ps(igrid)%special_values=0.d0
     if(.not.convert) then
-      ps1(igrid)%level=level
-      select case (t_integrator)
-      case(ssprk3,ssprk4,IMEX_Midpoint,IMEX_Trapezoidal,IMEX_222)
-        ps2(igrid)%level=level
-      case(RK3_BT,rk4,ssprk5,IMEX_CB3a)
-        ps2(igrid)%level=level
-        ps3(igrid)%level=level
-      case(IMEX_ARS3,IMEX_232)
-        ps2(igrid)%level=level
-        ps3(igrid)%level=level
-        ps4(igrid)%level=level
-      end select
+      do k = 2, nlevel
+        psk => ps_level(k)
+        psk(igrid)%level=level
+      end do
     end if
 
     ! block pointer to current block
@@ -282,23 +259,23 @@ contains
 #if defined(_OPENACC) || defined(_OPENMP)
    ! This differentiation is necessary for OpenMP, because it does not have the
    ! equivalent of acc_attach as used in copy_or_update_pointer
+   ! Every time level's view goes to the device, not only the ones nlevel
+   ! uses: getbc's kernels read psb(igrid) there.
    if (first_alloc) then
-      ${GPU_UPDATE_DEVICE('ps(igrid), ps1(igrid), ps2(igrid), psc(igrid)')}$
+      ${GPU_UPDATE_DEVICE('ps(igrid), ps1(igrid), ps2(igrid), ps3(igrid), ps4(igrid), psc(igrid)')}$
    else
       ${GPU_UPDATE_DEVICE('ps(igrid)%level, psc(igrid)%level')}$
    end if
 
-   call copy_or_update(ps(igrid)%igrid)
-   call copy_or_update(ps1(igrid)%igrid) 
-   call copy_or_update(ps2(igrid)%igrid)
-
-   call copy_or_update_pointer(ps(igrid)%w, no_update=.true.)
-   call copy_or_update_pointer(ps1(igrid)%w, no_update=.true.)
-   call copy_or_update_pointer(ps2(igrid)%w, no_update=.true.)
-
-   call copy_or_update_pointer(ps(igrid)%is_physical_boundary)
-   call copy_or_update_pointer(ps1(igrid)%is_physical_boundary, no_update=.true.)
-   call copy_or_update_pointer(ps2(igrid)%is_physical_boundary, no_update=.true.)
+   ! Only the time levels alloc_state set up (1..nlevel, or just ps when
+   ! converting) have w and is_physical_boundary associated.
+   do k = 1, merge(1, nlevel, convert)
+      psk => ps_level(k)
+      call copy_or_update(psk(igrid)%igrid)
+      call copy_or_update_pointer(psk(igrid)%w, no_update=.true.)
+      call copy_or_update_pointer(psk(igrid)%is_physical_boundary, &
+         no_update=(k > 1))
+   end do
    call copy_or_update_pointer(psc(igrid)%w, no_update=.true.)
    ! The metrics are already resident on the device for every block (bgeo and
    ! bgeoc are allocated once in initialize_vars) and were filled above, on
@@ -485,7 +462,7 @@ contains
     ! mesh, and from its upper corner in the outer ghost layer, so that the
     ! overlapping ghost cells of two neighbouring blocks come out identical to
     ! the last bit.
-    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$
     do ix3=ixGlo3,ixGhi3
        do ix2=ixGlo2,ixGhi2
           do ix1=ixGlo1,ixGhi1
@@ -570,7 +547,7 @@ contains
     ! sits dtheta/6 further out than the midpoint and sin(theta_bar) runs about
     ! a third above sin(theta_c) in the first cell - which is exactly the cell
     ! whose vanishing ds(3) sets dt for the whole run.
-    ${GPU_PARALLEL_LOOP("collapse(3) private(e1,e2,fL,fR,rc,ds1,rbar)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP("collapse(3) private(e1,e2,fL,fR,rc,ds1,rbar)")}$
     do ix3=ixGextmin3,ixGextmax3
        do ix2=ixGextmin2,ixGextmax2
           do ix1=ixGextmin1,ixGextmax1
@@ -604,7 +581,7 @@ contains
     ! neighbouring coarse block whose ghost cells have to match - and its
     ! spacing is doubled, so one loop covers positions, volumes and areas.
     ! As above, only the positions exist in a Cartesian build.
-    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP("collapse(3) private(p1,p2,p3" + (", fL,fR,rc,ds1,rbar" if GEOM != 'Cartesian' else "") + (", uu,tbar" if GEOM == 'spherical' else "") + ")")}$
     do ix3=1,ixCoGmax3
        do ix2=1,ixCoGmax2
           do ix1=1,ixCoGmax1
@@ -711,7 +688,7 @@ contains
     ! corner across OpenACC compilers. Only wx(1:nwextra) is passed and used.
     double precision :: xloc(1:ndim), wx(max_nw)
 
-    ${GPU_PARALLEL_LOOP("collapse(3) private(xloc, wx, iwx)")}$ ${GPU_DEFAULT_PRESENT()}$
+    ${GPU_PARALLEL_LOOP("collapse(3) private(xloc, wx, iwx)")}$
     do ix3 = ixGlo3, ixGhi3
        do ix2 = ixGlo2, ixGhi2
           do ix1 = ixGlo1, ixGhi1
@@ -739,6 +716,8 @@ contains
        ixGsmax3
   
     !allocate(s%w(ixG^S,1:nw))
+    if (s%istep > size(bg)) call mpistop("alloc_state: time level beyond &
+       &the nlevel that bg was allocated with (see time_levels)")
     s%w => bg(s%istep)%w(:,:,:,:,igrid)
     s%igrid=igrid
     s%w=0.d0
@@ -941,9 +920,12 @@ contains
   
   subroutine dealloc_node(igrid)
     use mod_global_parameters
-  
+
     integer, intent(in) :: igrid
-  
+
+    integer :: k
+    type(state), dimension(:), pointer, contiguous :: psk
+
     if (igrid==0) then
        call mpistop("trying to delete a non-existing grid in dealloc_node")
     end if
@@ -951,19 +933,10 @@ contains
     call dealloc_state(igrid, ps(igrid),.true.)
     call dealloc_state_coarse(igrid, psc(igrid))
     if(.not.convert) then
-      call dealloc_state(igrid, ps1(igrid),.false.)
-      ! deallocate temporary solution space
-      select case (t_integrator)
-      case(ssprk3,ssprk4,IMEX_Midpoint,IMEX_Trapezoidal,IMEX_222)
-        call dealloc_state(igrid, ps2(igrid),.false.)
-      case(RK3_BT,rk4,ssprk5,IMEX_CB3a)
-        call dealloc_state(igrid, ps2(igrid),.false.)
-        call dealloc_state(igrid, ps3(igrid),.false.)
-      case(IMEX_ARS3,IMEX_232)
-        call dealloc_state(igrid, ps2(igrid),.false.)
-        call dealloc_state(igrid, ps3(igrid),.false.)
-        call dealloc_state(igrid, ps4(igrid),.false.)
-      end select
+      do k = 2, nlevel
+        psk => ps_level(k)
+        call dealloc_state(igrid, psk(igrid),.false.)
+      end do
     end if
   
   end subroutine dealloc_node

@@ -6,6 +6,10 @@
 !> using adaptive mesh refinement on (multiple) GPUs
 program agile
   use mpi
+#ifdef _OPENMP
+  ! must be here instead of in subroutine to avoid ICE with NVHPC 26.9
+  use omp_lib
+#endif
   integer        :: ierror
   ! Initialize MPI
   call MPI_INIT(ierror)
@@ -47,7 +51,6 @@ contains
 #ifdef _OPENMP
   subroutine set_openmp_device
     use mpi
-    use omp_lib
     integer :: local_rank, comm_shared, my_device, num_devices, ierror
 
     call MPI_COMM_SPLIT_TYPE(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, comm_shared, ierror)

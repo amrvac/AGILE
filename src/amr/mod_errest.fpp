@@ -142,6 +142,7 @@ contains
     use mod_usr, only: usr_refine_grid
     #:endif
     use mod_forest, only: coarsen, refine
+    use mod_physics_vars, only: nw_phys
     use mod_global_parameters
 
     integer :: igrid, iigrid
@@ -149,6 +150,8 @@ contains
     logical :: refineflag, coarsenflag, norefineflag, nocoarsenflag
     double precision :: qt
     integer :: ix1, ix2, ix3
+    logical :: rf, cf, nrf, ncf
+    double precision :: wloc(1:nw_phys), xloc(1:ndim)
 
     if (time_advance) then
        qt=global_time+dt
@@ -167,13 +170,25 @@ contains
        nocoarsenflag = .false.
 
 #:if defined('REFINE_USR')
-       ${GPU_LOOP_VECTOR("collapse(3) reduction(.or.:refineflag) reduction(.and.:coarsenflag) reduction(.and.:norefineflag) reduction(.or.:nocoarsenflag)")}$
+       ! the user rule sets per-cell flags
+       ${GPU_LOOP_VECTOR("collapse(3) private(rf, cf, nrf, ncf, wloc, xloc) reduction(.or.:refineflag) reduction(.and.:coarsenflag) reduction(.and.:norefineflag) reduction(.or.:nocoarsenflag)")}$
        do ix3 = ixMlo3, ixMhi3
           do ix2 = ixMlo2, ixMhi2
              do ix1 = ixMlo1, ixMhi1
-                call usr_refine_grid(level,qt, &
-                     bg(1)%w(ix1, ix2, ix3, :, igrid), bgeo%x(ix1, ix2, ix3, :, igrid), &
-                     refineflag, coarsenflag, norefineflag, nocoarsenflag)
+                rf = .false.
+                cf = .true.
+                nrf = .true.
+                ncf = .false.
+                ! Copy into fixed-size private arrays: passing the strided
+                ! sections directly makes the compiler malloc a temporary on
+                ! the device heap for every cell.
+                wloc = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
+                xloc = bgeo%x(ix1, ix2, ix3, 1:ndim, igrid)
+                call usr_refine_grid(level, qt, wloc, xloc, rf, cf, nrf, ncf)
+                refineflag = refineflag .or. rf
+                coarsenflag = coarsenflag .and. cf
+                norefineflag = norefineflag .and. nrf
+                nocoarsenflag = nocoarsenflag .or. ncf
              end do
           end do
        end do

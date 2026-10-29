@@ -7,39 +7,72 @@
 #
 # 3. You can hide the Entering/leaving directory messages with: -s
 
-HD_DIRS := hd/KH3D hd/RT3D hd/KH3D-SMR hd/KH3D_tracer hd/sphere_advection hd/TRML hd/cloud_crushing \
-           hd/spherical hd/cylindrical \
-           hd/spherical_pole hd/cylindrical_pole \
-           hd/log_spherical hd/log_cylindrical hd/log_spherical_pole \
-           hd/log_cylindrical_pole
-MHD_DIRS := mhd/blast_wave_Cartesian_3D mhd/Orszag-Tang_3D \
-            mhd/spherical mhd/cylindrical \
-            mhd/spherical_pole mhd/cylindrical_pole \
-            mhd/log_spherical mhd/log_cylindrical
-FFHD_DIRS := ffhd/TI3D ffhd/spherical ffhd/cylindrical \
-             ffhd/spherical_pole ffhd/cylindrical_pole \
-             ffhd/log_spherical ffhd/log_cylindrical
-SRHD_DIRS := srhd/shockTube srhd/spherical srhd/cylindrical \
-             srhd/spherical_pole srhd/cylindrical_pole \
-             srhd/log_spherical srhd/log_cylindrical
-SRMHD_DIRS := srmhd/shock_tube srmhd/spherical srmhd/cylindrical \
-              srmhd/spherical_pole srmhd/cylindrical_pole \
-              srmhd/log_spherical srmhd/log_cylindrical
+# 4. Each physics module's directories are split into a basic suite, run by
+# default and on every push/PR in CI, and an extended suite. Select with
+# SUITE=basic (default), SUITE=extended or SUITE=all, e.g.
+#    make SUITE=all -j4 hd
+# Individual directories (make hd/spherical) run regardless of SUITE.
+# make list prints the directories the current SUITE selects.
+#
+# A directory is one build, and builds dominate the cost, so the split is per
+# directory. The basic suite keeps one Cartesian case per physics plus the
+# curvilinear cases whose checks nothing else provides.
+
+SUITE ?= basic
+
+HD_BASIC := hd/KH3D-SMR hd/spherical hd/cylindrical_pole hd/log_spherical \
+            hd/log_cylindrical_pole
+HD_EXTENDED := hd/KH3D hd/KH3D-SMR-integrators hd/RT3D hd/KH3D_tracer \
+               hd/sphere_advection hd/TRML hd/cloud_crushing hd/cylindrical \
+               hd/spherical_pole hd/log_cylindrical hd/log_spherical_pole
+MHD_BASIC := mhd/Orszag-Tang_3D mhd/cylindrical_pole
+MHD_EXTENDED := mhd/blast_wave_Cartesian_3D mhd/BrioWu mhd/spherical mhd/cylindrical \
+                mhd/spherical_pole mhd/log_spherical mhd/log_cylindrical
+FFHD_BASIC := ffhd/TI3D ffhd/spherical_pole
+FFHD_EXTENDED := ffhd/spherical ffhd/cylindrical ffhd/cylindrical_pole \
+                 ffhd/log_spherical ffhd/log_cylindrical
+SRHD_BASIC := srhd/shockTube srhd/cylindrical
+SRHD_EXTENDED := srhd/jet_3D srhd/spherical srhd/spherical_pole \
+                 srhd/cylindrical_pole srhd/log_spherical srhd/log_cylindrical
+
+HD_DIRS := $(HD_BASIC) $(HD_EXTENDED)
+MHD_DIRS := $(MHD_BASIC) $(MHD_EXTENDED)
+FFHD_DIRS := $(FFHD_BASIC) $(FFHD_EXTENDED)
+SRHD_DIRS := $(SRHD_BASIC) $(SRHD_EXTENDED)
 
 
 TEST_DIRS := $(HD_DIRS) $(MHD_DIRS) $(FFHD_DIRS) $(SRHD_DIRS) $(SRMHD_DIRS)
 
+# $(call suite,BASIC,EXTENDED) gives the directories selected by SUITE
+ifeq ($(SUITE),basic)
+suite = $(1)
+else ifeq ($(SUITE),extended)
+suite = $(2)
+else ifeq ($(SUITE),all)
+suite = $(1) $(2)
+else
+$(error SUITE must be basic, extended or all, not '$(SUITE)')
+endif
+
+HD_SEL := $(call suite,$(HD_BASIC),$(HD_EXTENDED))
+MHD_SEL := $(call suite,$(MHD_BASIC),$(MHD_EXTENDED))
+FFHD_SEL := $(call suite,$(FFHD_BASIC),$(FFHD_EXTENDED))
+SRHD_SEL := $(call suite,$(SRHD_BASIC),$(SRHD_EXTENDED))
+
 # Directories with altered names (useful for cleaning)
 CLEAN_TEST := $(TEST_DIRS:%=clean-%)
 
-.PHONY: $(TEST_DIRS) $(CLEAN_TEST)
+.PHONY: all hd mhd ffhd srhd list clean $(TEST_DIRS) $(CLEAN_TEST)
 
-all: hd mhd ffhd srhd srmhd
-hd: $(HD_DIRS)
-mhd: $(MHD_DIRS)
-ffhd: $(FFHD_DIRS)
-srhd: $(SRHD_DIRS)
-srmhd: $(SRMHD_DIRS)
+all: hd mhd ffhd srhd
+hd: $(HD_SEL)
+mhd: $(MHD_SEL)
+ffhd: $(FFHD_SEL)
+srhd: $(SRHD_SEL)
+
+list:
+	@echo "SUITE=$(SUITE)"
+	@for d in $(HD_SEL) $(MHD_SEL) $(FFHD_SEL) $(SRHD_SEL); do echo "  $$d"; done
 
 $(TEST_DIRS):
 	@$(MAKE) -C $@ -f test.make

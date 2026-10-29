@@ -32,3 +32,6 @@ config.mk
 .idea/
 .*.swp
 *.npy
+
+# output of tests/mhd/Orszag-Tang_3D/movie*.par and movie.py
+tests/mhd/Orszag-Tang_3D/movie/

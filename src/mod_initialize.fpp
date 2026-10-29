@@ -82,9 +82,10 @@ contains
     allocate(node(nodehi,max_blocks),node_sub(nodehi,max_blocks),&
        phyboundblock(max_blocks))
 
-    allocate( bg(1:nstep) )
+    ! one level per register of the time integrator, not per sub-step
+    allocate( bg(1:nlevel) )
     ${GPU_ENTER_DATA_COPYIN('bg')}$
-    do istep = 1 , nstep
+    do istep = 1 , nlevel
        bg(istep)%istep = istep
        allocate( bg(istep)%w(ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3, 1:nw,&
             1:max_blocks) )
