@@ -4,11 +4,18 @@
 
 #:if PHYS == 'srmhd'
 
+#:if defined('N_TRACER')
+#:set N_TRACER_ = N_TRACER
+#:else
+#:set N_TRACER_ = 0
+#:endif
+
+
 #:def phys_vars()
 
   integer, parameter :: dp = kind(0.0d0)
-  integer, parameter, public              :: nw_phys=2+2*ndim+3
-  integer, parameter, public              :: nw_flux=2+2*ndim+1
+  integer, parameter, public              :: nw_phys=2+2*ndim+3 +${N_TRACER_}$
+  integer, parameter, public              :: nw_flux=2+2*ndim+1 +${N_TRACER_}$
   
   !> Whether synge eos is used
   logical, public                         :: srmhd_eos = .false.
@@ -22,6 +29,12 @@
   !> Indices of the momentum density
   integer, allocatable, public            :: mom(:)
   ${GPU_DECLARE_CREATE('mom')}$
+
+  #:if defined('N_TRACER')
+  !> Indices of the tracers
+  integer, public                :: tracer(${N_TRACER_}$)
+  ${GPU_DECLARE_CREATE('tracer')}$
+  #:endif 
 
   !> Indices of the magnetic field
   integer, allocatable, public            :: mag(:)
@@ -214,6 +227,13 @@
     any_source_split = .true.
     ${GPU_UPDATE_DEVICE('any_source_split')}$
 
+     ! Register tracer fields
+    #:if defined('N_TRACER')
+    #:for i in range(1, N_TRACER_+1)
+        tracer(${i}$) = var_set_fluxvar("trc", "trp", ${i}$, need_bc=.false.)
+    #:endfor
+    ${GPU_UPDATE_DEVICE('tracer')}$
+    #:endif
 
 
     ! Set index for auxiliary variables
@@ -506,6 +526,11 @@
       !f_i[psi]=Ch^2*b_{i} Eq. 24e and Eq. 38c Dedner et al 2002 JCP, 175, 645
     flux(psi_)=cmax_global**2*u(iw_mag(flux_dim))
 
+    #:if defined('N_TRACER')
+    #:for i in range(1, N_TRACER_+1)
+      flux(tracer(${i}$)) = u(tracer(${i}$)) * vel(flux_dim)
+    #:endfor
+    #:endif
 
     end subroutine get_flux
 
