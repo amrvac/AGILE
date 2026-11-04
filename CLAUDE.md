@@ -98,6 +98,7 @@ make hd            # run the basic hd/* test cases
 make mhd           # run the basic mhd/* test cases
 make ffhd          # run the basic ffhd/* test cases
 make srhd          # run the basic srhd/* test cases
+make srmhd         # run the basic srmhd/* test cases
 make SUITE=all hd  # basic and extended hd/* cases
 make SUITE=all list # print the directories a SUITE selects
 make -j4 hd         # run in parallel
