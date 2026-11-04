@@ -45,7 +45,7 @@
    ! has to be even, because the block on the far side of a pole is found by
    ! shifting the phi block index by half of it.
    geometry           = 'spherical'
-   max_blocks         =  4096
+   max_blocks         =  128
    refine_max_level   =  1
    block_nx1          =  8
    block_nx2          =  8

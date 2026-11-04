@@ -46,7 +46,7 @@
    ! below; z (dim2) is a plain length. The domain deliberately stays away
    ! from the cylindrical axis r = 0.
    geometry           = 'cylindrical'
-   max_blocks         =  4096
+   max_blocks         =  128
    refine_max_level   =  1
    block_nx1          =  8
    block_nx2          =  8
