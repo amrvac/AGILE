@@ -22,12 +22,12 @@
 
  &boundlist
    specialboundary   = T
-   typeboundary_min1 = 5*'cont'
-   typeboundary_max1 = 5*'cont'
-   typeboundary_min2 = 5*'cont'
-   typeboundary_max2 = 5*'cont'
-   typeboundary_min3 = 5*'special'
-   typeboundary_max3 = 5*'cont'
+   typeboundary_min1 = 8*'cont'
+   typeboundary_max1 = 8*'cont'
+   typeboundary_min2 = 8*'cont'
+   typeboundary_max2 = 8*'cont'
+   typeboundary_min3 = 8*'special'
+   typeboundary_max3 = 8*'cont'
  /
 
  &meshlist
