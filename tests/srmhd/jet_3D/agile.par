@@ -75,6 +75,7 @@
    srmhd_source_usr=.false.
    srmhd_small_density=1.0d-7
    srmhd_small_pressure=1.0d-9
+   srmhd_n_tracer=1
 /
 
 &usr_list
