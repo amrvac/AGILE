@@ -81,7 +81,7 @@ contains
                         ixFi2:ixFi2+1,ixFi3:ixFi3+1,igridFi)*wFi(ixFi1:ixFi1+1,ixFi2:ixFi2+1,&
                         ixFi3:ixFi3+1,iw)) /geoCo%dvolume(ixCo1,ixCo2,ixCo3,igridCo)
                 end do
-             end if
+
              if (nwaux > 0) then
                 u = wCo(ixCo1,ixCo2,ixCo3,1:nw_phys)
                 call set_aux(u)
@@ -91,6 +91,7 @@ contains
           end do
        end do
     end do
+   end if
 
 ! AGILE: tbd
     ! if(stagger_grid) then
