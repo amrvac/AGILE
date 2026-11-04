@@ -8,8 +8,6 @@ use mod_physics_vars
 implicit none
 real(dp), parameter, public :: h0=1.0_dp
 
-${GPU_DECLARE_COPYIN('h0')}$
-
 
 !this module implements a conserved to primitive variable
 !scheme from Kastaun et al. https://arxiv.org/pdf/2005.01821
