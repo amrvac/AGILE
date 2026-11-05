@@ -132,7 +132,7 @@ use openacc, only : acc_is_present
 #if defined(__NVCOMPILER)
 !$omp target teams distribute parallel do ${clauses}$
 #else
-!$omp target teams distribute parallel do ${clauses}$ defaultmap(present:aggregate) defaultmap(present:allocatable) defaultmap(present:pointer)
+!$omp target teams distribute parallel do ${clauses}$ defaultmap(alloc:aggregate) defaultmap(present:allocatable) defaultmap(present:pointer)
 #endif
 #:enddef
 
@@ -148,7 +148,7 @@ use openacc, only : acc_is_present
 #if defined(__NVCOMPILER)
 !$omp target teams loop ${clauses}$
 #else
-!$omp target teams distribute ${clauses}$ defaultmap(present:aggregate) defaultmap(present:allocatable) defaultmap(present:pointer)
+!$omp target teams distribute ${clauses}$ defaultmap(alloc:aggregate) defaultmap(present:allocatable) defaultmap(present:pointer)
 #endif
 #:enddef
 
