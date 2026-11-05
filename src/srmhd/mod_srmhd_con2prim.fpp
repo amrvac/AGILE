@@ -213,8 +213,8 @@ contains
 
 
     pure function ipzero(a, b, c, d, fa, fb, fc, fd) result(x_bar)
-        ${GPU_ROUTINE_SEQ()}$
         implicit none
+        ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(in) :: a, b, c, d, fa, fb, fc, fd
         real(dp) :: q11, q21, q31, q22, q32, d21, d31, d32, q33
         real(dp) :: x_bar
