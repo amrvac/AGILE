@@ -39,8 +39,8 @@ contains
 
     #: def brent_template(name, func, npar)
     pure function ${name}$(mu_plus, params) result(b)
-        ${GPU_ROUTINE_SEQ()}$
         implicit none
+        ${GPU_ROUTINE_SEQ()}$
         real(dp)  :: s
         real(dp), intent(in) :: params(${npar}$)
         real(dp), intent(in) :: mu_plus
