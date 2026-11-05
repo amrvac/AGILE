@@ -94,6 +94,7 @@ contains
      w_(:,:,:,iw_mag(2)) = 0.0d0
      w_(:,:,:,iw_mag(3)) = 0.0d0
 
+     #:if defined(N_TRACER)
      if(srmhd_n_tracer>0)then
        do itr=1,srmhd_n_tracer
           where(x_(:,:,:,3)<zjet.and.(x_(:,:,:,1)**2+x_(:,:,:,2)**2)<rjet**2)
@@ -103,6 +104,7 @@ contains
           endwhere
        enddo
      endif
+     #:endif
     end associate
 
     call phys_to_conserved(ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3,&
@@ -225,7 +227,7 @@ contains
        iB, w, x)
     use mod_global_parameters
     use mod_physics_vars
-    use srmhd_con2prim, only: ideal_eos, synge_eos
+    !use srmhd_con2prim, only: ideal_eos, synge_eos
     ${GPU_ROUTINE_VECTOR()}$
     implicit none
     integer, intent(in) :: ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3
@@ -273,6 +275,11 @@ contains
                   w(ix1,ix2,ix3,iw_e)      = &
                        rhoh * lfacjet**2 - pjet - rhojet * lfacjet &
                        + 0.5_dp*(b_sqr*(1 + vjet**2) - (w(ix1,ix2,ix3,iw_mag(3)) * vjet)**2)
+
+                  w(ix1,ix2,ix3,iw_mag(1)) =   0
+                  w(ix1,ix2,ix3,iw_mag(2)) =   0
+                  w(ix1,ix2,ix3,iw_mag(3)) = 0
+
                else
 ! Calling primitive here is somehow broken.  To fix!!!!                  
 !                  call to_primitive(u)
@@ -281,11 +288,16 @@ contains
                   w(ix1,ix2,ix3,iw_mom(2)) =   w(ix1,ix2,2*ixOmax3-ix3+1,iw_mom(2))
                   w(ix1,ix2,ix3,iw_mom(3)) = - w(ix1,ix2,2*ixOmax3-ix3+1,iw_mom(3))
                   w(ix1,ix2,ix3,iw_e)      =   w(ix1,ix2,2*ixOmax3-ix3+1,iw_e)
+                  w(ix1,ix2,ix3,iw_mag(1)) =   w(ix1,ix2,2*ixOmax3-ix3+1,iw_mag(1))
+                  w(ix1,ix2,ix3,iw_mag(2)) =   w(ix1,ix2,2*ixOmax3-ix3+1,iw_mag(2))
+                  w(ix1,ix2,ix3,iw_mag(3)) = - w(ix1,ix2,2*ixOmax3-ix3+1,iw_mag(3))
+
                endif
             end do
          end do
       end do
 
+#:if defined(N_TRACER)
       if(srmhd_n_tracer>0)then
          do iw=1,srmhd_n_tracer
 #ifndef _OPENMP
@@ -304,6 +316,8 @@ contains
             end do
          enddo
       endif
+
+  #:endif
 
       ! Curently broken, cannot call anything here.      
       ! ! switch to conserved in ghost cells
