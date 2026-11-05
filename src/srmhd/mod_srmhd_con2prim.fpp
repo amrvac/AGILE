@@ -204,8 +204,8 @@ contains
     end function cubic_int
 
     pure function secant(a, b, fa, fb) result(f)
-        ${GPU_ROUTINE_SEQ()}$
         implicit none
+        ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(in) :: a, b, fa, fb
         real(dp) :: f
         f= (fb - fa)/(b - a)
