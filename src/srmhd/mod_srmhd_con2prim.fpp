@@ -174,8 +174,8 @@ contains
 
 
     pure subroutine bracket(a, b, c, fa, fb, fc, d, fd)
-        ${GPU_ROUTINE_SEQ()}$
         implicit none
+        ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(inout) :: a, b, fa, fb 
         real(dp), intent(in) :: c, fc
         real(dp), intent(out) :: d, fd
