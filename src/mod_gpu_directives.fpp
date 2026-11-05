@@ -127,10 +127,14 @@ use openacc, only : acc_is_present
 
 #:def GPU_PARALLEL_LOOP(clauses='')
 #! NVHPC does not support defaultmap with present
+#! (amd)flang does not support multiple defaultmap clauses on a single directive,
+#! there we only insert the most important one: allocatables should be present
 #! Empty line on purpose
 
 #if defined(__NVCOMPILER)
 !$omp target teams distribute parallel do ${clauses}$
+#elif defined(__flang__)
+!$omp target teams distribute parallel do ${clauses}$ defaultmap(present:allocatable)
 #else
 !$omp target teams distribute parallel do ${clauses}$ defaultmap(alloc:aggregate) defaultmap(present:allocatable) defaultmap(present:pointer)
 #endif
@@ -147,6 +151,8 @@ use openacc, only : acc_is_present
 
 #if defined(__NVCOMPILER)
 !$omp target teams loop ${clauses}$
+#elif defined(__flang__)
+!$omp target teams distribute ${clauses}$ defaultmap(present:allocatable)
 #else
 !$omp target teams distribute ${clauses}$ defaultmap(alloc:aggregate) defaultmap(present:allocatable) defaultmap(present:pointer)
 #endif
