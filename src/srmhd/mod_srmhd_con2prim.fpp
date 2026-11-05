@@ -196,8 +196,8 @@ contains
     end subroutine bracket
 
     pure function cubic_int(a, b, f1, f2, f3) result(q)
+        implicit none
         ${GPU_ROUTINE_SEQ()}$
-        implicit none 
         real(dp), intent(in) :: a, b, f1, f2, f3
         real(dp) :: q
         q = (a-b)*f1/(f2-f3)
