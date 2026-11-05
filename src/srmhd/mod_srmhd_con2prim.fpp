@@ -703,8 +703,8 @@ contains
 
     #:def con2prim_template(name, solver, aux_solver)
     pure subroutine ${name}$(mu, d, tau, s_sqr, b_sqr, s_dot_b)
-        ${GPU_ROUTINE_SEQ()}$
         implicit none
+        ${GPU_ROUTINE_SEQ()}$
         !real(dp), intent(out) :: lfac
         !real(dp), intent(out), optional:: rho, eps, p, h
         !logical, intent(out), optional :: success
