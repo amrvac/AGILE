@@ -243,8 +243,8 @@ contains
 
 
     pure function newt_quad(a, b, d, fa, fb, fd, k) result(r)
-        ${GPU_ROUTINE_SEQ()}$
         implicit none
+        ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(in) :: a, b, d, fa, fb, fd
         integer, intent(in)  :: k
         real(dp) :: r
