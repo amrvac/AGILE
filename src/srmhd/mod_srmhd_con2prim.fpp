@@ -285,8 +285,8 @@ contains
     end function newt_quad
 
     pure function check_eq(fa, fb, fd, fe) result(equal)
-        ${GPU_ROUTINE_SEQ()}$    
         implicit none
+        ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(in) :: fa, fb, fd, fe
         logical :: equal
 
