@@ -585,8 +585,8 @@ contains
 
 
     pure subroutine master_function(mu, params, f) 
-        ${GPU_ROUTINE_SEQ()}$
         implicit none
+        ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(in) :: mu
         real(dp) :: d, tau, s_sqr, b_sqr, s_dot_b
         real(dp), intent(in) :: params(5)
