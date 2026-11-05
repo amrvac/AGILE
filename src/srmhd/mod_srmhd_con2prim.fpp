@@ -668,8 +668,8 @@ contains
 
 
     pure subroutine aux_f(mu, params, f) 
-        ${GPU_ROUTINE_SEQ()}$
         implicit none
+        ${GPU_ROUTINE_SEQ()}$
         real(dp), intent(in) :: mu
         real(dp), intent(in) :: params(4)
         real(dp)             :: d, s_sqr, s_dot_b, b_sqr
