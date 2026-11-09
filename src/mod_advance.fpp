@@ -433,8 +433,13 @@ contains
         qtC, &                          ! scalar related to time stepping
         bg(ka), &                       ! first block grid
         qt,  &                          ! scalar related to time stepping
-        bg(kb) &                        ! second block grid
+        bg(kb), &                       ! second block grid
+        aux_current .and. ka == 1 &     ! bg(ka)'s mu_ slot is current
         )
+    ! The update changed bg(kb), and the stage combinations that follow may
+    ! change bg(1): from here on no level is known to match its auxiliaries
+    ! until set_aux_all at the end of the step.
+    aux_current = .false.
 
     ! Off for the predictor of Predictor_Corrector, and with a single level
     if (fix_conserve_at_step) then

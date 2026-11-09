@@ -31,6 +31,7 @@ contains
 #:endif
 @:get_aux()
 @:to_primitive()
+@:to_primitive_cached()
 @:to_conservative()
 @:fix_prim_state()
 @:get_cmax()
@@ -47,7 +48,7 @@ contains
 
   subroutine finite_volume_local(qdt, dtfactor, ixImin1,ixImin2,&
     ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-    ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
+    ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb, use_cached)
     use mod_global_parameters
     use mod_comm_lib, only: mpistop
 
@@ -59,6 +60,9 @@ contains
     ! remember, old names map as: wCT => bga, wnew => bgb
     type(block_grid_t)                                    :: bga
     type(block_grid_t)                                    :: bgb
+    !> bga's auxiliaries are current (aux_current, bga being bg(1)):
+    !> convert with to_primitive_cached instead of solving con2prim again
+    logical, intent(in)                                   :: use_cached
     ! .. local ..
     integer                :: n, iigrid, ix1,ix2,ix3
     double precision       :: uprim(nw_phys, ixImin1:ixImax1,ixImin2:ixImax2,&
@@ -80,7 +84,7 @@ contains
     case (${method_enum}$)
       call finite_volume_local_${scheme_tag}$(qdt, dtfactor, ixImin1,ixImin2,&
             ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-            ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
+            ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb, use_cached)
 #:endfor
     case default
       call mpistop("finite_volume_local: unknown flux scheme")
@@ -90,7 +94,7 @@ end subroutine finite_volume_local
 #:def FV_KERNEL(scheme_tag, faceflux_proc)
   subroutine finite_volume_local_${scheme_tag}$(qdt, dtfactor, ixImin1,ixImin2,&
      ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-     ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
+     ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb, use_cached)
     use mod_global_parameters
     use mod_fix_conserve
 
@@ -102,6 +106,9 @@ end subroutine finite_volume_local
     ! remember, old names map as: wCT => bga, wnew => bgb
     type(block_grid_t)                                    :: bga
     type(block_grid_t)                                    :: bgb
+    !> bga's auxiliaries are current (aux_current, bga being bg(1)):
+    !> convert with to_primitive_cached instead of solving con2prim again
+    logical, intent(in)                                   :: use_cached
     ! .. local ..
     integer                :: n, iigrid, ix1,ix2,ix3
     integer                :: nx1,nx2,nx3, nxCo1,nxCo2,nxCo3
@@ -180,7 +187,11 @@ end subroutine finite_volume_local
                 do ix1=ixImin1,ixImax1 
                    ! Convert to primitive
                    uprim(1:nw_phys, ix1,ix2,ix3) = bga%w(ix1,ix2,ix3, 1:nw_phys, n)
-                   call to_primitive(uprim(1:nw_phys, ix1,ix2,ix3))
+                   if (use_cached) then
+                      call to_primitive_cached(uprim(1:nw_phys, ix1,ix2,ix3))
+                   else
+                      call to_primitive(uprim(1:nw_phys, ix1,ix2,ix3))
+                   end if
                 end do
              end do
           end do

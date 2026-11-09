@@ -76,6 +76,9 @@ contains
        end do
     end do
 
+    ! bg(1)'s auxiliaries now match its conserved variables, ghosts included
+    aux_current = .true.
+
   end subroutine set_aux_all
 
 end module mod_set_aux

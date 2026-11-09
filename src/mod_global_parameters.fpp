@@ -532,6 +532,14 @@ module mod_global_parameters
   logical :: time_advance
   ${GPU_DECLARE_CREATE('time_advance')}$
 
+  !> Host-side flag: the auxiliaries of bg(1), ghost cells included, are
+  !> current, i.e. set_aux_all computed them from the conserved variables as
+  !> they now are. While it holds, kernels reading bg(1) may convert with
+  !> to_primitive_cached and skip the con2prim solve. set_aux_all sets it;
+  !> whatever may change the con2prim inputs of bg(1) afterwards clears it.
+  !> Not on the device: kernels get it as an argument or a copied scalar.
+  logical :: aux_current = .false.
+
   !> The Courant (CFL) number used for the simulation
   double precision :: courantpar
   ${GPU_DECLARE_CREATE('courantpar')}$

@@ -296,21 +296,19 @@
 #:enddef 
 
 #:def get_aux()
-  !> The auxiliary variables of a conserved state, together with the pieces
-  !> of the con2prim solution that to_primitive needs on top of them.
-  !>
-  !> This is the single definition of mu and lfac: to_primitive and set_aux
-  !> both call it, so the two cannot drift apart. mu comes out of the root
-  !> solve; lfac out of the velocity it implies, after that velocity has been
-  !> limited to the bound v0 set by the conserved state.
-  subroutine get_aux(u, mu, lfac, x, v_sqr, vel)
-    use srmhd_con2prim
+  !> The part of get_aux that follows the root solve: given mu, the velocity,
+  !> x, v^2 and lfac it implies for the conserved state u. Split out so that
+  !> to_primitive_cached can run it on a stored mu without solving again; get_aux
+  !> runs exactly this after con2prim, so the two give the same bits.
+  subroutine aux_from_mu(u, mu, lfac, x, v_sqr, vel)
+    use srmhd_con2prim, only: h0
 
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys)
-    real(dp), intent(out) :: mu, lfac, x, v_sqr
+    real(dp), intent(in)  :: mu
+    real(dp), intent(out) :: lfac, x, v_sqr
     real(dp), intent(out) :: vel(3)
-    real(dp) :: d, tau
+    real(dp) :: d
     real(dp) :: s_sqr, b_sqr, s_dot_b, v0_sqr, v_rescale
 
     s_sqr = u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2
@@ -321,12 +319,6 @@
              + u(iw_mom(3)) * u(iw_mag(3))
 
     d=u(iw_rho)
-
-    tau=u(iw_e)
-
-    mu=u(mu_)
-
-    call con2prim(mu, d, tau, s_sqr, b_sqr, s_dot_b)
 
     x=1/(1 + mu*b_sqr/d) !(26)
 
@@ -354,6 +346,44 @@
 
     lfac = 1/sqrt(1-v_sqr)
 
+  end subroutine aux_from_mu
+
+  !> The auxiliary variables of a conserved state, together with the pieces
+  !> of the con2prim solution that to_primitive needs on top of them.
+  !>
+  !> This is the single definition of mu and lfac: to_primitive and set_aux
+  !> both call it, so the two cannot drift apart. mu comes out of the root
+  !> solve; lfac out of the velocity it implies, after that velocity has been
+  !> limited to the bound v0 set by the conserved state.
+  !> con2prim depends on d, tau, s^2, b^2 and s.b only (mu is overwritten, not
+  !> used as a guess), so mu is a function of exactly those.
+  subroutine get_aux(u, mu, lfac, x, v_sqr, vel)
+    use srmhd_con2prim
+
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(in)  :: u(nw_phys)
+    real(dp), intent(out) :: mu, lfac, x, v_sqr
+    real(dp), intent(out) :: vel(3)
+    real(dp) :: d, tau
+    real(dp) :: s_sqr, b_sqr, s_dot_b
+
+    s_sqr = u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2
+
+    b_sqr = u(iw_mag(1))**2 + u(iw_mag(2))**2 + u(iw_mag(3))**2
+
+    s_dot_b = u(iw_mom(1)) * u(iw_mag(1)) + u(iw_mom(2)) * u(iw_mag(2))& 
+             + u(iw_mom(3)) * u(iw_mag(3))
+
+    d=u(iw_rho)
+
+    tau=u(iw_e)
+
+    mu=u(mu_)
+
+    call con2prim(mu, d, tau, s_sqr, b_sqr, s_dot_b)
+
+    call aux_from_mu(u, mu, lfac, x, v_sqr, vel)
+
   end subroutine get_aux
 #:enddef
 
@@ -375,17 +405,17 @@
 #:enddef
 
 #:def to_primitive()
-  subroutine to_primitive(u)
+  !> The part of to_primitive that follows get_aux: the primitive state from
+  !> the conserved one and its mu, lfac, x, v^2 and velocity.
+  subroutine prim_from_aux(u, mu, lfac, x, v_sqr, vel)
     use srmhd_con2prim, only: ideal_eos, synge_eos
 
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
-    real(dp) :: d, x, tau, lfac
-    real(dp) :: mu
-    real(dp) :: vel(3)
-    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps, v_sqr
-
-    call get_aux(u, mu, lfac, x, v_sqr, vel)
+    real(dp), intent(in) :: mu, lfac, x, v_sqr
+    real(dp), intent(in) :: vel(3)
+    real(dp) :: d, tau
+    real(dp) :: s_sqr, r_bar_sqr, q_bar, b_sqr, s_dot_b, eps
 
     s_sqr = u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2
 
@@ -427,7 +457,40 @@
 
     u(mu_) = mu
     
+  end subroutine prim_from_aux
+
+  subroutine to_primitive(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+    real(dp) :: mu, lfac, x, v_sqr
+    real(dp) :: vel(3)
+
+    call get_aux(u, mu, lfac, x, v_sqr, vel)
+
+    call prim_from_aux(u, mu, lfac, x, v_sqr, vel)
+
   end subroutine to_primitive
+#:enddef
+
+#:def to_primitive_cached()
+  !> to_primitive for a state whose mu_ slot is current (set by set_aux from
+  !> these very conserved variables): mu is read instead of solved for, which
+  !> skips the con2prim root solve and gives the same bits as to_primitive.
+  !> Needs aux_from_mu and prim_from_aux, i.e. @:get_aux() and
+  !> @:to_primitive() instantiated alongside.
+  subroutine to_primitive_cached(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+    real(dp) :: mu, lfac, x, v_sqr
+    real(dp) :: vel(3)
+
+    mu = u(mu_)
+
+    call aux_from_mu(u, mu, lfac, x, v_sqr, vel)
+
+    call prim_from_aux(u, mu, lfac, x, v_sqr, vel)
+
+  end subroutine to_primitive_cached
 #:enddef
 
 
