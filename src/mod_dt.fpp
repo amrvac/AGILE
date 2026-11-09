@@ -17,7 +17,6 @@ contains
 ! instantiate here for inlining in kernels
 @:get_aux()
 @:to_primitive()
-@:to_primitive_cached()
 @:get_cmax()
 @:phys_get_dt()
 
@@ -32,11 +31,6 @@ contains
 
     double precision :: dxinv(1:ndim), cmaxtot, cmax, u(1:nw_phys), cmax_mype
     double precision :: xloc(1:ndim), qdtnew, dxloc(1:ndim)
-    logical :: use_cached
-
-    ! setdt runs before anything in the step touches bg(1), so its mu_ slot
-    ! is the one set_aux_all left, unless something cleared aux_current since
-    use_cached = aux_current
 
     if (dtpar<=zero) then
        dtmin_mype=bigdouble
@@ -54,11 +48,7 @@ contains
              do ix2=ixMlo2,ixMhi2 
                 do ix1=ixMlo1,ixMhi1 
                    u = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
-                   if (use_cached) then
-                      call to_primitive_cached(u)
-                   else
-                      call to_primitive(u)
-                   end if
+                   call to_primitive(u)
                    xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, igrid)
 
 #:if GEOM != 'Cartesian'
@@ -107,11 +97,7 @@ contains
                 do ix1=ixMlo1,ixMhi1
 
                    u(1:nw_phys) = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
-                   if (use_cached) then
-                      call to_primitive_cached(u)
-                   else
-                      call to_primitive(u)
-                   end if
+                   call to_primitive(u)
                    xloc(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, igrid)
                    ${GPU_LOOP_SEQ()}$
                    do idims = 1, ndim

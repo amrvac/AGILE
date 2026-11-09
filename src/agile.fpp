@@ -349,8 +349,6 @@ contains
        if (associated(usr_process_grid) .or. associated(usr_process_global)) &
           then
           call process(it,global_time)
-          ! the user may have changed the conserved variables of bg(1)
-          aux_current = .false.
        end if
 
        ! Check if output needs to be written
@@ -391,9 +389,6 @@ contains
              time_write=time_write+MPI_WTIME()-time_write0
            end if
          end do
-         ! usr_modify_output and the primitive conversions of the output
-         ! may write ps(igrid)%w: do not vouch for bg(1)'s mu after output
-         aux_current = .false.
        end if
 
 
@@ -408,7 +403,6 @@ contains
           call saveamrfile(1)
           call saveamrfile(2)
           call MPI_FILE_DELETE('savenow',MPI_INFO_NULL,ierrmpi)
-          aux_current = .false.
        end if
        timeio_tot=timeio_tot+MPI_WTIME()-timeio0
 
@@ -437,14 +431,10 @@ contains
        if (associated(usr_process_adv_grid) .or. &
           associated(usr_process_adv_global)) then
           call process_advanced(it,global_time)
-          ! the user may have changed the conserved variables of bg(1)
-          aux_current = .false.
        end if
 
        ! update AMR mesh and tree
        timegr0=MPI_WTIME()
-       ! regridding moves and creates blocks: let set_aux_all vouch for mu again
-       if (refine_max_level>1) aux_current = .false.
        if(ditregrid>1) then
           if(fixcount<ditregrid) then
              fixcount=fixcount+1

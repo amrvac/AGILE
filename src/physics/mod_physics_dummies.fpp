@@ -140,22 +140,6 @@ end subroutine fix_prim_state
 #:def get_aux()
 #:enddef
 
-#:def to_primitive_cached()
-!> to_primitive for a conserved state whose auxiliary slots are known to be
-!> current, i.e. were set by set_aux from exactly these conserved variables.
-!> A physics whose to_primitive involves an expensive inversion (a con2prim
-!> root solve) overrides this to take the inversion's result from the
-!> auxiliaries instead of solving again. By default there is nothing to
-!> reuse, and it is to_primitive itself.
-subroutine to_primitive_cached(u)
-  ${GPU_ROUTINE_SEQ()}$
-  real(dp), intent(inout) :: u(nw_phys)
-
-  call to_primitive(u)
-
-end subroutine to_primitive_cached
-#:enddef
-
 #:def set_aux()
 !> Overwrite the auxiliary slots of a conserved state with the values
 !> consistent with its other components. Genuinely empty by default: it is

@@ -34,7 +34,6 @@ contains
 @:addsource_compact()
 @:get_aux()
 @:to_primitive()
-@:to_primitive_cached()
 
 
   subroutine add_split_source(prior)
@@ -44,7 +43,6 @@ contains
     use mod_comm_lib, only: mpistop
 
     logical, intent(in)    :: prior
-    logical                :: use_cached
     real(dp)               :: qt
     real(dp)               :: dr(ndim), xloc(ndim)
     ! Physical cell size handed to the source term. dr is the *logical*
@@ -66,10 +64,6 @@ contains
     else
        qt=global_time+dt
     end if
-
-    ! Before the update bg(1) is the state set_aux_all last saw; after it, the
-    ! new state, whose auxiliaries set_aux_all has yet to compute.
-    use_cached = prior .and. aux_current
 
     if(any_source_split) then
        ! add split source terms
@@ -99,11 +93,7 @@ contains
                      wCT   = bg(1)%w(ix1,ix2,ix3, 1:nw_phys, n)
                      wnew  = wCT
                      wprim = wCT
-                     if (use_cached) then
-                        call to_primitive_cached( wprim )
-                     else
-                        call to_primitive( wprim )
-                     end if
+                     call to_primitive( wprim )
 
                      call addsource_local(0.5d0*dt,&
                           0.5d0, qt, wCT,&
@@ -130,18 +120,6 @@ contains
       if (.not. prior .and. associated(phys_global_source_after)) then
          call phys_global_source_after(dt, qt, src_active)
       end if
-
-      ! A user split source, or a global one, may change anything, the
-      ! con2prim inputs included. The srmhd split source is GLM damping, which
-      ! changes psi only, and psi is not a con2prim input: mu stays current.
-      ! Any other physics with auxiliaries has to establish the same before
-      ! it is exempted here.
-#:if PHYS == 'srmhd'
-      if (source_split_usr .or. (.not. prior .and. &
-           associated(phys_global_source_after))) aux_current = .false.
-#:else
-      aux_current = .false.
-#:endif
 
       if (src_active) then
          call getbc(qt,0.d0,ps,iwstart,nwgc,phys_req_diagonal)
