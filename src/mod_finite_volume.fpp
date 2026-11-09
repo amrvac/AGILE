@@ -44,6 +44,8 @@ contains
   ('muscl_llf',  'fs_tvdlf', 'reconflux_muscl_llf_prim'), &
   ('muscl_hll',  'fs_hll',   'reconflux_muscl_hll_prim'), &
   ('muscl_hllc', 'fs_hllc',  'reconflux_muscl_hllc_prim')]
+  ! finite-volume layouts, selected at run time by fv_face_flux
+#:set layouts = ['shared', 'per_cell']
 
   subroutine finite_volume_local(qdt, dtfactor, ixImin1,ixImin2,&
     ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
@@ -78,17 +80,112 @@ contains
     select case (method)
 #:for scheme_tag, method_enum, faceflux_proc in schemes
     case (${method_enum}$)
-      call finite_volume_local_${scheme_tag}$(qdt, dtfactor, ixImin1,ixImin2,&
-            ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-            ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
+      select case (fv_layout)
+#:for layout in layouts
+      case (fv_${layout}$)
+        call finite_volume_local_${scheme_tag}$_${layout}$(qdt, dtfactor, ixImin1,ixImin2,&
+              ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
+              ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
+#:endfor
+      end select
 #:endfor
     case default
       call mpistop("finite_volume_local: unknown flux scheme")
     end select
 end subroutine finite_volume_local
 
-#:def FV_KERNEL(scheme_tag, faceflux_proc)
-  subroutine finite_volume_local_${scheme_tag}$(qdt, dtfactor, ixImin1,ixImin2,&
+! Index strings for the direction-d loops below: the lower neighbour of cell
+! (ix1,ix2,ix3), and what fix_conserve indexes pflux and fC* by.
+#:set lower = {1: 'ix1-1, ix2, ix3', 2: 'ix1, ix2-1, ix3', 3: 'ix1, ix2, ix3-1'}
+#:set pfx = {1: '1,ix2-nghostcells,ix3-nghostcells', 2: 'ix1-nghostcells,1,ix3-nghostcells', 3: 'ix1-nghostcells,ix2-nghostcells,1'}
+#:set fcx = {1: 'ix2,ix3', 2: 'ix1,ix3', 3: 'ix1,ix2'}
+
+#! The numerical flux f on one face in direction d of cell (ix1,ix2,ix3): its
+#! upper face ix_d+1/2 for s = 0, its lower face ix_d-1/2 for s = -1. Both
+#! layouts build every face through this, so they hand the flux routine the
+#! same stencil and position for the same face.
+#:def FACE_FLUX(d, s, f, faceflux_proc)
+#:set lo = '-1' if s == -1 else ''
+#:set cell = ', '.join('ix%d%s' % (k, lo if k == d else '') for k in range(1, 4))
+#:set sten = ', '.join('ix%d%+d:ix%d%+d' % (k, s-1, k, s+2) if k == d else 'ix%d' % k for k in range(1, 4))
+                   ! face ix${d}$${lo}$+1/2, between cell ix${d}$${lo}$ and cell ix${d}$${lo}$+1
+                   tmp4 = uprim(1:nw_phys, ${sten}$)
+                   ! Transverse components on the lower cell's barycentre, the
+                   ! normal one on the face, in the lower-corner form of cell
+                   ! ix${d}$${lo}$+1: the one form right in every geometry (cannot be
+                   ! x +/- dr/2: bgeo%x is a volume barycentre in a curvilinear
+                   ! build, and dr is a ratio in ln(r) under LOG_RADIUS).
+                   xC(1:ndim) = bgeo%x(${cell}$, 1:ndim, n)
+                   xC(${d}$) = xlo(${d}$) + dble(ix${d}$${lo}$-nghostcells)*dr(${d}$)
+#:if d == 1 and defined('LOG_RADIUS')
+                   ! the logical radial coordinate is ln(1 + r/r0); this is
+                   ! r_of_s in the reduced form that holds wherever s >= 0,
+                   ! which covers these faces: domain faces, s = 0 being r = 0
+                   xC(1) = log_ra*dexp(xC(1)) + log_rb
+#:endif
+                   call ${faceflux_proc}$(tmp4, xC, ${d}$, ${f}$, typelim)
+#:enddef
+
+#! Update cell (ix1,ix2,ix3) with the difference of its lower and upper face
+#! fluxes flo and fhi in direction d, and store the block-boundary fluxes for
+#! flux fixing. What is stored differs by geometry: qdt*f/dx, the face's own
+#! contribution to the cell update, on a Cartesian mesh, and the extensive
+#! qdt*f*A on a curvilinear one. The extensive form is what lets fix_conserve
+#! divide by the *coarse* cell's volume and sum the four fine faces without a
+#! volume ratio, since the fine face areas add up to the coarse one exactly.
+#:def FV_CELL_UPDATE(d, flo, fhi)
+#:if GEOM == 'Cartesian'
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                        n) + qdt * (${flo}$ &
+                        - ${fhi}$) * inv_dr(${d}$)
+#:else
+                   inv_dvol = 1.0_dp / bgeo%dvolume(ix1, ix2, ix3, n)
+                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
+                        n) + qdt * (${flo}$ * bgeo%surfaceC(${lower[d]}$, ${d}$, n) &
+                        - ${fhi}$ * bgeo%surfaceC(ix1, ix2, ix3, ${d}$, n)) * inv_dvol
+#:endif
+
+                   select case (neighbor_type_${d}$m)
+                   case (neighbor_fine)
+#:if GEOM == 'Cartesian'
+                      if (ix${d}$.eq.ixOmin${d}$) pflux(1,${d}$)%flux(${pfx[d]}$,1:nw_flux,n) &
+                           = qdt * inv_dr(${d}$) * ${flo}$
+#:else
+                      if (ix${d}$.eq.ixOmin${d}$) pflux(1,${d}$)%flux(${pfx[d]}$,1:nw_flux,n) &
+                           = qdt * bgeo%surfaceC(${lower[d]}$, ${d}$, n) * ${flo}$
+#:endif
+                   case (neighbor_coarse)
+#:if GEOM == 'Cartesian'
+                      if (ix${d}$.eq.ixOmin${d}$) fC${d}$(1,${fcx[d]}$,1:nw_flux) = - qdt * inv_dr(${d}$) * ${flo}$
+#:else
+                      if (ix${d}$.eq.ixOmin${d}$) fC${d}$(1,${fcx[d]}$,1:nw_flux) = - qdt * bgeo%surfaceC(${lower[d]}$, ${d}$, n) * ${flo}$
+#:endif
+                   end select
+
+                   select case (neighbor_type_${d}$p)
+                   case (neighbor_fine)
+#:if GEOM == 'Cartesian'
+                      if (ix${d}$.eq.ixOmax${d}$) pflux(2,${d}$)%flux(${pfx[d]}$,1:nw_flux,n) &
+                           = - qdt * inv_dr(${d}$) * ${fhi}$
+#:else
+                      if (ix${d}$.eq.ixOmax${d}$) pflux(2,${d}$)%flux(${pfx[d]}$,1:nw_flux,n) &
+                           = - qdt * bgeo%surfaceC(ix1, ix2, ix3, ${d}$, n) * ${fhi}$
+#:endif
+                   case (neighbor_coarse)
+#:if GEOM == 'Cartesian'
+                      if (ix${d}$.eq.ixOmax${d}$) fC${d}$(2,${fcx[d]}$,1:nw_flux) = qdt * inv_dr(${d}$) * ${fhi}$
+#:else
+                      if (ix${d}$.eq.ixOmax${d}$) fC${d}$(2,${fcx[d]}$,1:nw_flux) = qdt * bgeo%surfaceC(ix1, ix2, ix3, ${d}$, n) * ${fhi}$
+#:endif
+                   end select
+#:enddef
+
+#! One finite-volume kernel per flux scheme and layout. layout 'shared'
+#! computes each face once into the per-gang fface and lets both cells read
+#! it; 'per_cell' has each cell compute both of its faces, which costs a
+#! second flux per face but needs no fface (fv_face_flux in &methodlist).
+#:def FV_KERNEL(scheme_tag, faceflux_proc, layout)
+  subroutine finite_volume_local_${scheme_tag}$_${layout}$(qdt, dtfactor, ixImin1,ixImin2,&
      ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
      ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
     use mod_global_parameters
@@ -113,11 +210,16 @@ end subroutine finite_volume_local
     real(dp)               :: tmp4(nw_phys,4)
     real(dp)               :: xC(ndim)
     real(dp)               :: fx(nw_flux)
+#:if layout == 'shared'
     ! The numerical fluxes of one direction's faces, indexed by the cell on
     ! the face's lower side: face ix+1/2 is fface(ix). Reused for all three
     ! directions; per gang, like uprim.
     real(dp)               :: fface(ixOmin1-1:ixOmax1, ixOmin2-1:ixOmax2,&
        ixOmin3-1:ixOmax3, 1:nw_flux)
+#:else
+    ! The flux on the cell's lower face; fx holds the upper one
+    real(dp)               :: fxlo(nw_flux)
+#:endif
     real(dp)               :: inv_dr(ndim)
     real(dp)               :: dr(ndim)
     integer                :: typelim
@@ -161,7 +263,7 @@ end subroutine finite_volume_local
        igrid_beg = (ibatch-1) * max_batch + 1
        igrid_end = min(ibatch * max_batch, igridstail_active)
 
-       ${GPU_PARALLEL_LOOP_GANG("private(uprim, fface, inv_dr, dr, n, xlo, typelim, ix1, ix2, ix3, fC1, fC2, fC3, neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, neighbor_type_3p)")}$
+       ${GPU_PARALLEL_LOOP_GANG("private(uprim" + (", fface" if layout == 'shared' else "") + ", inv_dr, dr, n, xlo, typelim, ix1, ix2, ix3, fC1, fC2, fC3, neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, neighbor_type_3p)")}$
        do iigrid = igrid_beg, igrid_end
           n = igrids_active(iigrid)
 
@@ -192,12 +294,9 @@ end subroutine finite_volume_local
              end do
           end do
 
-#:set lower = {1: 'ix1-1, ix2, ix3', 2: 'ix1, ix2-1, ix3', 3: 'ix1, ix2, ix3-1'}
-#:set stencil = {1: 'ix1-1:ix1+2, ix2, ix3', 2: 'ix1, ix2-1:ix2+2, ix3', 3: 'ix1, ix2, ix3-1:ix3+2'}
-#:set pfx = {1: '1,ix2-nghostcells,ix3-nghostcells', 2: 'ix1-nghostcells,1,ix3-nghostcells', 3: 'ix1-nghostcells,ix2-nghostcells,1'}
-#:set fcx = {1: 'ix2,ix3', 2: 'ix1,ix3', 3: 'ix1,ix2'}
 #:for d in range(1, 4)
           ! ---------------------------------------------------------------
+#:if layout == 'shared'
           ! Direction ${d}$. Every face gets one reconstruction and one Riemann
           ! flux, shared by the two cells on either side of it: the faces
           ! ixOmin${d}$-1/2 .. ixOmax${d}$+1/2, i.e. fface(ixOmin${d}$-1:ixOmax${d}$).
@@ -205,86 +304,35 @@ end subroutine finite_volume_local
           do ix3=ixOmin3${'-1' if d == 3 else ''}$,ixOmax3
              do ix2=ixOmin2${'-1' if d == 2 else ''}$,ixOmax2
                 do ix1=ixOmin1${'-1' if d == 1 else ''}$,ixOmax1
-                   ! face ix${d}$+1/2, between cell ix${d}$ and cell ix${d}$+1
-                   tmp4 = uprim(1:nw_phys, ${stencil[d]}$)
-                   ! Transverse components on the lower cell's barycentre, the
-                   ! normal one on the face, in the lower-corner form of cell
-                   ! ix${d}$+1: the one form right in every geometry (cannot be
-                   ! x +/- dr/2: bgeo%x is a volume barycentre in a curvilinear
-                   ! build, and dr is a ratio in ln(r) under LOG_RADIUS).
-                   xC(1:ndim) = bgeo%x(ix1, ix2, ix3, 1:ndim, n)
-                   xC(${d}$) = xlo(${d}$) + dble(ix${d}$-nghostcells)*dr(${d}$)
-#:if d == 1 and defined('LOG_RADIUS')
-                   ! the logical radial coordinate is ln(1 + r/r0); this is
-                   ! r_of_s in the reduced form that holds wherever s >= 0,
-                   ! which covers these faces: domain faces, s = 0 being r = 0
-                   xC(1) = log_ra*dexp(xC(1)) + log_rb
-#:endif
-                   call ${faceflux_proc}$(tmp4, xC, ${d}$, fx, typelim)
+$:FACE_FLUX(d, 0, 'fx', faceflux_proc)
                    fface(ix1, ix2, ix3, 1:nw_flux) = fx
                 end do
              end do
           end do
 
-          ! Update every cell with the difference of its two faces, and store
-          ! the block-boundary fluxes for flux fixing. What is stored differs
-          ! by geometry: qdt*f/dx, the face's own contribution to the cell
-          ! update, on a Cartesian mesh, and the extensive qdt*f*A on a
-          ! curvilinear one. The extensive form is what lets fix_conserve
-          ! divide by the *coarse* cell's volume and sum the four fine faces
-          ! without a volume ratio, since the fine face areas add up to the
-          ! coarse one exactly.
           ${GPU_LOOP_VECTOR("collapse(ndim)" + (" private(inv_dvol)" if GEOM != 'Cartesian' else ""))}$
           do ix3=ixOmin3,ixOmax3
              do ix2=ixOmin2,ixOmax2
                 do ix1=ixOmin1,ixOmax1
-#:if GEOM == 'Cartesian'
-                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                        n) + qdt * (fface(${lower[d]}$, 1:nw_flux) &
-                        - fface(ix1, ix2, ix3, 1:nw_flux)) * inv_dr(${d}$)
-#:else
-                   inv_dvol = 1.0_dp / bgeo%dvolume(ix1, ix2, ix3, n)
-                   bgb%w(ix1, ix2, ix3, 1:nw_flux, n) = bgb%w(ix1, ix2, ix3, 1:nw_flux,&
-                        n) + qdt * (fface(${lower[d]}$, 1:nw_flux) * bgeo%surfaceC(${lower[d]}$, ${d}$, n) &
-                        - fface(ix1, ix2, ix3, 1:nw_flux) * bgeo%surfaceC(ix1, ix2, ix3, ${d}$, n)) * inv_dvol
-#:endif
-
-                   select case (neighbor_type_${d}$m)
-                   case (neighbor_fine)
-#:if GEOM == 'Cartesian'
-                      if (ix${d}$.eq.ixOmin${d}$) pflux(1,${d}$)%flux(${pfx[d]}$,1:nw_flux,n) &
-                           = qdt * inv_dr(${d}$) * fface(${lower[d]}$, 1:nw_flux)
-#:else
-                      if (ix${d}$.eq.ixOmin${d}$) pflux(1,${d}$)%flux(${pfx[d]}$,1:nw_flux,n) &
-                           = qdt * bgeo%surfaceC(${lower[d]}$, ${d}$, n) * fface(${lower[d]}$, 1:nw_flux)
-#:endif
-                   case (neighbor_coarse)
-#:if GEOM == 'Cartesian'
-                      if (ix${d}$.eq.ixOmin${d}$) fC${d}$(1,${fcx[d]}$,1:nw_flux) = - qdt * inv_dr(${d}$) * fface(${lower[d]}$, 1:nw_flux)
-#:else
-                      if (ix${d}$.eq.ixOmin${d}$) fC${d}$(1,${fcx[d]}$,1:nw_flux) = - qdt * bgeo%surfaceC(${lower[d]}$, ${d}$, n) * fface(${lower[d]}$, 1:nw_flux)
-#:endif
-                   end select
-
-                   select case (neighbor_type_${d}$p)
-                   case (neighbor_fine)
-#:if GEOM == 'Cartesian'
-                      if (ix${d}$.eq.ixOmax${d}$) pflux(2,${d}$)%flux(${pfx[d]}$,1:nw_flux,n) &
-                           = - qdt * inv_dr(${d}$) * fface(ix1, ix2, ix3, 1:nw_flux)
-#:else
-                      if (ix${d}$.eq.ixOmax${d}$) pflux(2,${d}$)%flux(${pfx[d]}$,1:nw_flux,n) &
-                           = - qdt * bgeo%surfaceC(ix1, ix2, ix3, ${d}$, n) * fface(ix1, ix2, ix3, 1:nw_flux)
-#:endif
-                   case (neighbor_coarse)
-#:if GEOM == 'Cartesian'
-                      if (ix${d}$.eq.ixOmax${d}$) fC${d}$(2,${fcx[d]}$,1:nw_flux) = qdt * inv_dr(${d}$) * fface(ix1, ix2, ix3, 1:nw_flux)
-#:else
-                      if (ix${d}$.eq.ixOmax${d}$) fC${d}$(2,${fcx[d]}$,1:nw_flux) = qdt * bgeo%surfaceC(ix1, ix2, ix3, ${d}$, n) * fface(ix1, ix2, ix3, 1:nw_flux)
-#:endif
-                   end select
+$:FV_CELL_UPDATE(d, 'fface(%s, 1:nw_flux)' % lower[d], 'fface(ix1, ix2, ix3, 1:nw_flux)')
                 end do
              end do
           end do
+#:else
+          ! Direction ${d}$. Each cell computes both of its faces itself, so
+          ! every interior face is computed twice, but no per-block face
+          ! buffer is needed.
+          ${GPU_LOOP_VECTOR("collapse(ndim) private(tmp4, xC, fxlo, fx" + (", inv_dvol" if GEOM != 'Cartesian' else "") + ")")}$
+          do ix3=ixOmin3,ixOmax3
+             do ix2=ixOmin2,ixOmax2
+                do ix1=ixOmin1,ixOmax1
+$:FACE_FLUX(d, -1, 'fxlo', faceflux_proc)
+$:FACE_FLUX(d, 0, 'fx', faceflux_proc)
+$:FV_CELL_UPDATE(d, 'fxlo(1:nw_flux)', 'fx(1:nw_flux)')
+                end do
+             end do
+          end do
+#:endif
 
 #:endfor
 #:if GEOM != 'Cartesian' or defined('SOURCE_LOCAL') or defined('SOURCE_NONLOCAL') or defined('SOURCE_COMPACT')
@@ -467,13 +515,15 @@ end subroutine finite_volume_local
        end do
     end do
 
-  end subroutine finite_volume_local_${scheme_tag}$
+  end subroutine finite_volume_local_${scheme_tag}$_${layout}$
   #:enddef
 
 
 #:for scheme_tag, method_enum, faceflux_proc in schemes
-#:call FV_KERNEL(scheme_tag, faceflux_proc)
+#:for layout in layouts
+#:call FV_KERNEL(scheme_tag, faceflux_proc, layout)
 #:endcall
+#:endfor
 #:endfor
 
 
