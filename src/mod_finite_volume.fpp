@@ -255,7 +255,6 @@ end subroutine finite_volume_local
     nxCo2=nx2/2
     nxCo3=nx3/2
 
-    ${GPU_ENTER_DATA_COPYIN('nxCo1,nxCo2,nxCo3')}$
     ! batch-launch the kernels (oom issue when many ~30000 blocks):
     nbatches = (igridstail_active + max_batch - 1) / max_batch ! ceiling division
     

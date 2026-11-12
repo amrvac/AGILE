@@ -79,6 +79,9 @@ contains
        ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3, i1,i2,i3, k
     logical :: first_alloc
     type(state), dimension(:), pointer, contiguous :: psk
+#:if defined('OPENMP')
+    integer :: nlev
+#:endif
 
     ixCoGmin1=1;ixCoGmin2=1;ixCoGmin3=1;
     ixCoGmax1=(ixGhi1-2*nghostcells)/2+2*nghostcells
@@ -257,10 +260,53 @@ contains
 
    ${GPU_UPDATE_DEVICE('phyboundblock(igrid)')}$
 #if defined(_OPENACC) || defined(_OPENMP)
-   ! This differentiation is necessary for OpenMP, because it does not have the
-   ! equivalent of acc_attach as used in copy_or_update_pointer
    ! Every time level's view goes to the device, not only the ones nlevel
    ! uses: getbc's kernels read psb(igrid) there.
+#:if defined('OPENMP')
+   ! The update of a whole state copies the *host* addresses of its pointer
+   ! components, and OpenMP has no acc_attach to correct them afterwards: it
+   ! attaches a device pointer only when the pointer or its target is newly
+   ! mapped. The w views point into bg and bgc, which are on the device
+   ! already, so mapping them attaches nothing, and bc_phys then writes
+   ! through a host address on the device. CCE attached anyway where it
+   ! inlined copy_or_update_pointer, which is why this failed only at
+   ! -O0/-O1. So the views are set on the device itself, by the same pointer
+   ! assignments alloc_state and alloc_state_coarse make on the host. The
+   ! views stay put for as long as the block keeps its igrid, so this is
+   ! needed on the first allocation only.
+   if (first_alloc) then
+      ${GPU_UPDATE_DEVICE('ps(igrid), ps1(igrid), ps2(igrid), ps3(igrid), ps4(igrid), psc(igrid)')}$
+      ! ps(igrid)'s flags are a fresh allocation, so mapping them does attach
+      ! its pointer (the other time levels share them, see below). Map the
+      ! component itself, not through a pointer dummy.
+      ${GPU_ENTER_DATA_COPYIN('ps(igrid)%is_physical_boundary')}$
+      nlev = merge(1, nlevel, convert)
+      !$omp target
+      ps(igrid)%w => bg(ps(igrid)%istep)%w(:,:,:,:,igrid)
+      if (nlev >= 2) then
+         ps1(igrid)%w => bg(ps1(igrid)%istep)%w(:,:,:,:,igrid)
+         ps1(igrid)%is_physical_boundary => ps(igrid)%is_physical_boundary
+      end if
+      if (nlev >= 3) then
+         ps2(igrid)%w => bg(ps2(igrid)%istep)%w(:,:,:,:,igrid)
+         ps2(igrid)%is_physical_boundary => ps(igrid)%is_physical_boundary
+      end if
+      if (nlev >= 4) then
+         ps3(igrid)%w => bg(ps3(igrid)%istep)%w(:,:,:,:,igrid)
+         ps3(igrid)%is_physical_boundary => ps(igrid)%is_physical_boundary
+      end if
+      if (nlev >= 5) then
+         ps4(igrid)%w => bg(ps4(igrid)%istep)%w(:,:,:,:,igrid)
+         ps4(igrid)%is_physical_boundary => ps(igrid)%is_physical_boundary
+      end if
+      psc(igrid)%w => bgc(1)%w(:,:,:,:,igrid)
+      !$omp end target
+   else
+      ${GPU_UPDATE_DEVICE('ps(igrid)%level, psc(igrid)%level')}$
+   end if
+   ! The flags are recomputed above on every allocation.
+   ${GPU_UPDATE_DEVICE('ps(igrid)%is_physical_boundary')}$
+#:else
    if (first_alloc) then
       ${GPU_UPDATE_DEVICE('ps(igrid), ps1(igrid), ps2(igrid), ps3(igrid), ps4(igrid), psc(igrid)')}$
    else
@@ -277,6 +323,7 @@ contains
          no_update=(k > 1))
    end do
    call copy_or_update_pointer(psc(igrid)%w, no_update=.true.)
+#:endif
    ! The metrics are already resident on the device for every block (bgeo and
    ! bgeoc are allocated once in initialize_vars) and were filled above, on
    ! whichever side fill_geometry_* chose; ps1/ps2/psc share them, so there is

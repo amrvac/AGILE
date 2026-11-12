@@ -1335,6 +1335,30 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   with no `loop`-specific optimisation. MFC's `omp_macros.fpp` likewise uses
   `loop` for NVHPC only.
 
+- **Under OpenMP, mapping a pointer whose target is already on the device
+  does not attach it.** OpenMP attaches a device pointer only when the
+  pointer or its target is newly mapped. `alloc_node` updates the whole
+  `ps(igrid)` to the device, which copies the *host* addresses of its pointer
+  components, and then mapped `ps(igrid)%w` through `copy_or_update_pointer`.
+  `w` points into `bg`, which is already resident, so per the spec nothing
+  was attached. CCE 20 attaches anyway by default (unless
+  `CRAY_ACC_DISABLE_EXTRA_ATTACH` is set), but only where it inlines the
+  helper. So at `-O0`/`-O1` the first device write through `s%w` in
+  `bc_phys` (any run with a non-periodic boundary) died with `Memory access
+  fault by GPU ... on address 0x<host heap>`, while `-O2`/`-O3` worked. The
+  OpenMP branch of `alloc_node` now does those pointer assignments inside a
+  `target` region. Under OpenMP, don't rely on `enter data` to point a
+  pointer component at device data that is already mapped.
+
+- **Never `enter data` a stack variable.** The mapping outlives the stack
+  frame. A later array that covers the same address and is mapped then only
+  partially overlaps the stale entry, and CCE stops with
+  `overlaps present region ... but is not contained`. A `private` array on a
+  combined `target teams distribute` counts: the `target` leaf still maps it
+  `alloc`. Whether this hits depends on the frame layout, and so on `-O` and
+  the call path. `finite_volume_local_*` did this with `nxCo1..3`, which
+  are firstprivate in its kernels anyway.
+
 ## API documentation (FORD)
 
 Source-level API docs are generated with [FORD](https://forddocs.readthedocs.io/)

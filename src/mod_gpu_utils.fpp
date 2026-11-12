@@ -97,11 +97,14 @@ contains
 #:elif defined('OPENMP')
     ! No presence check (unlike the OpenACC branch above): OpenMP has no
     ! Fortran-friendly equivalent of acc_is_present for arbitrary
-    ! pointer/array/scalar arguments, and pointer attachment happens
-    ! implicitly when both the pointer and its target are mapped. This is
-    ! always correct for the transferred *value*, at the cost of an
-    ! ever-growing device refcount on repeated calls (map(to:) on an
-    ! already-present item only bumps the refcount, it does not recopy).
+    ! pointer/array/scalar arguments. This is always correct for the
+    ! transferred *value*, at the cost of an ever-growing device refcount on
+    ! repeated calls (map(to:) on an already-present item only bumps the
+    ! refcount, it does not recopy). It does *not* make the device copy of
+    ! the actual argument point at the device data: OpenMP attaches only
+    ! when the pointer or its target is newly mapped, and CCE, through this
+    ! pointer dummy, attaches only where it inlines the call. Set a pointer
+    ! component on the device instead (see alloc_node).
     !$omp target enter data map(to: scalar)
     if (.not. no_update_) then
        !$omp target update to(scalar)
@@ -211,8 +214,8 @@ contains
     call acc_attach(array)
 #:elif defined('OPENMP')
     ! See the comment in copy_or_update_${tname}$_pointer above: no presence
-    ! check, and attach/detach is dropped since OpenMP attaches a mapped
-    ! pointer to its (also mapped) target implicitly.
+    ! check, and no attach either, so under OpenMP this maps and refreshes
+    ! the target only; it does not fix up a pointer component on the device.
     !$omp target enter data map(to: array)
     if (.not. no_update_) then
        !$omp target update to(array)
