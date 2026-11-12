@@ -1236,8 +1236,8 @@ end subroutine estimate_speeds_hlld
 !> star-state formula of its own (psi, B_n, the HYPERTC heat fluxes) takes
 !> U* = U** = U_hll, which makes its flux exactly the HLL flux; B_n and psi are
 !> then overwritten by the flux_type override in riemann_hlld_prim, as under
-!> 'hll' and 'hllc'. Unlike upstream, the degenerate case of Eqs. 44-47
-!> (sM = u_K, sK = u_K -/+ c_f, B_t = 0) is guarded as in Miyoshi & Kusano.
+!> 'hll' and 'hllc'. Unlike upstream, the pole of Eqs. 44-47 (sK meeting the
+!> star Alfven speed) is regularised, see hlld_star_state.
 !> uL/uR are primitive on entry and conservative on exit. degenerate is set
 !> when sR - sL vanishes, and F is then left for the caller to replace with
 !> its LLF fallback.
@@ -1337,8 +1337,8 @@ subroutine hlld_star_state(uK, fK, sK, unK, sM, pt_star, bx, whll, flux_dim, ust
   integer,  intent(in)  :: flux_dim
   real(dp), intent(out) :: ustar(nw_flux)
 
-  real(dp) :: rho_fac, rho_star, den, fac_v, fac_b, vt, bt, vdotb_star
-  real(dp), parameter :: eps_den = 1e-8_dp
+  real(dp) :: rho_fac, rho_star, den, inv_den, fac_v, fac_b, vt, bt, vdotb_star
+  real(dp), parameter :: eps_den = 1e-2_dp   ! see the star-state comment below
   integer  :: idir
 
   ! psi, B_n (= bx) and any heat flux slots: the HLL state
@@ -1353,17 +1353,28 @@ subroutine hlld_star_state(uK, fK, sK, unK, sM, pt_star, bx, whll, flux_dim, ust
   #:endfor
 #:endif
 
-  ! tangential velocity and field (Eqs. 44-47). The denominator vanishes for
-  ! sM = unK, sK = unK -/+ c_f, B_t = 0, Bx^2 >= gamma p; the tangential
-  ! state is then continuous across sK.
-  den = uK(iw_rho)*(sK - unK)*(sK - sM) - bx**2
-  if (abs(den) > eps_den*abs(pt_star)) then
-    fac_v = bx*(sM - unK) / den
-    fac_b = (uK(iw_rho)*(sK - unK)**2 - bx**2) / den
-  else
-    fac_v = 0._dp
-    fac_b = 1._dp
-  end if
+  ! tangential velocity and field (Eqs. 44-47):
+  !   v*_t = v_t - fac_v*B_t,   B*_t = fac_b*B_t,
+  !   fac_v = bx (sM - unK)/den,  fac_b = 1 + rho (sK - unK)(sM - unK)/den,
+  !   den   = rho (sK - unK)(sK - sM) - bx^2 = rho* [(sK - sM)^2 - (sK* - sM)^2],
+  ! so den has a pole where the outer speed estimate meets the star Alfven
+  ! speed sK*. That is not only Miyoshi & Kusano's degenerate case (B_t = 0,
+  ! where the limit fac_v = 0, fac_b = 1 is exact): with the Davis bounds it
+  ! also happens at B_t /= 0, e.g. in Orszag-Tang, where |fac_v*B_t| reached
+  ! 10-90 against |v| ~ 1 and mirrored faces amplified their round-off
+  ! differences by bx^2/|den| ~ 1e5, breaking the point symmetry. 1/den is
+  ! therefore regularised as den/(den^2 + eps^2), eps = eps_den*|pt*|: exact
+  ! to O(eps^2/den^2) away from the pole, and going continuously to the
+  ! degenerate limit at it. A hard switch at |den| = eps instead jumps by
+  ! O(fac_v*B_t) there, so mirrored faces can still land on opposite sides.
+  ! Of eps_den = 1e-4, 1e-3 and 1e-2, only 1e-2 held Orszag-Tang (256^2,
+  ! koren, to t = 1) point-symmetric to round-off; the other two still lost
+  ! it from t = 0.93, 1e-3 more weakly. Against 1e-4, 1e-2 moved the density
+  ! by 2e-5 in L1, where hlld and hllc differ by 6e-2.
+  den     = uK(iw_rho)*(sK - unK)*(sK - sM) - bx**2
+  inv_den = den / max(den**2 + (eps_den*pt_star)**2, tiny(1._dp))
+  fac_v   = bx*(sM - unK)*inv_den
+  fac_b   = 1._dp + uK(iw_rho)*(sK - unK)*(sM - unK)*inv_den
 
   vdotb_star = sM*bx
   do idir = 1, 3

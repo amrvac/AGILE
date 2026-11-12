@@ -51,7 +51,14 @@ signal speeds, and `mhd` the solver of Li (2005) with the Davis
 fast-magnetosonic speeds of `HLL`, as upstream MPI-AMRVAC does. `HLLD` is
 the five-wave solver of Miyoshi & Kusano (2005), with the same speeds and
 the same normal field as `mhd`'s `HLLC`; it resolves isolated contacts and
-rotational discontinuities exactly, and needs an energy equation. In `mhd`
+rotational discontinuities exactly, and needs an energy equation. Its
+star-state tangential velocity and field (Miyoshi & Kusano Eqs. 44-47)
+divide by a denominator that vanishes wherever the outer speed estimate
+meets the star Alfvén speed, which happens at non-zero tangential field
+too; `hlld_star_state` replaces `1/den` by `den/(den² + ε²)`,
+`ε = 10⁻² |p*_tot|`, which changes it only by O(ε²/den²) away from that pole and
+keeps it continuous through it (a hard cut-off there broke the point
+symmetry of Orszag-Tang). In `mhd`
 the normal field and GLM's `psi` still take the `LF` flux, exactly as under
 `HLL`. `srhd` has no `HLLC`. A solver not listed for a module in the table is
 not supported by it: the module has no signal-speed estimate for it, only a
