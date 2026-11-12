@@ -1,4 +1,4 @@
-TESTS := test.log test-lowbeta.log test-hllc.log
+TESTS := test.log test-lowbeta.log test-hllc.log test-hlld.log
 
 include ../../test_rules.make
 
@@ -6,3 +6,4 @@ include ../../test_rules.make
 test.log: test.par
 test-lowbeta.log: test-lowbeta.par
 test-hllc.log: test-hllc.par
+test-hlld.log: test-hlld.par

@@ -781,6 +781,18 @@ contains
           ! only reconflux_muscl_llf_prim zeroes the non-energy fluxes
           call mpistop(trim(flux_scheme(level))//" flux scheme is not compatible with MHD_ENERGY_ONLY")
 #:endif
+       case ('hlld')
+          flux_method(level)=fs_hlld
+          if (physics_type/='mhd') then
+             call mpistop(trim(flux_scheme(level))//" flux scheme is not compatible with "//trim(physics_type))
+          end if
+          ! the isothermal HLLD (Mignone 2007) is not implemented
+          if (.not. phys_energy) then
+             call mpistop(trim(flux_scheme(level))//" flux scheme needs an energy equation")
+          end if
+#:if defined('MHD_ENERGY_ONLY')
+          call mpistop(trim(flux_scheme(level))//" flux scheme is not compatible with MHD_ENERGY_ONLY")
+#:endif
        case ('tvdlf')
           flux_method(level)=fs_tvdlf
        case default
