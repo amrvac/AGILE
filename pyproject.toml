@@ -18,3 +18,9 @@ analysis = [
     "scipy>=1.12",
     "imageio-ffmpeg>=0.5",
 ]
+# Editor tooling. fortls is the Fortran language server the VS Code extension
+# drives for go-to-definition, hover and the outline; see .vscode/settings.json
+# and tools/vscode/fypp-fortran/.
+ide = [
+    "fortls>=3.2",
+]
