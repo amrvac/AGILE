@@ -7,3 +7,14 @@ dependencies = [
     "fortdepend>=2.3.2",
     "fypp>=3.2",
 ]
+
+[project.optional-dependencies]
+docs = [
+    "ford>=7.0",
+]
+analysis = [
+    "matplotlib>=3.8",
+    "numpy>=2.0",
+    "scipy>=1.12",
+    "imageio-ffmpeg>=0.5",
+]

@@ -1,4 +1,5 @@
-# MPI-AMRVAC data file format
+title: AGILE data file format
+
 > this doc describes the latest version of the data file format, which is numbered "5"
 
 All data files consist of a single snapshot, and they can be used for restart
@@ -7,14 +8,14 @@ visualization. Note that restart is possible on a differing number of CPUs,
 and may suddenly allow more refinement levels. Also, note that the individual
 snapshots will typically have different lengths, as the number of grid blocks
 will vary dynamically. The data is saved in binary format (double precision).
-You can find the exact implementation in `src/mod_input_output.t`, more specifically in `snapshot_write_header()` and `snapshot_read_header()`.
+You can find the exact implementation in `src/io/mod_input_output.fpp`, more specifically in `snapshot_write_header()` and `snapshot_read_header()`.
 
 A snapshot (`.dat` file) contains a header, mesh tree information, and block
 data, in the following order:
 
 # Header
 
-```{fortran}
+```fortran
 integer           :: Version number
 integer           :: Byte offset where tree information starts
 integer           :: Byte offset where block data starts
@@ -47,7 +48,7 @@ integer           :: collapsenext
 
 # Tree information
 
-```{fortran}
+```fortran
 logical :: leaf(nleafs+nparents)
 integer :: refinement_level(nleafs)
 integer :: spatial_index(ndim, nleafs)
@@ -56,7 +57,7 @@ integer(kind=MPI_OFFSET_KIND) :: offset_block(nleafs)
 
 # Block 1 to nleafs
 
-```{fortran}
+```fortran
 integer :: n_ghost_lo(ndim) ! number of ghost cells on lower boundaries
 integer :: n_ghost_hi(ndim) ! number of ghost cells on upper boundaries
 ! block_shape = 1-n_ghost_lo:block_nx+n_ghost_hi

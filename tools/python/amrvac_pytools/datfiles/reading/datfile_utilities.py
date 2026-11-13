@@ -193,3 +193,39 @@ def get_uniform_data(dataset):
         elif hdr['ndim'] == 3:
             d[i0[0]:i1[0], i0[1]:i1[1], i0[2]:i1[2], :] = b['w']
     return d
+
+
+def get_upsampled_data(istream):
+    """
+    Retrieves the data of a uniform or AMR data set on the finest level's grid.
+    A block on a coarser level is upsampled piecewise-constant, each of its cells
+    repeated 2**(levmax-level) times per direction, so the result shows the cells
+    the solver actually had rather than an interpolation of them. Unlike
+    get_uniform_data, which assumes every block is on levmax, this places
+    multi-level data correctly; on single-level data the two agree exactly.
+    Works for 1D, 2D and 3D files, including the (ndim-1)-dimensional slices
+    written with slice_type = 'dat'.
+    :param: istream     open datfile buffer with 'rb' mode
+    :return The raw data as a NumPy array of shape
+            (domain_nx * 2**(levmax-1), nw), domain_nx having ndim entries.
+    """
+    hdr = get_header(istream)
+    block_lvls, block_ixs, block_offsets = get_tree_info(istream)
+    block_nx = hdr['block_nx']
+    block_shape = np.append(block_nx, hdr['nw'])
+
+    refined_nx = 2 ** (hdr['levmax'] - 1) * hdr['domain_nx']
+    d = np.full(np.append(refined_nx, hdr['nw']), np.nan)
+
+    for lvl, ix, offset in zip(block_lvls, block_ixs, block_offsets):
+        block = get_single_block_data(istream, offset, block_shape)
+        factor = 2 ** (hdr['levmax'] - lvl)
+        for axis in range(hdr['ndim']):
+            block = np.repeat(block, factor, axis=axis)
+        # ix is the 1-based block index on the block's own level
+        i0 = (ix - 1) * block_nx * factor
+        d[tuple(slice(a, a + n) for a, n in zip(i0, block.shape[:-1]))] = block
+
+    if np.isnan(d).any():
+        raise ValueError("the leaf blocks do not cover the domain")
+    return d

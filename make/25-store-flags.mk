@@ -27,6 +27,9 @@ endif
 ifdef NVTX
 	@echo "NVTX ?= $(NVTX)" >> $@
 endif
+ifdef USE_MPIWRAPPERS
+	@echo "USE_MPIWRAPPERS ?= $(USE_MPIWRAPPERS)" >> $@
+endif
 
 $(build_dir)/config.mk: config.mk
 	@mkdir -p $(@D)

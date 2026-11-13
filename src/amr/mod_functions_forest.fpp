@@ -14,6 +14,13 @@ module mod_functions_forest
   public :: change_ipe_tree_leaf
   public :: init_forest_root
 
+  !> Depth-first leaf flags of the whole forest, one LOGICAL per tree node.
+  !> Buffered in chunks of nleafbuf rather than written one node at a time: the
+  !> byte stream on disk is identical either way, but a tree of a million nodes
+  !> costs a million individual MPI_FILE_WRITEs otherwise.  read_forest consumes
+  !> the same stream through a buffer of its own.
+  integer, parameter :: nleafbuf = 16384
+
 
 contains
 
@@ -402,13 +409,17 @@ contains
 
     integer, dimension(MPI_STATUS_SIZE) :: status
     integer :: ig1,ig2,ig3,isfc
+    logical :: leafbuf(nleafbuf)
+    integer :: nbuffered
 
+    nbuffered = 0
     do isfc=1,nglev1
        ig1=sfc_iglevel1(1,isfc)
        ig2=sfc_iglevel1(2,isfc)
        ig3=sfc_iglevel1(3,isfc)
        call write_node(tree_root(ig1,ig2,ig3))
     end do
+    call flush_leafbuf
 
     contains
 
@@ -419,8 +430,9 @@ contains
 
         integer :: ic1,ic2,ic3
 
-        call MPI_FILE_WRITE(file_handle,tree%node%leaf,1,MPI_LOGICAL,status,&
-           ierrmpi)
+        if (nbuffered == nleafbuf) call flush_leafbuf
+        nbuffered = nbuffered + 1
+        leafbuf(nbuffered) = tree%node%leaf
 
         if (.not.tree%node%leaf) then
            do ic3=1,2
@@ -433,6 +445,16 @@ contains
         end if
 
       end subroutine write_node
+
+      subroutine flush_leafbuf
+        implicit none
+
+        if (nbuffered == 0) return
+        call MPI_FILE_WRITE(file_handle,leafbuf,nbuffered,MPI_LOGICAL,status,&
+           ierrmpi)
+        nbuffered = 0
+
+      end subroutine flush_leafbuf
 
   end subroutine write_forest
 
@@ -450,12 +472,18 @@ contains
     integer, dimension(MPI_STATUS_SIZE) :: status
     !integer :: ig^D, level, size_logical, Morton_no, igrid, ipe
     integer :: ig1,ig2,ig3, level, Morton_no, igrid, ipe, isfc
+    logical :: leafbuf(nleafbuf)
+    integer :: ibuf, nvalid, nread
 
     Morton_no=0
     ipe=0
     level=1
     nleafs_level(1:nlevelshi) = 0
     nparents = 0
+    ! force a fill on the first node
+    ibuf   = 0
+    nvalid = 0
+    nread  = 0
 
     call get_Morton_range
     call level1_Morton_order
@@ -467,6 +495,14 @@ contains
        nullify(tree_root(ig1,ig2,ig3)%node%parent%node)
        call read_node(tree_root(ig1,ig2,ig3),ig1,ig2,ig3,level)
     end do
+
+    ! Hand back the read-ahead: leave rank 0's file pointer exactly where the
+    ! last consumed node ends, which is where it sat when this routine read one
+    ! node at a time.  read_snapshot_old relies on the sequential position.
+    if (mype==0 .and. nread>ibuf) then
+       call MPI_FILE_SEEK(file_handle, -int(nread-ibuf,kind=MPI_OFFSET_KIND)* &
+          int(size_logical,kind=MPI_OFFSET_KIND), MPI_SEEK_CUR, ierrmpi)
+    end if
 
     call get_level_range
 
@@ -488,10 +524,9 @@ contains
         logical :: leaf
         integer :: ic1,ic2,ic3, child_ig1,child_ig2,child_ig3, child_level
 
-        if (mype==0) then
-          call mpi_file_read_wrapper(file_handle,leaf,1,MPI_LOGICAL, status,ierrmpi)
-        end if
-        if (npe>1)  call MPI_BCAST(leaf,1,MPI_LOGICAL,0,icomm,ierrmpi)
+        if (ibuf == nvalid) call refill_leafbuf
+        ibuf = ibuf + 1
+        leaf = leafbuf(ibuf)
 
         tree%node%leaf=leaf
         tree%node%ig1=ig1;tree%node%ig2=ig2;tree%node%ig3=ig3;
@@ -543,6 +578,30 @@ contains
         end if
 
       end subroutine read_node
+
+      !> Pull the next chunk of leaf flags in, one read and one broadcast for
+      !> up to nleafbuf nodes instead of one of each per node.  Every rank walks
+      !> the tree in lockstep - the recursion is driven only by flags they all
+      !> hold - so they run out of buffer at the same node and this stays
+      !> collective without any agreement beyond that.
+      subroutine refill_leafbuf
+        implicit none
+
+        if (mype==0) then
+          call mpi_file_read_wrapper(file_handle,leafbuf,nleafbuf,MPI_LOGICAL,&
+             status,ierrmpi)
+          call MPI_GET_COUNT(status,MPI_LOGICAL,nread,ierrmpi)
+        end if
+        if (npe>1) call MPI_BCAST(leafbuf,nleafbuf,MPI_LOGICAL,0,icomm,ierrmpi)
+
+        ! A short read at end of file is fine: the walk stops when the tree is
+        ! complete and never looks past the last node the file holds, so the
+        ! tail of the buffer is not consumed.  nvalid therefore counts the whole
+        ! buffer, and only rank 0 tracks what it actually read, for the rewind.
+        ibuf   = 0
+        nvalid = nleafbuf
+
+      end subroutine refill_leafbuf
 
   end subroutine read_forest
 

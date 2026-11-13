@@ -35,8 +35,6 @@ module mod_physics
   ! subroutine with no parameters which creates EUV images
   procedure(sub_check_params), pointer    :: phys_te_images              => &
      null()
-  procedure(sub_small_values), pointer    :: phys_handle_small_values    => &
-     null()
   procedure(sub_face_to_center), pointer  :: phys_face_to_center         => &
      null()
   procedure(sub_write_info), pointer      :: phys_write_info             => &
@@ -108,20 +106,6 @@ module mod_physics
        logical, intent(inout)       :: active !< Output if the source is active
      end subroutine sub_clean_divb
 
-     subroutine sub_small_values(primitive, w, x, ixImin1,ixImin2,ixImin3,&
-        ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-        ixOmax3, subname)
-       use mod_global_parameters
-       logical, intent(in)             :: primitive
-       integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,&
-          ixImax2,ixImax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
-       double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
-          ixImin3:ixImax3,1:nw)
-       double precision, intent(in)    :: x(ixImin1:ixImax1,ixImin2:ixImax2,&
-          ixImin3:ixImax3,1:ndim)
-       character(len=*), intent(in)    :: subname
-     end subroutine sub_small_values
-     
   end interface
 
 contains
@@ -129,6 +113,7 @@ contains
   @:read_params()
   @:phys_init()
   @:phys_units()
+  @:get_aux()
   @:to_primitive()
   @:to_conservative()
   @:phys_activate()
@@ -153,9 +138,6 @@ contains
 
     if (.not. associated(phys_implicit_update)) phys_implicit_update => &
        dummy_implicit_update
-
-    if (.not. associated(phys_handle_small_values)) phys_handle_small_values &
-       => dummy_small_values
 
     if (.not. associated(phys_face_to_center)) phys_face_to_center => &
        dummy_face_to_center
@@ -225,12 +207,10 @@ contains
     integer :: iigrid, igrid
 
     ! Just copy in nul state
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        psa(igrid)%w = 0.0d0*psa(igrid)%w
        if(stagger_grid) psa(igrid)%ws = 0.0d0*psa(igrid)%ws
     end do
-    !$OMP END PARALLEL DO
 
   end subroutine dummy_evaluate_implicit
 
@@ -244,28 +224,12 @@ contains
     integer :: iigrid, igrid
 
     ! Just copy in psb state when using the scheme without implicit part
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        psa(igrid)%w = psb(igrid)%w
        if(stagger_grid) psa(igrid)%ws = psb(igrid)%ws
     end do
-    !$OMP END PARALLEL DO
 
   end subroutine dummy_implicit_update
-
-  subroutine dummy_small_values(primitive, w, x, ixImin1,ixImin2,ixImin3,&
-     ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,&
-      subname)
-    use mod_global_parameters
-    logical, intent(in)             :: primitive
-    integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
-       ixImax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
-    double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3,1:nw)
-    double precision, intent(in)    :: x(ixImin1:ixImax1,ixImin2:ixImax2,&
-       ixImin3:ixImax3,1:ndim)
-    character(len=*), intent(in)    :: subname
-  end subroutine dummy_small_values
 
   subroutine dummy_check_params
   end subroutine dummy_check_params

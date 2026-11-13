@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 module mod_boundary_conditions
 
   implicit none
@@ -9,17 +12,21 @@ module mod_boundary_conditions
 contains
 
   !> fill ghost cells at a physical boundary
-  subroutine bc_phys(iside,idims,time,qdt,s,ixGmin1,ixGmin2,ixGmin3,ixGmax1,&
+  !> x is this block's slice of bgeo/bgeoc rather than s%x, so that device
+  !> code never has to dereference a per-block pointer to reach the positions.
+  subroutine bc_phys(iside,idims,time,qdt,s,x,ixGmin1,ixGmin2,ixGmin3,ixGmax1,&
        ixGmax2,ixGmax3,ixBmin1,ixBmin2,ixBmin3,ixBmax1,ixBmax2,ixBmax3)
-    !$acc routine vector
 #:if defined('SPECIALBOUNDARY')    
     use mod_usr, only: specialbound_usr
 #:endif
     use mod_global_parameters
+    ${GPU_ROUTINE_VECTOR()}$
 
     integer, intent(in) :: iside, idims, ixGmin1,ixGmin2,ixGmin3,ixGmax1,&
        ixGmax2,ixGmax3,ixBmin1,ixBmin2,ixBmin3,ixBmax1,ixBmax2,ixBmax3
     double precision, intent(in) :: time,qdt
+    double precision, intent(in) :: x(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
+       ixGmin3:ixGmax3,1:ndim)
     type(state), intent(inout) :: s
 
     integer :: idir, is
@@ -31,7 +38,7 @@ contains
        iib1,iib2,iib3
     logical  :: isphysbound
 
-    associate(x=>s%x,w=>s%w,ws=>s%ws)
+    associate(w=>s%w,ws=>s%ws)
     select case (idims)
     case (1)
        if (iside==2) then
@@ -388,6 +395,7 @@ contains
   subroutine getintbc(time,ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3)
     use mod_usr_methods, only: usr_internal_bc
     use mod_global_parameters
+    use mod_geometry, only: sync_positions_host
 
     double precision, intent(in)   :: time
     integer, intent(in)            :: ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&
@@ -399,7 +407,9 @@ contains
     ixOmin3=ixGmin3+nghostcells;ixOmax1=ixGmax1-nghostcells
     ixOmax2=ixGmax2-nghostcells;ixOmax3=ixGmax3-nghostcells;
 
-    !$OMP PARALLEL DO SCHEDULE(dynamic) PRIVATE(igrid)
+    ! usr_internal_bc reads ps(igrid)%x on the host
+    if (associated(usr_internal_bc)) call sync_positions_host()
+
     do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
        block=>ps(igrid)
        dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
@@ -411,7 +421,6 @@ contains
              ixOmax2,ixOmax3,ps(igrid)%w,ps(igrid)%x)
        end if
     end do
-    !$OMP END PARALLEL DO
 
   end subroutine getintbc
 

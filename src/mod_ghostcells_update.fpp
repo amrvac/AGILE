@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 #ifdef _CRAYFTN
 ! locally switch off gpudirect since it does not work reliably with the nested datastructures on LUMI
 #ifndef NOGPUDIRECT
@@ -14,26 +17,21 @@ module mod_ghostcells_update
 #define mpi_isend_wrapper MPI_ISEND
 #endif
   implicit none
-  ! Special buffer for pole copy
-  type wbuffer
-     double precision, dimension(:,:,:,:), allocatable :: w
-  end type wbuffer
-
   ! A switch of update physical boundary or not
   logical, public :: bcphys=.true.
-  !$acc declare copyin(bcphys)
+  ${GPU_DECLARE_COPYIN('bcphys')}$
 
   integer :: ixMmin1,ixMmin2,ixMmin3,ixMmax1,ixMmax2,ixMmax3, ixCoGmin1,&
        ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3, ixCoMmin1,ixCoMmin2,&
        ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3, ixCoGsmin1,ixCoGsmin2,ixCoGsmin3,&
        ixCoGsmax1,ixCoGsmax2,ixCoGsmax3
-  !$acc declare create(ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3)
-  !$acc declare create(ixMmin1,ixMmin2,ixMmin3,ixMmax1,ixMmax2,ixMmax3)
-  !$acc declare create(ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3)
-  !$acc declare create(ixCoGsmin1,ixCoGsmin2,ixCoGsmin3,ixCoGsmax1,ixCoGsmax2,ixCoGsmax3)
+  ${GPU_DECLARE_CREATE('ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3')}$
+  ${GPU_DECLARE_CREATE('ixMmin1,ixMmin2,ixMmin3,ixMmax1,ixMmax2,ixMmax3')}$
+  ${GPU_DECLARE_CREATE('ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3')}$
+  ${GPU_DECLARE_CREATE('ixCoGsmin1,ixCoGsmin2,ixCoGsmin3,ixCoGsmax1,ixCoGsmax2,ixCoGsmax3')}$
 
   logical  :: req_diagonal = .true.
-  !$acc declare copyin(req_diagonal)
+  ${GPU_DECLARE_COPYIN('req_diagonal')}$
 
 
   ! The first index goes from -1:2, where -1 is used when a block touches the
@@ -45,9 +43,9 @@ module mod_ghostcells_update
   integer, dimension(-1:2,-1:1) :: ixS_srl_min1,ixS_srl_min2,ixS_srl_min3,&
        ixS_srl_max1,ixS_srl_max2,ixS_srl_max3, ixR_srl_min1,ixR_srl_min2,&
        ixR_srl_min3,ixR_srl_max1,ixR_srl_max2,ixR_srl_max3
-  !$acc declare create(ixS_srl_min1,ixS_srl_min2,ixS_srl_min3)
-  !$acc declare create(ixS_srl_max1,ixS_srl_max2,ixS_srl_max3, ixR_srl_min1,ixR_srl_min2)
-  !$acc declare create(ixR_srl_min3,ixR_srl_max1,ixR_srl_max2,ixR_srl_max3)
+  ${GPU_DECLARE_CREATE('ixS_srl_min1,ixS_srl_min2,ixS_srl_min3')}$
+  ${GPU_DECLARE_CREATE('ixS_srl_max1,ixS_srl_max2,ixS_srl_max3, ixR_srl_min1,ixR_srl_min2')}$
+  ${GPU_DECLARE_CREATE('ixR_srl_min3,ixR_srl_max1,ixR_srl_max2,ixR_srl_max3')}$
 
   ! index ranges of staggered variables to send (S) to sibling blocks, receive (R) from sibling blocks
   integer, dimension(3,-1:1) :: ixS_srl_stg_min1,ixS_srl_stg_min2,&
@@ -58,7 +56,7 @@ module mod_ghostcells_update
   ! index ranges to send (S) restricted (r) ghost cells to coarser blocks
   integer, dimension(-1:1,-1:1) :: ixS_r_min1,ixS_r_min2,ixS_r_min3,ixS_r_max1,&
        ixS_r_max2,ixS_r_max3
-  !$acc declare create(ixS_r_min1,ixS_r_min2,ixS_r_min3,ixS_r_max1,ixS_r_max2,ixS_r_max3)
+  ${GPU_DECLARE_CREATE('ixS_r_min1,ixS_r_min2,ixS_r_min3,ixS_r_max1,ixS_r_max2,ixS_r_max3')}$
 
   ! index ranges of staggered variables to send (S) restricted (r) ghost cells to coarser blocks
   integer, dimension(3,-1:1) :: ixS_r_stg_min1,ixS_r_stg_min2,ixS_r_stg_min3,&
@@ -67,7 +65,7 @@ module mod_ghostcells_update
   ! index ranges to receive restriced ghost cells from finer blocks
   integer, dimension(-1:1, 0:3) :: ixR_r_min1,ixR_r_min2,ixR_r_min3,ixR_r_max1,&
        ixR_r_max2,ixR_r_max3
-  !$acc declare create(ixR_r_min1,ixR_r_min2,ixR_r_min3,ixR_r_max1,ixR_r_max2,ixR_r_max3)
+  ${GPU_DECLARE_CREATE('ixR_r_min1,ixR_r_min2,ixR_r_min3,ixR_r_max1,ixR_r_max2,ixR_r_max3')}$
 
   ! index ranges of staggered variables to receive restriced ghost cells from finer blocks
   integer, dimension(3,0:3)  :: ixR_r_stg_min1,ixR_r_stg_min2,ixR_r_stg_min3,&
@@ -77,8 +75,19 @@ module mod_ghostcells_update
   integer, dimension(-1:1, 0:3) :: ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,&
        ixS_p_max2,ixS_p_max3, ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,&
        ixR_p_max2,ixR_p_max3
-  !$acc declare create(ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,ixS_p_max2,ixS_p_max3)
-  !$acc declare create(ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,ixR_p_max2,ixR_p_max3)
+  ${GPU_DECLARE_CREATE('ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,ixS_p_max2,ixS_p_max3')}$
+  ${GPU_DECLARE_CREATE('ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,ixR_p_max2,ixR_p_max3')}$
+
+  !> One set of the prolongation ranges above, kept on the host. init_bc fills
+  !> a full and a narrow set; select_prolong_ranges copies one of them into
+  !> ixS_p_*/ixR_p_*, which are what the getbc kernels read.
+  type prolong_ranges_t
+     integer, dimension(-1:1, 0:3) :: S_min1, S_min2, S_min3, S_max1, S_max2, &
+          S_max3, R_min1, R_min2, R_min3, R_max1, R_max2, R_max3
+  end type prolong_ranges_t
+  type(prolong_ranges_t) :: prolong_full, prolong_narrow
+  ! which set ixS_p_*/ixR_p_* currently hold
+  logical :: prolong_ranges_full = .true.
 
   ! send prolongated (p) staggered ghost cells to finer blocks, receive prolongated from coarser blocks
   integer, dimension(3,0:3)  :: ixS_p_stg_min1,ixS_p_stg_min2,ixS_p_stg_min3,&
@@ -155,21 +164,25 @@ module mod_ghostcells_update
 
 contains
 
-  subroutine idecode(i1, i2, i3, i)
-    !$acc routine vector
-    integer, intent(in)                       :: i
-    integer, intent(out)                      :: i1, i2, i3
-    ! .. local ..
-    integer, parameter                        :: i1min=-1, i2min=-1, i3min=-1
-    integer                                   :: id, idd
+#! Decode a neighbour code i (1..27, from iencode) into the direction offsets
+#! i1, i2, i3 in {-1,0,1}. Written inline rather than as a device routine: a
+#! call passed the kernel's private i1, i2, i3 by reference, and NVHPC could
+#! hand the routine an invalid address for them, so the unpack kernel wrote
+#! to a wild, misaligned location (compute-sanitizer: invalid __global__
+#! write). Whether it happened depended on unrelated code generation.
+#:def IDECODE(i1, i2, i3, i)
+          ${i3}$ = ceiling(dble(${i}$)/9.0d0) - 2
+          ${i2}$ = ceiling(dble(${i}$ - 9*(${i3}$+1))/3.0d0) - 2
+          ${i1}$ = ${i}$ - 9*(${i3}$+1) - 3*(${i2}$+1) - 2
+#:enddef
 
-    i3  = ceiling(dble(i)/9.0d0) - 1 + i3min
-    id  = i - 9 * (i3-i3min)
-    i2  = ceiling(dble(id)/3.0d0) - 1 + i2min
-    idd = id - 3 * (i2-i2min)
-    i1  = idd + i1min - 1
-
-  end subroutine idecode
+#! True when direction (i1,i2,i3) needs no ghost-cell exchange: the block
+#! itself (0,0,0), and edge/corner directions when diagonal ghost cells are
+#! not required. A logical expression rather than a device function, for the
+#! same reason as IDECODE: no temporaries passed by reference into a call.
+#:def SKIP_DIRECTION(i1, i2, i3)
+((${i1}$ == 0 .and. ${i2}$ == 0 .and. ${i3}$ == 0) .or. (.not. req_diagonal .and. (merge(1,0,${i1}$ /= 0) + merge(1,0,${i2}$ /= 0) + merge(1,0,${i3}$ /= 0)) > 1))
+#:enddef
 
   subroutine init_bc()
     use mod_global_parameters
@@ -255,14 +268,6 @@ contains
     ixS_p_max1(:, 2)=ixMmax1+(interpolation_order-1)
     ixS_p_max1(:, 3)=ixMmax1+(interpolation_order-1)
 
-    if(.not.phys_req_diagonal) then
-       ! exclude ghost-cell region when diagonal cells are unknown
-       ixS_p_min1(:, 0)=ixMmin1
-       ixS_p_max1(:, 3)=ixMmax1
-       ixS_p_max1(:, 1)=ixMmin1-1+nxCo1+(interpolation_order-1)
-       ixS_p_min1(:, 2)=ixMmin1+nxCo1-(interpolation_order-1)
-    end if
-
     ixR_p_min1(:, 0)=ixCoMmin1-nghostcellsCo-(interpolation_order-1)
     ixR_p_min1(:, 1)=ixCoMmin1-(interpolation_order-1)
     ixR_p_min1(:, 2)=ixCoMmin1-nghostcellsCo-(interpolation_order-1)
@@ -271,13 +276,6 @@ contains
     ixR_p_max1(:, 1)=ixCoMmax1+nghostcellsCo+(interpolation_order-1)
     ixR_p_max1(:, 2)=ixCoMmax1+(interpolation_order-1)
     ixR_p_max1(:, 3)=ixCoMmax1+nghostcellsCo+(interpolation_order-1)
-
-    if(.not.phys_req_diagonal) then
-       ixR_p_max1(:, 0)=nghostcells
-       ixR_p_min1(:, 3)=ixCoMmax1+1
-       ixR_p_max1(:, 1)=ixCoMmax1+(interpolation_order-1)
-       ixR_p_min1(:, 2)=ixCoMmin1-(interpolation_order-1)
-    end if
 
 
 
@@ -320,14 +318,6 @@ contains
     ixS_p_max2(:, 2)=ixMmax2+(interpolation_order-1)
     ixS_p_max2(:, 3)=ixMmax2+(interpolation_order-1)
 
-    if(.not.phys_req_diagonal) then
-       ! exclude ghost-cell region when diagonal cells are unknown
-       ixS_p_min2(:, 0)=ixMmin2
-       ixS_p_max2(:, 3)=ixMmax2
-       ixS_p_max2(:, 1)=ixMmin2-1+nxCo2+(interpolation_order-1)
-       ixS_p_min2(:, 2)=ixMmin2+nxCo2-(interpolation_order-1)
-    end if
-
     ixR_p_min2(:, 0)=ixCoMmin2-nghostcellsCo-(interpolation_order-1)
     ixR_p_min2(:, 1)=ixCoMmin2-(interpolation_order-1)
     ixR_p_min2(:, 2)=ixCoMmin2-nghostcellsCo-(interpolation_order-1)
@@ -336,13 +326,6 @@ contains
     ixR_p_max2(:, 1)=ixCoMmax2+nghostcellsCo+(interpolation_order-1)
     ixR_p_max2(:, 2)=ixCoMmax2+(interpolation_order-1)
     ixR_p_max2(:, 3)=ixCoMmax2+nghostcellsCo+(interpolation_order-1)
-
-    if(.not.phys_req_diagonal) then
-       ixR_p_max2(:, 0)=nghostcells
-       ixR_p_min2(:, 3)=ixCoMmax2+1
-       ixR_p_max2(:, 1)=ixCoMmax2+(interpolation_order-1)
-       ixR_p_min2(:, 2)=ixCoMmin2-(interpolation_order-1)
-    end if
 
 
 
@@ -385,14 +368,6 @@ contains
     ixS_p_max3(:, 2)=ixMmax3+(interpolation_order-1)
     ixS_p_max3(:, 3)=ixMmax3+(interpolation_order-1)
 
-    if(.not.phys_req_diagonal) then
-       ! exclude ghost-cell region when diagonal cells are unknown
-       ixS_p_min3(:, 0)=ixMmin3
-       ixS_p_max3(:, 3)=ixMmax3
-       ixS_p_max3(:, 1)=ixMmin3-1+nxCo3+(interpolation_order-1)
-       ixS_p_min3(:, 2)=ixMmin3+nxCo3-(interpolation_order-1)
-    end if
-
     ixR_p_min3(:, 0)=ixCoMmin3-nghostcellsCo-(interpolation_order-1)
     ixR_p_min3(:, 1)=ixCoMmin3-(interpolation_order-1)
     ixR_p_min3(:, 2)=ixCoMmin3-nghostcellsCo-(interpolation_order-1)
@@ -402,16 +377,7 @@ contains
     ixR_p_max3(:, 2)=ixCoMmax3+(interpolation_order-1)
     ixR_p_max3(:, 3)=ixCoMmax3+nghostcellsCo+(interpolation_order-1)
 
-    if(.not.phys_req_diagonal) then
-       ixR_p_max3(:, 0)=nghostcells
-       ixR_p_min3(:, 3)=ixCoMmax3+1
-       ixR_p_max3(:, 1)=ixCoMmax3+(interpolation_order-1)
-       ixR_p_min3(:, 2)=ixCoMmin3-(interpolation_order-1)
-    end if
-
     if (stagger_grid) then
-       allocate(pole_buf%ws(ixGslo1:ixGshi1,ixGslo2:ixGshi2,ixGslo3:ixGshi3,&
-            nws))
        ! Staggered (face-allocated) variables
        do idir=1,ndim
           ixS_srl_stg_min1(idir,-1)=ixMmin1-kr(idir,1)
@@ -1089,19 +1055,100 @@ contains
 
     end if
 
-    !$acc update device(ixS_srl_min1,ixS_srl_min2,ixS_srl_min3)
-    !$acc update device(ixS_srl_max1,ixS_srl_max2,ixS_srl_max3, ixR_srl_min1,ixR_srl_min2)
-    !$acc update device(ixR_srl_min3,ixR_srl_max1,ixR_srl_max2,ixR_srl_max3)
-    !$acc update device(ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3)
-    !$acc update device(ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3)
-    !$acc update device(ixCoGsmin1,ixCoGsmin2,ixCoGsmin3,ixCoGsmax1,ixCoGsmax2,ixCoGsmax3)
-    !$acc update device(ixMmin1,ixMmin2,ixMmin3,ixMmax1,ixMmax2,ixMmax3)
-    !$acc update device(ixS_r_min1,ixS_r_min2,ixS_r_min3,ixS_r_max1,ixS_r_max2,ixS_r_max3)
-    !$acc update device(ixR_r_min1,ixR_r_min2,ixR_r_min3,ixR_r_max1,ixR_r_max2,ixR_r_max3)
-    !$acc update device(ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,ixS_p_max2,ixS_p_max3)
-    !$acc update device(ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,ixR_p_max2,ixR_p_max3)
+    ! The prolongation ranges come in two sets, and getbc picks one per call
+    ! (select_prolong_ranges). The full set reaches into the ghost cells that
+    ! the limited slopes of an edge or corner region read; the narrow set,
+    ! used when diagonal ghost cells are skipped, keeps the sender's ghost
+    ! cells out of the coarse buffer, because such a getbc leaves the
+    ! sender's diagonal ghost cells stale. The physical-boundary adjustments
+    ! above touch none of the entries the narrowing changes, so they hold
+    ! for both sets. The MPI buffers in nbprocs_info are laid out for the
+    ! full set, and a narrow call packs each chunk into the front of its slot.
+    call store_prolong_ranges(prolong_full)
+    if(.not.phys_req_diagonal) then
+       ixS_p_min1(:, 0)=ixMmin1
+       ixS_p_max1(:, 3)=ixMmax1
+       ixS_p_max1(:, 1)=ixMmin1-1+nxCo1+(interpolation_order-1)
+       ixS_p_min1(:, 2)=ixMmin1+nxCo1-(interpolation_order-1)
+       ixR_p_max1(:, 0)=nghostcells
+       ixR_p_min1(:, 3)=ixCoMmax1+1
+       ixR_p_max1(:, 1)=ixCoMmax1+(interpolation_order-1)
+       ixR_p_min1(:, 2)=ixCoMmin1-(interpolation_order-1)
+       ixS_p_min2(:, 0)=ixMmin2
+       ixS_p_max2(:, 3)=ixMmax2
+       ixS_p_max2(:, 1)=ixMmin2-1+nxCo2+(interpolation_order-1)
+       ixS_p_min2(:, 2)=ixMmin2+nxCo2-(interpolation_order-1)
+       ixR_p_max2(:, 0)=nghostcells
+       ixR_p_min2(:, 3)=ixCoMmax2+1
+       ixR_p_max2(:, 1)=ixCoMmax2+(interpolation_order-1)
+       ixR_p_min2(:, 2)=ixCoMmin2-(interpolation_order-1)
+       ixS_p_min3(:, 0)=ixMmin3
+       ixS_p_max3(:, 3)=ixMmax3
+       ixS_p_max3(:, 1)=ixMmin3-1+nxCo3+(interpolation_order-1)
+       ixS_p_min3(:, 2)=ixMmin3+nxCo3-(interpolation_order-1)
+       ixR_p_max3(:, 0)=nghostcells
+       ixR_p_min3(:, 3)=ixCoMmax3+1
+       ixR_p_max3(:, 1)=ixCoMmax3+(interpolation_order-1)
+       ixR_p_min3(:, 2)=ixCoMmin3-(interpolation_order-1)
+    end if
+    call store_prolong_ranges(prolong_narrow)
+    call load_prolong_ranges(prolong_full)
+    prolong_ranges_full = .true.
+
+    ${GPU_UPDATE_DEVICE('ixS_srl_min1,ixS_srl_min2,ixS_srl_min3')}$
+    ${GPU_UPDATE_DEVICE('ixS_srl_max1,ixS_srl_max2,ixS_srl_max3, ixR_srl_min1,ixR_srl_min2')}$
+    ${GPU_UPDATE_DEVICE('ixR_srl_min3,ixR_srl_max1,ixR_srl_max2,ixR_srl_max3')}$
+    ${GPU_UPDATE_DEVICE('ixCoGmin1,ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3')}$
+    ${GPU_UPDATE_DEVICE('ixCoMmin1,ixCoMmin2,ixCoMmin3,ixCoMmax1,ixCoMmax2,ixCoMmax3')}$
+    ${GPU_UPDATE_DEVICE('ixCoGsmin1,ixCoGsmin2,ixCoGsmin3,ixCoGsmax1,ixCoGsmax2,ixCoGsmax3')}$
+    ${GPU_UPDATE_DEVICE('ixMmin1,ixMmin2,ixMmin3,ixMmax1,ixMmax2,ixMmax3')}$
+    ${GPU_UPDATE_DEVICE('ixS_r_min1,ixS_r_min2,ixS_r_min3,ixS_r_max1,ixS_r_max2,ixS_r_max3')}$
+    ${GPU_UPDATE_DEVICE('ixR_r_min1,ixR_r_min2,ixR_r_min3,ixR_r_max1,ixR_r_max2,ixR_r_max3')}$
+    ${GPU_UPDATE_DEVICE('ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,ixS_p_max2,ixS_p_max3')}$
+    ${GPU_UPDATE_DEVICE('ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,ixR_p_max2,ixR_p_max3')}$
 
   end subroutine init_bc
+
+  !> copy the current prolongation ranges into a set
+  subroutine store_prolong_ranges(r)
+    type(prolong_ranges_t), intent(out) :: r
+
+    r%S_min1 = ixS_p_min1; r%S_min2 = ixS_p_min2; r%S_min3 = ixS_p_min3
+    r%S_max1 = ixS_p_max1; r%S_max2 = ixS_p_max2; r%S_max3 = ixS_p_max3
+    r%R_min1 = ixR_p_min1; r%R_min2 = ixR_p_min2; r%R_min3 = ixR_p_min3
+    r%R_max1 = ixR_p_max1; r%R_max2 = ixR_p_max2; r%R_max3 = ixR_p_max3
+
+  end subroutine store_prolong_ranges
+
+  !> make a set the current prolongation ranges (host only)
+  subroutine load_prolong_ranges(r)
+    type(prolong_ranges_t), intent(in) :: r
+
+    ixS_p_min1 = r%S_min1; ixS_p_min2 = r%S_min2; ixS_p_min3 = r%S_min3
+    ixS_p_max1 = r%S_max1; ixS_p_max2 = r%S_max2; ixS_p_max3 = r%S_max3
+    ixR_p_min1 = r%R_min1; ixR_p_min2 = r%R_min2; ixR_p_min3 = r%R_min3
+    ixR_p_max1 = r%R_max1; ixR_p_max2 = r%R_max2; ixR_p_max3 = r%R_max3
+
+  end subroutine load_prolong_ranges
+
+  !> Give getbc the prolongation ranges for a fill with (full) or without
+  !> diagonal ghost cells, on the host and the device. A no-op when that set
+  !> is already current, which it is for every getbc of an advance in a row.
+  subroutine select_prolong_ranges(full)
+    logical, intent(in) :: full
+
+    if (full .eqv. prolong_ranges_full) return
+
+    if (full) then
+       call load_prolong_ranges(prolong_full)
+    else
+       call load_prolong_ranges(prolong_narrow)
+    end if
+    prolong_ranges_full = full
+    ${GPU_UPDATE_DEVICE('ixS_p_min1,ixS_p_min2,ixS_p_min3,ixS_p_max1,ixS_p_max2,ixS_p_max3')}$
+    ${GPU_UPDATE_DEVICE('ixR_p_min1,ixR_p_min2,ixR_p_min3,ixR_p_max1,ixR_p_max2,ixR_p_max3')}$
+
+  end subroutine select_prolong_ranges
 
 
   !> do update ghost cells of all blocks including physical boundaries
@@ -1139,6 +1186,14 @@ contains
     real(dp) :: xFimin1, xFimin2, xFimin3, xComin1, xComin2, xComin3
     real(dp) :: xFi1, xFi2, xFi3, xCo3, xCo2, xCo1
     real(dp) :: eta1, eta2, eta3, slopeL, slopeR, slopeC, signR, signC
+    ! Polar axis.  ipole is the dimension the pole lies across (0 for an
+    ! ordinary neighbour, so every expression below collapses to the plain
+    ! copy), iB_pole is the physical-boundary index whose typeboundary column
+    ! holds the per-variable sign, and sbase/sstep walk the source backwards
+    ! along the pole dimension so the row nearest the axis lands nearest the
+    ! axis.  See "The polar axis" in CLAUDE.md for the derivation.
+    integer  :: ipole, iB_pole
+    integer  :: sbase1, sbase2, sbase3, sstep1, sstep2, sstep3
 
     time_bcin=MPI_WTIME()
     call nvtxStartRange("getbc",2)
@@ -1154,7 +1209,9 @@ contains
 
     req_diagonal = .true.
     if (present(req_diag)) req_diagonal = req_diag
-    !$acc update device(req_diagonal)
+    ${GPU_UPDATE_DEVICE('req_diagonal')}$
+    ! the slopes of a diagonal prolongation need the full coarse buffer
+    call select_prolong_ranges(req_diagonal)
 
     ! fill internal physical boundary
     if (internalboundary) then
@@ -1163,7 +1220,7 @@ contains
 
     ! fill physical-boundary ghost cells before internal ghost-cell values exchange
     if(bcphys.and. .not.stagger_grid) then
-       !$acc parallel loop gang default(present)
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
        do iigrid = 1, igridstail; igrid=igrids(iigrid);
           if (.not.phyboundblock(igrid)) cycle
           call fill_boundary_before_gc(psb(igrid),igrid,time,qdt)
@@ -1172,12 +1229,12 @@ contains
 
 
     ! prepare coarse values to send to coarser neighbors
-    !$acc parallel loop gang default(present)
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid, CoFiratio, i1, i2, i3)")}$
     do iigrid = 1, igridstail; igrid=igrids(iigrid);
        if (any(neighbor_type(:,:,:,igrid)==neighbor_coarse)) then
 
           CoFiratio=one/dble(2**ndim)
-          !$acc loop collapse(4) vector
+          ${GPU_LOOP_VECTOR("collapse(4) private(ixFi1, ixFi2, ixFi3, ix1, ix2, ix3)")}$
           do iw = nwhead, nwtail
              do ixCo3 = ixCoMmin3,ixCoMmax3
                 do ixCo2 = ixCoMmin2,ixCoMmax2
@@ -1205,7 +1262,7 @@ contains
           do i3 = -1, 1
              do i2 = -1, 1
                 do i1 = -1, 1
-                   if (skip_direction([ i1,i2,i3 ])) cycle
+                   if (${SKIP_DIRECTION('i1','i2','i3')}$) cycle
                    if (neighbor_type(i1,i2,i3,igrid)==neighbor_coarse) call &
                         fill_coarse_boundary(time,igrid,i1,i2,i3)
                 end do
@@ -1218,9 +1275,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_srl
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%srl_nb(inb)%rcv%buffer, nbprocs_info%srl_nb(inb)%info_rcv%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%srl_nb(inb)%rcv%buffer, nbprocs_info%srl_nb(inb)%info_rcv%buffer')}$
 #endif
 #endif
        call mpi_irecv_wrapper(nbprocs_info%srl_nb(inb)%rcv%buffer, &
@@ -1231,7 +1288,7 @@ contains
             MPI_INTEGER, nbprocs_info%nbprocs_srl_list(inb), 2, icomm, recv_srl_nb(nbprocs_info%nbprocs_srl + inb), ierrmpi)
 
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
@@ -1239,9 +1296,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_f
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%info_rcv%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%fine_nb(inb)%rcv%buffer, nbprocs_info%fine_nb(inb)%info_rcv%buffer')}$
 #endif
 #endif
        call mpi_irecv_wrapper(nbprocs_info%fine_nb(inb)%rcv%buffer, &
@@ -1251,18 +1308,18 @@ contains
             nbprocs_info%fine_nb(inb)%info_rcv%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_f_list(inb), 2, icomm, recv_f_nb(nbprocs_info%nbprocs_f + inb), ierrmpi)
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
     ! fill the SRL send buffers on GPU
     do inb = 1, nbprocs_info%nbprocs_srl
-       !$acc parallel loop default(present) gang private(igrid, ienc, ibuf_start, i1, i2, i3, ixSmin1, ixSmin2, ixSmin3, Nx1)
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, iib2, iib3, ixSmin1, ixSmin2, ixSmin3, ixSmax1, ixSmax2, ixSmax3, Nx1, Nx2, Nx3, ipole, iB_pole, n_i1, n_i2, n_i3, sbase1, sbase2, sbase3, sstep1, sstep2, sstep3)")}$
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
              igrid = nbprocs_info%srl_nb(inb)%info%igrid(i)
              ienc = nbprocs_info%srl_nb(inb)%info%iencode(i)
              ibuf_start = nbprocs_info%srl_nb(inb)%info%ibuf_start(i)
-             call idecode( i1, i2, i3, ienc )
+             @:IDECODE(i1, i2, i3, ienc)
              iib1=idphyb(1,igrid); iib2=idphyb(2,igrid); iib3=idphyb(3,igrid)
 
              ! now fill the data and info buffers
@@ -1271,45 +1328,83 @@ contains
              ixSmin3=ixS_srl_min3(iib3,i3); ixSmax3=ixS_srl_max3(iib3,i3)
              Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
-             !$acc loop collapse(4) vector independent
+             ! The mirror and the sign are applied here, on the send side, so
+             ! that the buffer already holds what the receiver has to store and
+             ! the unpack stays a plain strided copy - which is what lets the
+             ! receiver get away with knowing nothing about the pole beyond the
+             ! destination offset shipped in the info record below.
+             ipole=neighbor_pole(i1,i2,i3,igrid)
+             n_i1=-i1; n_i2=-i2; n_i3=-i3
+             sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+             sbase3=ixSmin3; sstep3=1; iB_pole=1
+             if (ipole==1) then
+                n_i1=i1; sbase1=ixSmax1; sstep1=-1; iB_pole=(i1+3)/2
+             else if (ipole==2) then
+                n_i2=i2; sbase2=ixSmax2; sstep2=-1; iB_pole=2+(i2+3)/2
+             else if (ipole==3) then
+                n_i3=i3; sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
+             end if
+
+             ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
              do iw = nwhead, nwtail
                 do ix3 = ixSmin3, ixSmax3
                    do ix2 = ixSmin2, ixSmax2
                       do ix1 = ixSmin1, ixSmax1
                          nbprocs_info%srl_nb(inb)%send%buffer( &
                               ibuf_start &
-                              + (ix1-ixSmin1) &
-                              + Nx1 * (ix2-ixSmin2) &
-                              + Nx1*Nx2 * (ix3-ixSmin3) &
+                              + sstep1*(ix1-sbase1) &
+                              + Nx1 * (sstep2*(ix2-sbase2)) &
+                              + Nx1*Nx2 * (sstep3*(ix3-sbase3)) &
                               + Nx1*Nx2*Nx3 * (iw-nwhead) &
-                              ) = bg(bgstep)%w( ix1, ix2, ix3, iw, igrid)
+                              ) = merge(-one,one,ipole/=0 .and. &
+                              typeboundary(iw,iB_pole)==bc_asymm) &
+                              * bg(bgstep)%w( ix1, ix2, ix3, iw, igrid)
                       end do
                    end do
                 end do
              end do
+             ! ship the destination offset rather than our own, so that the
+             ! receiver does not have to undo the mirror it cannot see
              nbprocs_info%srl_nb(inb)%info_send%buffer( 1 + 3 * (i - 1) : 3 * i ) = &
-                  [neighbor(1,i1,i2,i3,igrid), ienc, ibuf_start]
+                  [neighbor(1,i1,i2,i3,igrid), &
+                   1 + (n_i1+1) + 3*(n_i2+1) + 9*(n_i3+1), ibuf_start]
        end do
     end do
 
     ! fill the C send buffers on GPU (send_restrict)
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc parallel loop gang default(present) private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3)
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,i1,i2,i3,inc1,inc2,inc3,igrid,ibuf_start,iib1,iib2,iib3,ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3)")}$
        do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%course_nb(inb)%info%igrid(i)
           i1 = nbprocs_info%course_nb(inb)%info%i1(i)
           i2 = nbprocs_info%course_nb(inb)%info%i2(i)
           i3 = nbprocs_info%course_nb(inb)%info%i3(i)
+          ipole=neighbor_pole(i1,i2,i3,igrid)
 
+          ! how they will be used at the receiving end.  The plain swap is
+          ! n_inc = -2*i+ic; across a pole it becomes n_inc = 2*i+(3-ic),
+          ! which on this 0..3 index leaves 0 and 3 alone and swaps 1 with 2.
           inc1 = nbprocs_info%course_nb(inb)%info%inc1(i)
-          if (inc1 == 0) then; inc1 = 3; else if (inc1 == 3) then; inc1 = 0; end if ! how they will be used at the receiving end
+          if (ipole == 1) then
+             if (inc1 == 1) then; inc1 = 2; else if (inc1 == 2) then; inc1 = 1; end if
+          else
+             if (inc1 == 0) then; inc1 = 3; else if (inc1 == 3) then; inc1 = 0; end if
+          end if
 
           inc2 = nbprocs_info%course_nb(inb)%info%inc2(i)
-          if (inc2 == 0) then; inc2 = 3; else if (inc2 == 3) then; inc2 = 0; end if ! how they will be used at the receiving end
+          if (ipole == 2) then
+             if (inc2 == 1) then; inc2 = 2; else if (inc2 == 2) then; inc2 = 1; end if
+          else
+             if (inc2 == 0) then; inc2 = 3; else if (inc2 == 3) then; inc2 = 0; end if
+          end if
 
           inc3 = nbprocs_info%course_nb(inb)%info%inc3(i)
-          if (inc3 == 0) then; inc3 = 3; else if (inc3 == 3) then; inc3 = 0; end if ! how they will be used at the receiving end
+          if (ipole == 3) then
+             if (inc3 == 1) then; inc3 = 2; else if (inc3 == 2) then; inc3 = 1; end if
+          else
+             if (inc3 == 0) then; inc3 = 3; else if (inc3 == 3) then; inc3 = 0; end if
+          end if
 
           ibuf_start = nbprocs_info%course_nb(inb)%info%ibuf_start(i)
           iib1=idphyb(1,igrid); iib2=idphyb(2,igrid); iib3=idphyb(3,igrid)
@@ -1320,18 +1415,31 @@ contains
           ixSmax2=ixS_r_max2(iib2,i2);ixSmax3=ixS_r_max3(iib3,i3)
           Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
-          !$acc loop collapse(4) vector independent
+          ! mirror and sign on the send side, as for srl above
+          sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+          sbase3=ixSmin3; sstep3=1; iB_pole=1
+          if (ipole==1) then
+             sbase1=ixSmax1; sstep1=-1; iB_pole=(i1+3)/2
+          else if (ipole==2) then
+             sbase2=ixSmax2; sstep2=-1; iB_pole=2+(i2+3)/2
+          else if (ipole==3) then
+             sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
+          end if
+
+          ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixSmin3, ixSmax3
                 do ix2 = ixSmin2, ixSmax2
                    do ix1 = ixSmin1, ixSmax1
                       nbprocs_info%course_nb(inb)%send%buffer( &
                            ibuf_start &
-                           + (ix1-ixSmin1) &
-                           + Nx1 * (ix2-ixSmin2) &
-                           + Nx1*Nx2 * (ix3-ixSmin3) &
+                           + sstep1*(ix1-sbase1) &
+                           + Nx1 * (sstep2*(ix2-sbase2)) &
+                           + Nx1*Nx2 * (sstep3*(ix3-sbase3)) &
                            + Nx1*Nx2*Nx3 * (iw-nwhead) &
-                           ) = bgc(1)%w( ix1, ix2, ix3, iw, igrid )
+                           ) = merge(-one,one,ipole/=0 .and. &
+                           typeboundary(iw,iB_pole)==bc_asymm) &
+                           * bgc(1)%w( ix1, ix2, ix3, iw, igrid )
                    end do
                 end do
              end do
@@ -1344,12 +1452,12 @@ contains
 
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_srl
-       !$acc update host(nbprocs_info%srl_nb(inb)%info_send%buffer)
-       !$acc update host(nbprocs_info%srl_nb(inb)%send%buffer)
+       ${GPU_UPDATE_HOST('nbprocs_info%srl_nb(inb)%info_send%buffer')}$
+       ${GPU_UPDATE_HOST('nbprocs_info%srl_nb(inb)%send%buffer')}$
     end do
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc update host(nbprocs_info%course_nb(inb)%info_send%buffer)
-       !$acc update host(nbprocs_info%course_nb(inb)%send%buffer)
+       ${GPU_UPDATE_HOST('nbprocs_info%course_nb(inb)%info_send%buffer')}$
+       ${GPU_UPDATE_HOST('nbprocs_info%course_nb(inb)%send%buffer')}$
     end do
 #endif
 
@@ -1357,9 +1465,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_srl
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%srl_nb(inb)%send%buffer, nbprocs_info%srl_nb(inb)%info_send%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%srl_nb(inb)%send%buffer, nbprocs_info%srl_nb(inb)%info_send%buffer')}$
 #endif
 #endif
        call mpi_isend_wrapper(nbprocs_info%srl_nb(inb)%send%buffer, &
@@ -1369,7 +1477,7 @@ contains
             nbprocs_info%srl_nb(inb)%info_send%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_srl_list(inb), 2, icomm, send_srl_nb(nbprocs_info%nbprocs_srl + inb), ierrmpi)
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
@@ -1377,9 +1485,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_c
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%course_nb(inb)%send%buffer, nbprocs_info%course_nb(inb)%info_send%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%course_nb(inb)%send%buffer, nbprocs_info%course_nb(inb)%info_send%buffer')}$
 #endif
 #endif
        call mpi_isend_wrapper(nbprocs_info%course_nb(inb)%send%buffer, &
@@ -1389,17 +1497,17 @@ contains
             nbprocs_info%course_nb(inb)%info_send%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_c_list(inb), 2, icomm, send_c_nb(nbprocs_info%nbprocs_c + inb), ierrmpi)
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
     ! fill ghost-cell values of sibling blocks and if neighbor is coarser (f2c)
     ! same process case
-    !$acc parallel loop gang collapse(2) default(present)
+    ${GPU_PARALLEL_LOOP_GANG("collapse(2) private(i1,i2,i3, igrid, iib1,iib2,iib3, ipe_neighbor, ineighbor, n_i1,n_i2,n_i3, ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3, ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3, ic1,ic2,ic3, n_inc1,n_inc2,n_inc3, ipole,iB_pole, sbase1,sbase2,sbase3, sstep1,sstep2,sstep3)")}$
     do iigrid = 1, igridstail
        do i = 1, 27
-          call idecode( i1, i2, i3, i)
-          if (skip_direction([ i1,i2,i3 ])) cycle
+          @:IDECODE(i1, i2, i3, i)
+          if (${SKIP_DIRECTION('i1','i2','i3')}$) cycle
           igrid=igrids(iigrid)
           iib1=idphyb(1,igrid); iib2=idphyb(2,igrid); iib3=idphyb(3,igrid)
           ipe_neighbor=neighbor(2,i1,i2,i3,igrid)
@@ -1410,7 +1518,14 @@ contains
              select case (neighbor_type(i1,i2,i3,igrid))
              case(neighbor_sibling)
 
+                   ipole=neighbor_pole(i1,i2,i3,igrid)
+                   ! across a pole the partner faces us from the same side, so
+                   ! that component of the offset keeps its sign
                    n_i1=-i1; n_i2=-i2; n_i3=-i3
+                   if (ipole==1) n_i1=i1
+                   if (ipole==2) n_i2=i2
+                   if (ipole==3) n_i3=i3
+
                    ixSmin1=ixS_srl_min1(iib1,i1);   ixSmin2=ixS_srl_min2(iib2,i2)
                    ixSmin3=ixS_srl_min3(iib3,i3);   ixSmax1=ixS_srl_max1(iib1,i1)
                    ixSmax2=ixS_srl_max2(iib2,i2);   ixSmax3=ixS_srl_max3(iib3,i3)
@@ -1418,14 +1533,26 @@ contains
                    ixRmin3=ixR_srl_min3(iib3,n_i3); ixRmax1=ixR_srl_max1(iib1,n_i1)
                    ixRmax2=ixR_srl_max2(iib2,n_i2); ixRmax3=ixR_srl_max3(iib3,n_i3)
 
-                   !$acc loop collapse(ndim+1) independent vector
+                   sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+                   sbase3=ixSmin3; sstep3=1; iB_pole=1
+                   if (ipole==1) then
+                      sbase1=ixSmax1; sstep1=-1; iB_pole=(i1+3)/2
+                   else if (ipole==2) then
+                      sbase2=ixSmax2; sstep2=-1; iB_pole=2+(i2+3)/2
+                   else if (ipole==3) then
+                      sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
+                   end if
+
+                   ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$ ${GPU_INDEPENDENT()}$
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
                             do ix1=1,ixSmax1-ixSmin1+1
                                bg(bgstep)%w(ixRmin1+ix1-1,ixRmin2+ix2-1,ixRmin3+ix3-1,&
-                                    iw,ineighbor) = bg(bgstep)%w(ixSmin1+ix1-1,ixSmin2+ix2-1,&
-                                    ixSmin3+ix3-1,iw,igrid)
+                                    iw,ineighbor) = merge(-one,one,ipole/=0 .and. &
+                                    typeboundary(iw,iB_pole)==bc_asymm) &
+                                    * bg(bgstep)%w(sbase1+sstep1*(ix1-1),sbase2+sstep2*(ix2-1),&
+                                    sbase3+sstep3*(ix3-1),iw,igrid)
                             end do
                          end do
                       end do
@@ -1440,7 +1567,14 @@ contains
                  if(.not.(i1==0.or.i1==2*ic1-3).or..not.(i2==0.or.i2==2*ic2-3)&
                       .or..not.(i3==0.or.i3==2*ic3-3)) cycle
 
+                   ipole=neighbor_pole(i1,i2,i3,igrid)
+                   ! same rule as srl, expressed in the child-offset index:
+                   ! the pole component keeps 2*i and mirrors the child index
                    n_inc1=-2*i1+ic1;n_inc2=-2*i2+ic2;n_inc3=-2*i3+ic3;
+                   if (ipole==1) n_inc1=2*i1+(3-ic1)
+                   if (ipole==2) n_inc2=2*i2+(3-ic2)
+                   if (ipole==3) n_inc3=2*i3+(3-ic3)
+
                    ixSmin1=ixS_r_min1(iib1,i1);ixSmin2=ixS_r_min2(iib2,i2)
                    ixSmin3=ixS_r_min3(iib3,i3);ixSmax1=ixS_r_max1(iib1,i1)
                    ixSmax2=ixS_r_max2(iib2,i2);ixSmax3=ixS_r_max3(iib3,i3);
@@ -1448,14 +1582,26 @@ contains
                    ixRmin3=ixR_r_min3(iib3,n_inc3);ixRmax1=ixR_r_max1(iib1,n_inc1)
                    ixRmax2=ixR_r_max2(iib2,n_inc2);ixRmax3=ixR_r_max3(iib3,n_inc3);
 
-                   !$acc loop collapse(ndim+1) independent vector
+                   sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+                   sbase3=ixSmin3; sstep3=1; iB_pole=1
+                   if (ipole==1) then
+                      sbase1=ixSmax1; sstep1=-1; iB_pole=(i1+3)/2
+                   else if (ipole==2) then
+                      sbase2=ixSmax2; sstep2=-1; iB_pole=2+(i2+3)/2
+                   else if (ipole==3) then
+                      sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
+                   end if
+
+                   ${GPU_LOOP_VECTOR("collapse(ndim+1)")}$ ${GPU_INDEPENDENT()}$
                    do iw = nwhead, nwtail
                       do ix3=1,ixSmax3-ixSmin3+1
                          do ix2=1,ixSmax2-ixSmin2+1
                             do ix1=1,ixSmax1-ixSmin1+1
                                bg(bgstep)%w(ixRmin1+ix1-1,ixRmin2+ix2-1,&
-                                    ixRmin3+ix3-1,iw,ineighbor) = bgc(1)%w(ixSmin1+ix1-1,&
-                                    ixSmin2+ix2-1,ixSmin3+ix3-1,iw, igrid)
+                                    ixRmin3+ix3-1,iw,ineighbor) = merge(-one,one,&
+                                    ipole/=0 .and. typeboundary(iw,iB_pole)==bc_asymm) &
+                                    * bgc(1)%w(sbase1+sstep1*(ix1-1),&
+                                    sbase2+sstep2*(ix2-1),sbase3+sstep3*(ix3-1),iw, igrid)
                             end do
                          end do
                       end do
@@ -1473,22 +1619,23 @@ contains
     call MPI_WAITALL(nbprocs_info%nbprocs_srl*2, send_srl_nb, sendstatus_srl_nb, ierrmpi)
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_srl
-      !$acc update device(nbprocs_info%srl_nb(inb)%info_rcv%buffer)
-      !$acc update device(nbprocs_info%srl_nb(inb)%rcv%buffer)
+      ${GPU_UPDATE_DEVICE('nbprocs_info%srl_nb(inb)%info_rcv%buffer')}$
+      ${GPU_UPDATE_DEVICE('nbprocs_info%srl_nb(inb)%rcv%buffer')}$
     end do
 #endif
 
     ! unpack the MPI buffers
     do inb = 1, nbprocs_info%nbprocs_srl
-      !$acc parallel loop gang default(present) independent private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, ixRmin1, ixRmin2, ixRmin3, Nx1)
+      ${GPU_PARALLEL_LOOP_GANG("private(igrid, ienc, ibuf_start, i1, i2, i3, iib1, iib2, iib3, ixRmin1, ixRmin2, ixRmin3, ixRmax1, ixRmax2, ixRmax3, Nx1, Nx2, Nx3)")}$ ${GPU_INDEPENDENT()}$
        do i = 1, nbprocs_info%srl_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%srl_nb(inb)%info_rcv%buffer( 3 * (i - 1) + 1 )
           ienc        = nbprocs_info%srl_nb(inb)%info_rcv%buffer( 3 * (i - 1) + 2 )
           ibuf_start  = nbprocs_info%srl_nb(inb)%info_rcv%buffer( 3 * (i - 1) + 3 )
 
-          call idecode( i1, i2, i3, ienc )
-          i1 = -i1; i2 = -i2; i3=-i3
+          ! ienc already encodes our own ghost-region offset: the sender
+          ! computed it, mirrored across a pole where there is one
+          @:IDECODE(i1, i2, i3, ienc)
 
           iib1 = idphyb(1,igrid); iib2 = idphyb(2,igrid); iib3 = idphyb(3,igrid)
 
@@ -1497,7 +1644,7 @@ contains
           ixRmax2=ixR_srl_max2(iib2,i2); ixRmax3=ixR_srl_max3(iib3,i3)
           Nx1=ixRmax1-ixRmin1+1; Nx2=ixRmax2-ixRmin2+1; Nx3=ixRmax3-ixRmin3+1
 
-          !$acc loop collapse(4) vector independent private(tempval)
+          ${GPU_LOOP_VECTOR("collapse(4) private(tempval)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixRmin3, ixRmax3
                 do ix2 = ixRmin2, ixRmax2
@@ -1525,14 +1672,14 @@ contains
 
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc update device(nbprocs_info%fine_nb(inb)%info_rcv%buffer(1:nbprocs_info%fine_nb(inb)%info_rcv%size))
-       !$acc update device(nbprocs_info%fine_nb(inb)%rcv%buffer(1:nbprocs_info%fine_nb(inb)%rcv%size))
+       ${GPU_UPDATE_DEVICE('nbprocs_info%fine_nb(inb)%info_rcv%buffer(1:nbprocs_info%fine_nb(inb)%info_rcv%size)')}$
+       ${GPU_UPDATE_DEVICE('nbprocs_info%fine_nb(inb)%rcv%buffer(1:nbprocs_info%fine_nb(inb)%rcv%size)')}$
     end do
 #endif
 
     ! unpack the MPI buffers, fine neighbor, (f_recv), recv_restrict
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc parallel loop gang default(present)
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid, inc1, inc2, inc3, ibuf_start, iib1, iib2, iib3, ixRmin1, ixRmin2, ixRmin3, ixRmax1, ixRmax2, ixRmax3, Nx1, Nx2, Nx3)")}$
        do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%fine_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 1 )
@@ -1548,7 +1695,7 @@ contains
           ixRmax2=ixR_r_max2(iib2,inc2); ixRmax3=ixR_r_max3(iib3,inc3)
           Nx1=ixRmax1-ixRmin1+1; Nx2=ixRmax2-ixRmin2+1; Nx3=ixRmax3-ixRmin3+1
 
-          !$acc loop collapse(4) vector independent
+          ${GPU_LOOP_VECTOR("collapse(4) private(tempval)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixRmin3, ixRmax3
                 do ix2 = ixRmin2, ixRmax2
@@ -1575,9 +1722,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_c
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%course_nb(inb)%rcv%buffer, nbprocs_info%course_nb(inb)%info_rcv%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%course_nb(inb)%rcv%buffer, nbprocs_info%course_nb(inb)%info_rcv%buffer')}$
 #endif
 #endif
        call mpi_irecv_wrapper(nbprocs_info%course_nb(inb)%rcv%buffer, &
@@ -1587,19 +1734,26 @@ contains
             nbprocs_info%course_nb(inb)%info_rcv%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_c_list(inb), 2, icomm, recv_c_nb(nbprocs_info%nbprocs_c + inb), ierrmpi)
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
     ! fill the F (neighbor is finer) send buffer on GPU (send_prolong)
     do inb = 1, nbprocs_info%nbprocs_f
-       !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3) default(present)
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,inc1,inc2,inc3,n_inc1,n_inc2,n_inc3,i1,i2,i3,igrid,ibuf_start,iib1,iib2,iib3,ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3)")}$ ${GPU_INDEPENDENT()}$
        do i = 1,nbprocs_info%fine_nb(inb)%info%nigrids
 
           igrid = nbprocs_info%fine_nb(inb)%info%igrid(i)
           inc1 = nbprocs_info%fine_nb(inb)%info%inc1(i)
           inc2 = nbprocs_info%fine_nb(inb)%info%inc2(i)
           inc3 = nbprocs_info%fine_nb(inb)%info%inc3(i)
+
+          ! only inc = 2*i+ic is stored, and neighbor_pole is indexed by i;
+          ! ic is 1 or 2, so inc pins i down (0 -> -1, 1 or 2 -> 0, 3 -> +1)
+          if (inc1 == 0) then; i1 = -1; else if (inc1 == 3) then; i1 = 1; else; i1 = 0; end if
+          if (inc2 == 0) then; i2 = -1; else if (inc2 == 3) then; i2 = 1; else; i2 = 0; end if
+          if (inc3 == 0) then; i3 = -1; else if (inc3 == 3) then; i3 = 1; else; i3 = 0; end if
+          ipole=neighbor_pole(i1,i2,i3,igrid)
 
           ibuf_start = nbprocs_info%fine_nb(inb)%info%ibuf_start(i)
           iib1=idphyb(1,igrid); iib2=idphyb(2,igrid); iib3=idphyb(3,igrid)
@@ -1610,28 +1764,48 @@ contains
           ixSmax2=ixS_p_max2(iib2,inc2);ixSmax3=ixS_p_max3(iib3,inc3)
           Nx1=ixSmax1-ixSmin1+1; Nx2=ixSmax2-ixSmin2+1; Nx3=ixSmax3-ixSmin3+1
 
-          !$acc loop collapse(4) vector independent
+          ! mirror and sign on the send side, as for srl and restrict above
+          sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+          sbase3=ixSmin3; sstep3=1; iB_pole=1
+          if (ipole==1) then
+             sbase1=ixSmax1; sstep1=-1; iB_pole=(i1+3)/2
+          else if (ipole==2) then
+             sbase2=ixSmax2; sstep2=-1; iB_pole=2+(i2+3)/2
+          else if (ipole==3) then
+             sbase3=ixSmax3; sstep3=-1; iB_pole=4+(i3+3)/2
+          end if
+
+          ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixSmin3, ixSmax3
                 do ix2 = ixSmin2, ixSmax2
                    do ix1 = ixSmin1, ixSmax1
                       nbprocs_info%fine_nb(inb)%send%buffer( &
                            ibuf_start &
-                           + (ix1-ixSmin1) &
-                           + Nx1 * (ix2-ixSmin2) &
-                           + Nx1*Nx2 * (ix3-ixSmin3) &
+                           + sstep1*(ix1-sbase1) &
+                           + Nx1 * (sstep2*(ix2-sbase2)) &
+                           + Nx1*Nx2 * (sstep3*(ix3-sbase3)) &
                            + Nx1*Nx2*Nx3 * (iw-nwhead) &
-                           ) = bg(bgstep)%w( ix1, ix2, ix3, iw, igrid )
+                           ) = merge(-one,one,ipole/=0 .and. &
+                           typeboundary(iw,iB_pole)==bc_asymm) &
+                           * bg(bgstep)%w( ix1, ix2, ix3, iw, igrid )
                    end do
                 end do
              end do
           end do
 
-          ! how they will be used at the receiving end;
+          ! how they will be used at the receiving end.  The plain rule is
+          ! n_inc = ic-i, the 0<->3 swap; across a pole n_inc = inc, no swap.
           n_inc1 = inc1; n_inc2 = inc2; n_inc3 = inc3
-          if (n_inc1 == 0) then; n_inc1 = 3; else if (n_inc1 == 3) then; n_inc1 = 0; end if
-          if (n_inc2 == 0) then; n_inc2 = 3; else if (n_inc2 == 3) then; n_inc2 = 0; end if
-          if (n_inc3 == 0) then; n_inc3 = 3; else if (n_inc3 == 3) then; n_inc3 = 0; end if
+          if (ipole /= 1) then
+             if (n_inc1 == 0) then; n_inc1 = 3; else if (n_inc1 == 3) then; n_inc1 = 0; end if
+          end if
+          if (ipole /= 2) then
+             if (n_inc2 == 0) then; n_inc2 = 3; else if (n_inc2 == 3) then; n_inc2 = 0; end if
+          end if
+          if (ipole /= 3) then
+             if (n_inc3 == 0) then; n_inc3 = 3; else if (n_inc3 == 3) then; n_inc3 = 0; end if
+          end if
 
           nbprocs_info%fine_nb(inb)%info_send%buffer( 1 + 5 * (i - 1) : 5 * i ) = &
                [neighbor_child(1,inc1,inc2,inc3,igrid), n_inc1, n_inc2, n_inc3, ibuf_start]
@@ -1640,8 +1814,8 @@ contains
 
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_f
-      !$acc update host(nbprocs_info%fine_nb(inb)%info_send%buffer)
-      !$acc update host(nbprocs_info%fine_nb(inb)%send%buffer)
+      ${GPU_UPDATE_HOST('nbprocs_info%fine_nb(inb)%info_send%buffer')}$
+      ${GPU_UPDATE_HOST('nbprocs_info%fine_nb(inb)%send%buffer')}$
     end do
 #endif
 
@@ -1649,9 +1823,9 @@ contains
     do inb = 1, nbprocs_info%nbprocs_f
 #ifndef NOGPUDIRECT
 #ifdef _CRAYFTN
-      !$acc host_data use_device(nbprocs_info)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info')}$
 #else
-      !$acc host_data use_device(nbprocs_info%fine_nb(inb)%send%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer)
+      ${GPU_HOST_DATA_USE_DEVICE('nbprocs_info%fine_nb(inb)%send%buffer, nbprocs_info%fine_nb(inb)%info_send%buffer')}$
 #endif
 #endif
        call mpi_isend_wrapper(nbprocs_info%fine_nb(inb)%send%buffer, &
@@ -1661,21 +1835,30 @@ contains
             nbprocs_info%fine_nb(inb)%info_send%size, &
             MPI_INTEGER, nbprocs_info%nbprocs_f_list(inb), 2, icomm, send_f_nb(nbprocs_info%nbprocs_f + inb), ierrmpi)
 #ifndef NOGPUDIRECT
-      !$acc end host_data
+      ${GPU_END_HOST_DATA()}$
 #endif
     end do
 
 
     ! fill coarse ghost-cell values of finer neighbors in the same processor
-    !$acc parallel loop gang collapse(4) private(iib1,iib2,iib3,igrid) default(present)
+    ${GPU_PARALLEL_LOOP_GANG("collapse(4) private(iib1,iib2,iib3,igrid,ipole,iB_pole,sbase1,sbase2,sbase3,sstep1,sstep2,sstep3, inc1,inc2,inc3, ineighbor,ipe_neighbor, n_i1,n_i2,n_i3, n_inc1,n_inc2,n_inc3, ixSmin1,ixSmin2,ixSmin3,ixSmax1,ixSmax2,ixSmax3, ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3)")}$
     do iigrid=1,igridstail
        do i3=-1,1
           do i2=-1,1
              do i1=-1,1
-                if (skip_direction([ i1,i2,i3 ])) cycle
+                if (${SKIP_DIRECTION('i1','i2','i3')}$) cycle
                 igrid = igrids(iigrid)
                 if (neighbor_type(i1,i2,i3,igrid)==neighbor_fine) then
                    iib1=idphyb(1,igrid);iib2=idphyb(2,igrid);iib3=idphyb(3,igrid);
+                   ipole=neighbor_pole(i1,i2,i3,igrid)
+                   iB_pole=1
+                   if (ipole==1) then
+                      iB_pole=(i1+3)/2
+                   else if (ipole==2) then
+                      iB_pole=2+(i2+3)/2
+                   else if (ipole==3) then
+                      iB_pole=4+(i3+3)/2
+                   end if
                    !  inline of call bc_fill_prolong(igrid,i1,i2,i3,iib1,iib2,iib3) :
 
                    do ic3 = 1+int((1-i3)/2), 2-int((1+i3)/2)
@@ -1691,8 +1874,13 @@ contains
                                ixSmax2=ixS_p_max2(iib2,inc2);ixSmax3=ixS_p_max3(iib3,inc3)
 
                                ineighbor = neighbor_child(1,inc1,inc2,inc3,igrid)
+                               ! plain rule n_inc = ic-i; across a pole the
+                               ! child sits at the same offset, n_inc = inc
                                n_i1=-i1; n_i2=-i2; n_i3=-i3
                                n_inc1=ic1+n_i1; n_inc2=ic2+n_i2; n_inc3=ic3+n_i3
+                               if (ipole==1) n_inc1=inc1
+                               if (ipole==2) n_inc2=inc2
+                               if (ipole==3) n_inc3=inc3
 
                                ixRmin1=ixR_p_min1(iib1,n_inc1)
                                ixRmin2=ixR_p_min2(iib2,n_inc2)
@@ -1701,14 +1889,26 @@ contains
                                ixRmax2=ixR_p_max2(iib2,n_inc2)
                                ixRmax3=ixR_p_max3(iib3,n_inc3)
 
-                               !$acc loop collapse(4) vector independent
+                               sbase1=ixSmin1; sstep1=1; sbase2=ixSmin2; sstep2=1
+                               sbase3=ixSmin3; sstep3=1
+                               if (ipole==1) then
+                                  sbase1=ixSmax1; sstep1=-1
+                               else if (ipole==2) then
+                                  sbase2=ixSmax2; sstep2=-1
+                               else if (ipole==3) then
+                                  sbase3=ixSmax3; sstep3=-1
+                               end if
+
+                               ${GPU_LOOP_VECTOR("collapse(4)")}$ ${GPU_INDEPENDENT()}$
                                do iw = nwhead, nwtail
                                   do ix3 =0, ixRmax3-ixRmin3
                                      do ix2 = 0, ixRmax2-ixRmin2
                                         do ix1 = 0, ixRmax1-ixRmin1
                                            bgc(1)%w(ixRmin1+ix1,ixRmin2+ix2,&
-                                                ixRmin3+ix3,iw,ineighbor) = bg(bgstep)%w(ixSmin1+ix1,&
-                                                ixSmin2+ix2,ixSmin3+ix3,iw, igrid)
+                                                ixRmin3+ix3,iw,ineighbor) = merge(-one,one,&
+                                                ipole/=0 .and. typeboundary(iw,iB_pole)==bc_asymm) &
+                                                * bg(bgstep)%w(sbase1+sstep1*ix1,&
+                                                sbase2+sstep2*ix2,sbase3+sstep3*ix3,iw, igrid)
                                         end do
                                      end do
                                   end do
@@ -1727,7 +1927,6 @@ contains
        end do
 
     end do
-    !$OMP END PARALLEL DO
 
     call MPI_WAITALL(nbprocs_info%nbprocs_c*2, recv_c_nb, recvstatus_c_nb, ierrmpi)
     call MPI_WAITALL(nbprocs_info%nbprocs_f*2, send_f_nb, sendstatus_f_nb, ierrmpi)
@@ -1735,14 +1934,14 @@ contains
 
 #ifdef NOGPUDIRECT
     do inb = 1, nbprocs_info%nbprocs_c
-      !$acc update device(nbprocs_info%course_nb(inb)%info_rcv%buffer(1:nbprocs_info%course_nb(inb)%info_rcv%size))
-      !$acc update device(nbprocs_info%course_nb(inb)%rcv%buffer(1:nbprocs_info%course_nb(inb)%rcv%size))
+      ${GPU_UPDATE_DEVICE('nbprocs_info%course_nb(inb)%info_rcv%buffer(1:nbprocs_info%course_nb(inb)%info_rcv%size)')}$
+      ${GPU_UPDATE_DEVICE('nbprocs_info%course_nb(inb)%rcv%buffer(1:nbprocs_info%course_nb(inb)%rcv%size)')}$
     end do
 #endif
 
     ! unpack the MPI buffers, coarse neighbor, (c_recv), recv_prolong
     do inb = 1, nbprocs_info%nbprocs_c
-       !$acc parallel loop gang independent private(Nx1,Nx2,Nx3,inc1,inc2,inc3) default(present)
+       ${GPU_PARALLEL_LOOP_GANG("private(Nx1,Nx2,Nx3,inc1,inc2,inc3,igrid,ibuf_start,iib1,iib2,iib3,ixRmin1,ixRmin2,ixRmin3,ixRmax1,ixRmax2,ixRmax3)")}$ ${GPU_INDEPENDENT()}$
        do i = 1, nbprocs_info%course_nb(inb)%info%nigrids
 
           igrid       = nbprocs_info%course_nb(inb)%info_rcv%buffer( 5 * (i - 1) + 1 )
@@ -1758,7 +1957,7 @@ contains
           ixRmax2=ixR_p_max2(iib2,inc2); ixRmax3=ixR_p_max3(iib3,inc3)
           Nx1=ixRmax1-ixRmin1+1; Nx2=ixRmax2-ixRmin2+1; Nx3=ixRmax3-ixRmin3+1
 
-          !$acc loop collapse(4) vector independent
+          ${GPU_LOOP_VECTOR("collapse(4) private(tempval)")}$ ${GPU_INDEPENDENT()}$
           do iw = nwhead, nwtail
              do ix3 = ixRmin3, ixRmax3
                 do ix2 = ixRmin2, ixRmax2
@@ -1782,13 +1981,13 @@ contains
     end do
 
     ! do prolongation on the ghost-cell values based on the received coarse values from coarser neighbors (f2c)
-    !$acc parallel loop gang collapse(4) default(present)
+    ${GPU_PARALLEL_LOOP_GANG("collapse(4) private(igrid, iib1,iib2,iib3, ixFimin1,ixFimin2,ixFimin3,ixFimax1,ixFimax2,ixFimax3, dxFi1,dxFi2,dxFi3, dxCo1,dxCo2,dxCo3, invdxCo1,invdxCo2,invdxCo3, xFimin1,xFimin2,xFimin3, xComin1,xComin2,xComin3)")}$
     do iigrid=1, igridstail
        !      inline variant of call gc_prolong(igrid)
        do i3 = -1, 1
           do i2 = -1, 1
              do i1 = -1, 1
-                if (skip_direction([ i1,i2,i3 ])) cycle
+                if (${SKIP_DIRECTION('i1','i2','i3')}$) cycle
                 igrid = igrids(iigrid)
                 if (neighbor_type(i1,i2,i3,igrid)==neighbor_coarse) then
                    iib1=idphyb(1,igrid);iib2=idphyb(2,igrid);iib3=idphyb(3,igrid)
@@ -1813,7 +2012,7 @@ contains
                    xComin2=rnode(rpxmin2_,igrid)-dble(nghostcells)*dxCo2
                    xComin3=rnode(rpxmin3_,igrid)-dble(nghostcells)*dxCo3;
 
-                   !$acc loop collapse(3) vector independent private(slope)
+                   ${GPU_LOOP_VECTOR("collapse(3) private(slope, xFi1,xFi2,xFi3, ixCo1,ixCo2,ixCo3, xCo1,xCo2,xCo3, eta1,eta2,eta3, iw, idims, hxCo1,hxCo2,hxCo3, jxCo1,jxCo2,jxCo3, slopeL,slopeR,slopeC,signR,signC)")}$ ${GPU_INDEPENDENT()}$
                    do ixFi3 = ixFimin3,ixFimax3
                       do ixFi2 = ixFimin2,ixFimax2
                          do ixFi1 = ixFimin1,ixFimax1
@@ -1874,6 +2073,22 @@ contains
        end do
     end do
 
+    ! Re-fill the physical-boundary ghost cells now that the internal
+    ! ghost-cell exchange has run, mirroring upstream MPI-AMRVAC's
+    ! post-exchange bc_phys pass. fill_boundary_before_gc fills only the
+    ! interior transverse range of each boundary (corner info is not yet
+    ! known); fill_boundary_after_gc enlarges it to the corners, which is
+    ! where a physical boundary meets a pole face. No current test needs
+    ! this second pass, but it keeps corner-ghost handling complete and
+    ! matches upstream for setups this fork does not yet exercise.
+    if(bcphys.and. .not.stagger_grid) then
+       ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
+       do iigrid = 1, igridstail; igrid=igrids(iigrid);
+          if (.not.phyboundblock(igrid)) cycle
+          call fill_boundary_after_gc(psb(igrid),igrid,time,qdt)
+       end do
+    end if
+
     ! modify normal component of magnetic field to fix divB=0
     if(bcphys.and.associated(phys_boundary_adjust)) then
        do iigrid=1,igridstail; igrid=igrids(iigrid);
@@ -1888,27 +2103,11 @@ contains
 
   end subroutine getbc
 
-  logical function skip_direction(dir)
-    ! This is a Cray compiler directive to force inlining.
-    ! Required for OpenACC at optimization levels where it would not be inlined.
-    !dir$ inlinealways skip_direction
-    !$acc routine vector
-    integer, intent(in) :: dir(3)
-
-    if (all(dir == 0)) then
-       skip_direction = .true.
-    else if (.not. req_diagonal .and. count(dir /= 0) > 1) then
-       skip_direction = .true.
-    else
-       skip_direction = .false.
-    end if
-  end function skip_direction
-
 
   subroutine fill_coarse_boundary(time,igrid,i1,i2,i3)
-    !$acc routine vector
     use mod_global_parameters
     use mod_boundary_conditions, only: bc_phys
+    ${GPU_ROUTINE_VECTOR()}$
     integer, intent(in) :: igrid,i1,i2,i3
     double precision, intent(in) :: time
 
@@ -1971,7 +2170,8 @@ contains
              if (abs(i1)==1.and.abs(ii1)==1.or.abs(i2)==1.and.abs(ii2)==&
                   1.or.abs(i3)==1.and.abs(ii3)==1) cycle
              if (neighbor_type(ii1,ii2,ii3,igrid)/=neighbor_boundary) cycle
-             call bc_phys(iside,idims,time,0.d0,psc(igrid),ixCoGmin1,&
+             call bc_phys(iside,idims,time,0.d0,psc(igrid),&
+                  bgeoc%x(:,:,:,:,igrid),ixCoGmin1,&
                   ixCoGmin2,ixCoGmin3,ixCoGmax1,ixCoGmax2,ixCoGmax3,ixBmin1,&
                   ixBmin2,ixBmin3,ixBmax1,ixBmax2,ixBmax3)
           end do
@@ -1982,9 +2182,9 @@ contains
 
   !> Physical boundary conditions
   subroutine fill_boundary_before_gc(s,igrid,time,qdt)
-    !$acc routine vector
     use mod_global_parameters
     use mod_boundary_conditions, only: bc_phys
+    ${GPU_ROUTINE_VECTOR()}$
 
     type(state), intent(inout) :: s
     integer, intent(in) :: igrid
@@ -2035,7 +2235,8 @@ contains
           else
              if (neighbor_type(i1,i2,i3,igrid) /= neighbor_boundary) cycle
           end if
-          call bc_phys(iside,idims,time,qdt,s,ixGlo1,ixGlo2,ixGlo3,&
+          call bc_phys(iside,idims,time,qdt,s,bgeo%x(:,:,:,:,igrid),&
+               ixGlo1,ixGlo2,ixGlo3,&
                ixGhi1,ixGhi2,ixGhi3,ixBmin1,ixBmin2,ixBmin3,ixBmax1,ixBmax2,&
                ixBmax3)
        end do
@@ -2045,9 +2246,9 @@ contains
 
   !> Physical boundary conditions
   subroutine fill_boundary_after_gc(s,igrid,time,qdt)
-    !$acc routine vector
     use mod_global_parameters
     use mod_boundary_conditions, only: bc_phys
+    ${GPU_ROUTINE_VECTOR()}$
 
     type(state), intent(inout) :: s
     integer, intent(in) :: igrid
@@ -2085,7 +2286,8 @@ contains
           else
              if (neighbor_type(i1,i2,i3,igrid) /= neighbor_boundary) cycle
           end if
-          call bc_phys(iside,idims,time,qdt,s,ixGlo1,ixGlo2,ixGlo3,&
+          call bc_phys(iside,idims,time,qdt,s,bgeo%x(:,:,:,:,igrid),&
+               ixGlo1,ixGlo2,ixGlo3,&
                ixGhi1,ixGhi2,ixGhi3,ixBmin1,ixBmin2,ixBmin3,ixBmax1,ixBmax2,&
                ixBmax3)
        end do

@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 module mod_refine
 
   implicit none
@@ -33,7 +36,8 @@ contains
        ! prolong igrid to new children
        call prolong_grid(child_igrid,child_ipe,igrid,ipe)
     else
-       ! Fill new created children with initial condition
+       ! Fill new created children with initial condition, which fetches each
+       ! child's positions back from the device itself.
        do ic3=1,2
        do ic2=1,2
        do ic1=1,2
@@ -51,6 +55,7 @@ contains
   subroutine prolong_grid(child_igrid,child_ipe,igrid,ipe)
     use mod_physics, only: phys_to_primitive, phys_to_conserved
     use mod_global_parameters
+    use mod_geometry, only: sync_positions_host
     use mod_amr_fct, only: old_neighbors
 
     integer, dimension(2,2,2), intent(in) :: child_igrid, child_ipe
@@ -64,6 +69,8 @@ contains
     ixmin1=ixMlo1-1;ixmin2=ixMlo2-1;ixmin3=ixMlo3-1;ixmax1=ixMhi1+1
     ixmax2=ixMhi2+1;ixmax3=ixMhi3+1;
 
+    ! phys_to_primitive/phys_to_conserved below read ps(igrid)%x on the host
+    if(prolongprimitive) call sync_positions_host(igrid)
     if(prolongprimitive) call phys_to_primitive(ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
        ixGhi2,ixGhi3,ixmin1,ixmin2,ixmin3,ixmax1,ixmax2,ixmax3,ps(igrid)%w,&
        ps(igrid)%x)
@@ -114,9 +121,12 @@ contains
   subroutine prolong_2nd(sCo,ixComin1,ixComin2,ixComin3,ixComax1,ixComax2,&
      ixComax3,sFi,dxCo1,dxCo2,dxCo3,xComin1,xComin2,xComin3,dxFi1,dxFi2,dxFi3,&
      xFimin1,xFimin2,xFimin3,igridCo,igridFi)
-    use mod_physics, only: phys_to_conserved, phys_handle_small_values
+    use mod_physics, only: phys_to_conserved
     use mod_global_parameters
+    use mod_geometry, only: sync_positions_host
     use mod_amr_fct, only: already_fine, prolong_2nd_stg
+    use mod_set_aux, only: set_aux
+    use mod_physics_vars, only: nw_phys
 
     integer, intent(in) :: ixComin1,ixComin2,ixComin3,ixComax1,ixComax2,&
        ixComax3, igridFi, igridCo
@@ -131,12 +141,19 @@ contains
     double precision :: slopeL, slopeR, slopeC, signC, signR
     double precision :: slope(nw,ndim)
     double precision :: eta1,eta2,eta3
+    double precision :: u(nw_phys)
     logical :: fine_min1,fine_min2,fine_min3,fine_max1,fine_max2,fine_max3
+    logical :: refresh_aux
 
     ixCgmin1=ixComin1;ixCgmin2=ixComin2;ixCgmin3=ixComin3;ixCgmax1=ixComax1
     ixCgmax2=ixComax2;ixCgmax3=ixComax3;
 
-    !$acc parallel loop collapse(3) private(slope)
+    ! The auxiliaries are interpolated along with the rest of w, so each fine
+    ! cell's are recomputed from its conserved state as soon as it is written.
+    ! Not under prolongprimitive, where w holds primitive variables here.
+    refresh_aux = nwaux > 0 .and. .not. prolongprimitive
+
+    ${GPU_PARALLEL_LOOP("collapse(3) private(slope, ixFi1,ixFi2,ixFi3, idim, hxCo1,hxCo2,hxCo3, jxCo1,jxCo2,jxCo3, iw, slopeL,slopeR,slopeC,signC,signR, ix1,ix2,ix3, eta1,eta2,eta3, u)")}$
     do ixCo3 = ixCgmin3,ixCgmax3
        do ixCo2 = ixCgmin2,ixCgmax2
           do ixCo1 = ixCgmin1,ixCgmax1
@@ -152,7 +169,7 @@ contains
                 jxCo2=ixCo2+kr(2,idim)
                 jxCo3=ixCo3+kr(3,idim)
 
-                do iw=1,nw
+                do iw=1,nwgc  ! analytic extras past nwgc are set in alloc_node
                    slopeL=bg(1)%w(ixCo1,ixCo2,ixCo3,iw, igridCo) - bg(1)%w(hxCo1,hxCo2,hxCo3,iw, igridCo)
                    slopeR=bg(1)%w(jxCo1,jxCo2,jxCo3,iw, igridCo) - bg(1)%w(ixCo1,ixCo2,ixCo3,iw, igridCo)
                    slopeC=half*(slopeR+slopeL)
@@ -200,17 +217,23 @@ contains
                          eta3=0.5d0*(dble(ix3-ixFi3)-0.5d0);
                       else
                          ! forefactor is -0.5d0 when ix=ixFi and +0.5d0 for ixFi+1
-                         eta1=(dble(ix1-ixFi1)-0.5d0)*(one-sFi%dvolume(ix1,ix2,&
-                              ix3) /sum(sFi%dvolume(ixFi1:ixFi1+1,ix2,ix3)))
+                         eta1=(dble(ix1-ixFi1)-0.5d0)*(one-bgeo%dvolume(ix1,ix2,&
+                              ix3,igridFi) /sum(bgeo%dvolume(ixFi1:ixFi1+1,ix2,ix3,igridFi)))
                          ! forefactor is -0.5d0 when ix=ixFi and +0.5d0 for ixFi+1
-                         eta2=(dble(ix2-ixFi2)-0.5d0)*(one-sFi%dvolume(ix1,ix2,&
-                              ix3) /sum(sFi%dvolume(ix1,ixFi2:ixFi2+1,ix3)))
+                         eta2=(dble(ix2-ixFi2)-0.5d0)*(one-bgeo%dvolume(ix1,ix2,&
+                              ix3,igridFi) /sum(bgeo%dvolume(ix1,ixFi2:ixFi2+1,ix3,igridFi)))
                          ! forefactor is -0.5d0 when ix=ixFi and +0.5d0 for ixFi+1
-                         eta3=(dble(ix3-ixFi3)-0.5d0)*(one-sFi%dvolume(ix1,ix2,&
-                              ix3) /sum(sFi%dvolume(ix1,ix2,ixFi3:ixFi3+1)))
+                         eta3=(dble(ix3-ixFi3)-0.5d0)*(one-bgeo%dvolume(ix1,ix2,&
+                              ix3,igridFi) /sum(bgeo%dvolume(ix1,ix2,ixFi3:ixFi3+1,igridFi)))
                       end if
-                      bg(1)%w(ix1,ix2,ix3,1:nw, igridFi) = bg(1)%w(ixCo1,ixCo2,ixCo3,1:nw, igridCo) + (slope(1:nw,&
-                           1)*eta1)+(slope(1:nw,2)*eta2)+(slope(1:nw,3)*eta3)
+                      bg(1)%w(ix1,ix2,ix3,1:nwgc, igridFi) = bg(1)%w(ixCo1,ixCo2,ixCo3,1:nwgc, igridCo) + (slope(1:nwgc,&
+                           1)*eta1)+(slope(1:nwgc,2)*eta2)+(slope(1:nwgc,3)*eta3)
+                      if (refresh_aux) then
+                         u = bg(1)%w(ix1,ix2,ix3,1:nw_phys, igridFi)
+                         call set_aux(u)
+                         bg(1)%w(ix1,ix2,ix3,nwflux+1:nwflux+nwaux, igridFi) = &
+                              u(nwflux+1:nwflux+nwaux)
+                      end if
                    end do
                 end do
              end do
@@ -227,9 +250,8 @@ contains
             fine_max3)
     end if
 
-    if(fix_small_values) call phys_handle_small_values(prolongprimitive,sFi%w,&
-         sFi%x,ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,ixMlo2,ixMlo3,&
-         ixMhi1,ixMhi2,ixMhi3,'prolong_2nd')
+    ! this reads sFi%x on the host
+    if(prolongprimitive) call sync_positions_host(igridFi)
     if(prolongprimitive) call phys_to_conserved(ixGlo1,ixGlo2,ixGlo3,ixGhi1,&
          ixGhi2,ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,sFi%w,sFi%x)
 
@@ -251,14 +273,14 @@ contains
     integer :: ixCo1,ixCo2,ixCo3, ixFi1,ixFi2,ixFi3, iw
     integer :: ixFimin1,ixFimin2,ixFimin3,ixFimax1,ixFimax2,ixFimax3
 
-    !$acc parallel loop collapse(3)
+    ${GPU_PARALLEL_LOOP("collapse(3) private(ixFi1,ixFi2,ixFi3,iw)")}$
     do ixCo3 = ixComin3,ixComax3
        do ixCo2 = ixComin2,ixComax2
           do ixCo1 = ixComin1,ixComax1
              ixFi3=2*(ixCo3-ixComin3)+ixMlo3
              ixFi2=2*(ixCo2-ixComin2)+ixMlo2
              ixFi1=2*(ixCo1-ixComin1)+ixMlo1
-             forall(iw=1:nw) wFi(ixFi1:ixFi1+1,ixFi2:ixFi2+1,ixFi3:ixFi3+1,&
+             forall(iw=1:nwgc) wFi(ixFi1:ixFi1+1,ixFi2:ixFi2+1,ixFi3:ixFi3+1,&
                   iw)=wCo(ixCo1,ixCo2,ixCo3,iw)
           end do
        end do

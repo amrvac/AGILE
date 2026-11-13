@@ -1,3 +1,7 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
 
     use mod_amrvac
@@ -6,14 +10,14 @@ module mod_usr
     implicit none
 
     double precision, allocatable :: pbc(:),rbc(:)
-    !$acc declare create(pbc,rbc)
+    ${GPU_DECLARE_CREATE('pbc,rbc')}$
     double precision :: usr_grav
     double precision :: heatunit,gzone,SRadius,dya
     double precision, allocatable :: pa(:),ra(:)
     integer, parameter :: jmax=5000
-    !$acc declare create(usr_grav,SRadius,pbc,rbc)
+    ${GPU_DECLARE_CREATE('usr_grav,SRadius,pbc,rbc')}$
     double precision :: B0,kx,y0,lQ0,bQ0
-    !$acc declare create(lQ0,bQ0)
+    ${GPU_DECLARE_CREATE('lQ0,bQ0,B0,kx,y0')}$
   
   contains
 
@@ -35,7 +39,6 @@ module mod_usr
     subroutine usr_init()
       use mod_random_heating
 
-      call set_coordinate_system("Cartesian_2D")
       call usr_params_read(par_files)
       call rh_init()
   
@@ -58,17 +61,20 @@ module mod_usr
       dya=(2.d0*gzone+xprobmax3-xprobmin3)/dble(jmax) !< cells size of high-resolution 1D solar atmosphere
 
       usr_grav=-2.74d4*unit_length/unit_velocity**2 !< solar gravity
-      !$acc update device(usr_grav)
+      ${GPU_UPDATE_DEVICE('usr_grav')}$
 
       SRadius=69.61d0 !< Solar radius
-      !$acc update device(SRadius)
+      ${GPU_UPDATE_DEVICE('SRadius')}$
 
       lQ0=lQ0/heatunit
-      !$acc update device(lQ0)
+      ${GPU_UPDATE_DEVICE('lQ0')}$
       bQ0=bQ0/heatunit
-      !$acc update device(bQ0)
+      ${GPU_UPDATE_DEVICE('bQ0')}$
 
-      !$acc update device(xprobmin1,xprobmax1,xprobmin2,xprobmax2,xprobmin3,xprobmax3)
+      ! twoarcades (called from usr_set_nwextra on the device) reads these
+      ${GPU_UPDATE_DEVICE('B0,kx,y0')}$
+
+      ${GPU_UPDATE_DEVICE('xprobmin1,xprobmax1,xprobmin2,xprobmax2,xprobmin3,xprobmax3')}$
 
       call generateTV()
       call inithdstatic()
@@ -157,7 +163,7 @@ module mod_usr
         pbc(ibc)=pa(na)+(one-cos(dpi*res/dya))/two*(pa(na+1)-pa(na))
       end do
       deallocate(ya,gg,Ta)
-      !$acc update device(rbc,pbc)
+      ${GPU_UPDATE_DEVICE('rbc,pbc')}$
     end subroutine inithdstatic
 
     subroutine initonegrid_usr(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
@@ -172,9 +178,6 @@ module mod_usr
         double precision :: res
         integer :: ix1, ix2, ix3 ,na
 
-        double precision :: xlocal(3)
-        double precision :: bfield(1:ndir)
-  
         if (it == 0) then
           do ix3=ixOmin3,ixOmax3
           do ix2=ixOmin2,ixOmax2
@@ -194,28 +197,26 @@ module mod_usr
           call phys_to_conserved(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
               ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,w,x)
         end if
-        ! be careful no ghostzone bfield loaded when restart from datfile, require firstprocess=T
-        do ix3=ixImin3,ixImax3
-        do ix2=ixImin2,ixImax2
-        do ix1=ixImin1,ixImax1
-          xlocal(1) = x(ix1,ix2,ix3,1)
-          xlocal(2) = x(ix1,ix2,ix3,2)
-          xlocal(3) = x(ix1,ix2,ix3,3)
-
-          call twoarcades(xlocal, bfield)
-          ! call quadrupolar_field(xlocal, bfield)
-
-          w(ix1,ix2,ix3,iw_b1) = bfield(1)/(bfield(1)**2+bfield(2)**2+bfield(3)**2)**(1./2.)
-          w(ix1,ix2,ix3,iw_b2) = bfield(2)/(bfield(1)**2+bfield(2)**2+bfield(3)**2)**(1./2.)
-          w(ix1,ix2,ix3,iw_b3) = bfield(3)/(bfield(1)**2+bfield(2)**2+bfield(3)**2)**(1./2.)
-        end do
-        end do
-        end do
+        ! b1,b2,b3 are filled by fill_nwextra_device from
+        ! usr_set_nwextra, over the full block and after every regrid
     end subroutine initonegrid_usr
+
+    !> Frozen field b-hat (the ffhd nwextra variables): the two-arcades
+    !> analytic field, in Cartesian components, normalised. Called by name from
+    !> fill_nwextra_device; see mod_usr_methods.
+    pure subroutine usr_set_nwextra(x, bhat)
+      ${GPU_ROUTINE_SEQ()}$
+      double precision, intent(in)  :: x(1:ndim)
+      double precision, intent(out) :: bhat(1:3)
+
+      call twoarcades(x, bhat)
+      bhat(1:3) = bhat(1:3) / sqrt(sum(bhat(1:3)**2))
+
+    end subroutine usr_set_nwextra
 
     subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-        !$acc routine vector
+        ${GPU_ROUTINE_VECTOR()}$
 
         integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB
@@ -233,7 +234,11 @@ module mod_usr
         select case(iB)
         case(5)
 
-        !$acc loop collapse(3) vector
+#ifndef _OPENMP
+        ! Vector-level parallelization within a subroutine does not work with OpenMP.
+        ! TBD if this routine can be made seq (i.e. cell-based).
+        ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
         do ix3=ixOmin3,ixOmax3
             do ix2=ixOmin2,ixOmax2
             do ix1=ixOmin1,ixOmax1
@@ -254,46 +259,12 @@ module mod_usr
             end do
             end do
         enddo
-
-        ! case(6)
-
-        ! ! to include ix3 into loop, perhaps precompute?
-        ! !$acc loop collapse(2) vector
-        !   do ix2=ixOmin2,ixOmax2
-        !     do ix1=ixOmin1,ixOmax1
-
-        !     ! inline get pthermal to improve performance
-        !     pth = (phys_gamma-1.0_dp)*(w(ix1,ix2,ixOmin3-1, e_)- &
-        !       0.5_dp*w(ix1,ix2,ixOmin3-1, mom(1))**2/w(ix1,ix2,ixOmin3-1, rho_))
-        !     invT     = w(ix1,ix2,ixOmin3-1,rho_)/pth
-
-        !     tmp = 0.d0
-        !     do ix3=ixOmin3,ixOmax3
-        !       gravity = 0.5d0*(gravity_field(w(ix1,ix2,ix3,:), x(ix1,ix2,ix3,:), 3) + &
-        !                 gravity_field(w(ix1,ix2,ix3-1,:), x(ix1,ix2,ix3-1,:), 3))
-        !       tmp = tmp + gravity*invT
-        !       ! repeated dxlevel(3) calculation to be optimized
-        !       w(ix1,ix2,ix3,p_)=pth*dexp(tmp*(x(ix1,ix2,ix3,3)-x(ix1,ix2,ix3-1,3)))
-        !       w(ix1,ix2,ix3,rho_) = w(ix1,ix2,ix3,p_)*invT
-        !       #:if defined('HYPERTC')
-        !       w(ix1,ix2,ix3,q_)=zero
-        !       #:endif
-        !       w(ix1,ix2,ix3,iw_mom(1)) = -w(ix1,ix2,2*ixOmin3-1-ix3,iw_mom(1)) / &
-        !                                   w(ix1,ix2,2*ixOmin3-1-ix3,rho_)  
-
-        !       ! inline to_conservative() for performance:
-        !       w(ix1,ix2,ix3, e_)=w(ix1,ix2,ix3, e_)*inv_gamma_m1 +0.5_dp*w(ix1,ix2,ix3, rho_)*&
-        !           w(ix1,ix2,ix3, iw_mom(1))**2
-        !       w(ix1,ix2,ix3, iw_mom(1)) = w(ix1,ix2,ix3, iw_rho)*w(ix1,ix2,ix3, iw_mom(1))
-        !       end do
-        !       end do
-        !   end do
       end select
 
    end subroutine specialbound_usr
 
    pure real(dp) function gravity_field(wCT, x, idim) result(field)
-     !$acc routine seq
+     ${GPU_ROUTINE_SEQ()}$
      real(dp), intent(in)    :: wCT(nw_phys)
      real(dp), intent(in)    :: x(1:ndim)
      integer, value, intent(in)     :: idim
@@ -307,8 +278,8 @@ module mod_usr
    end function gravity_field
 
   subroutine addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, qsourcesplit)
-    !$acc routine seq
     use mod_random_heating, only: rh_source
+    ${GPU_ROUTINE_SEQ()}$
 
     double precision, intent(in) :: qdt, qt
     double precision, intent(in) :: wCT(nw_phys), wCTprim(nw_phys) 
@@ -365,7 +336,8 @@ module mod_usr
 
   end subroutine quadrupolar_field
   
-  subroutine twoarcades(x, ba)
+  pure subroutine twoarcades(x, ba)
+    ${GPU_ROUTINE_SEQ()}$
     double precision, intent(in) :: x(1:ndim)
     double precision, intent(out) :: ba(1:ndir)
     

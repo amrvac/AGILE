@@ -30,7 +30,6 @@
    time_stepper    = 'threestep'
    flux_scheme     = 20*'tvdlf'
    limiter         = 20*'vanleer'
-   small_values_method = 'ignore'
    phys                = 'srhd'
  /
 
@@ -75,6 +74,8 @@
    He_abundance=0.1d0
    srhd_source_usr=.false.
    srhd_n_tracer=1
+   srhd_small_density=1.0d-7
+   srhd_small_pressure=1.0d-9
 /
 
 &usr_list

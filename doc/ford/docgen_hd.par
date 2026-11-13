@@ -1,0 +1,18 @@
+&methodlist
+  phys = 'hd'
+  flux_adaptive_diffusion = T
+/
+
+&boundlist
+  specialboundary = T
+/
+
+&meshlist
+  refine_usr = T
+/
+
+&hd_list
+  hd_gravity = T
+  hd_n_tracer = 1
+  hd_radiative_cooling = T
+/

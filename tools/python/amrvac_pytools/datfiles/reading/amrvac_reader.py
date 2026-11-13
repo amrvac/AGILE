@@ -120,15 +120,21 @@ class load_datfile():
 
         return np.asarray(coordinate_arrays, dtype=object)
 
-    def load_all_data(self, nbprocs=None, regriddir=None):
+    def load_all_data(self, nbprocs=None, regriddir=None, upsample=False):
         """
         Loads in all the data to RAM, this can take up quite some space for huge datasets.
         Data will be regridded if this is not already done.
+        :param upsample: if True, non-uniform data is put on the finest level's grid by repeating each coarser
+                         cell (piecewise constant, see datfile_utilities.get_upsampled_data) instead of being
+                         interpolated by the regridding; fast, and nothing is written to regriddir.
+                         Has no effect on uniform data, nor once the data has been loaded.
         """
         if self.data_dict is not None:
             return self.data_dict
         if self._uniform:
             data = datfile_utilities.get_uniform_data(self)
+        elif upsample:
+            data = datfile_utilities.get_upsampled_data(self.file)
         else:
             data = self._regrid_data(nbprocs, regriddir)
         # create dictionary containing the data

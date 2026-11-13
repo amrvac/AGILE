@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 module mod_errest
   use mod_comm_lib, only: mpistop
   implicit none
@@ -9,10 +12,8 @@ contains
 
   !> Do all local error estimation which determines (de)refinement
   subroutine errest
-    use mod_forest, only: refine, buffer, coarsen
+    use mod_forest, only: refine, coarsen
     use mod_global_parameters
-
-    integer :: igrid, iigrid
 
     if (igridstail==0) return
 
@@ -21,56 +22,51 @@ contains
        ! all refinement solely based on user routine usr_refine_grid
     case (3)
        ! Error estimation is based on Lohner's scheme
-       !$acc parallel loop gang private(igrid)
-       do iigrid=1,igridstail; igrid=igrids(iigrid);
-          call lohner_grid(igrid)
-       end do
+       call lohner_grid()
     case default
        call mpistop("Unknown error estimator")
     end select
 
     if ( refine_usr ) then
-       !$acc parallel loop gang private(igrid)
-       do iigrid=1,igridstail; igrid=igrids(iigrid);
-          call forcedrefine_grid(igrid)
-       end do
+       call forcedrefine_grid()
     end if
 
-    !$acc update host(refine, coarsen)
+    ${GPU_UPDATE_HOST("refine, coarsen")}$
 
   end subroutine errest
 
-  subroutine lohner_grid(igrid)
-    !$acc routine vector
+  subroutine lohner_grid()
     use mod_forest, only: coarsen, refine
     use mod_global_parameters
 
-    integer, intent(in) :: igrid
-
+    integer                            :: igrid, iigrid
     integer                            :: iflag, idims1, idims2, level
     integer                            :: ix1, ix2, ix3
     double precision                   :: threshold, error, numerator, denominator
     logical                            :: refineflag, coarsenflag
     double precision, parameter        :: epsilon=1.0d-6
 
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid,level,threshold,refineflag,coarsenflag)")}$
+    do iigrid=1,igridstail; igrid=igrids(iigrid);
+
       level       = node(plevel_,igrid)
       threshold   = refine_threshold(level)
 
       refineflag  = .false.
       coarsenflag = .true.
-      !$acc loop vector collapse(3) reduction(.or.:refineflag) reduction(.and.:coarsenflag)
+      ${GPU_LOOP_VECTOR("collapse(3) reduction(.or.:refineflag) reduction(.and.:coarsenflag) private(error,numerator,denominator,iflag,idims1,idims2)")}$
       do ix3 = ixMlo3, ixMhi3
          do ix2 = ixMlo2, ixMhi2
             do ix1 = ixMlo1, ixMhi1
 
                error = zero
-               !$acc loop seq reduction(+:error)
+               ${GPU_LOOP_SEQ()}$
                do iflag = 1, nw
                   if(w_refine_weight(iflag)==0.d0) cycle
 
                   numerator   = zero
                   denominator = zero
-                  !$acc loop seq reduction(+:numerator, denominator)
+                  ${GPU_LOOP_SEQ()}$
                   do idims1 = 1, ndim
                      do idims2 = 1, ndim
 
@@ -137,27 +133,25 @@ contains
       if (refineflag .and. level < refine_max_level) refine(igrid,mype)=.true.
       if (coarsenflag .and. level > 1) coarsen(igrid,mype)=.true.
 
+    end do
+
   end subroutine lohner_grid
 
-  subroutine forcedrefine_grid(igrid)
-    !$acc routine vector
+  subroutine forcedrefine_grid()
     #:if defined('REFINE_USR')
     use mod_usr, only: usr_refine_grid
     #:endif
-    use mod_forest, only: coarsen, refine, buffer
+    use mod_forest, only: coarsen, refine
+    use mod_physics_vars, only: nw_phys
     use mod_global_parameters
 
-    integer, intent(in) :: igrid
-
+    integer :: igrid, iigrid
     integer :: level
-    integer :: my_refine, my_coarsen
+    logical :: refineflag, coarsenflag, norefineflag, nocoarsenflag
     double precision :: qt
-
-    level=node(plevel_,igrid)
-
-    ! initialize to 0
-    my_refine   = 0
-    my_coarsen  = 0
+    integer :: ix1, ix2, ix3
+    logical :: rf, cf, nrf, ncf
+    double precision :: wloc(1:nw_phys), xloc(1:ndim)
 
     if (time_advance) then
        qt=global_time+dt
@@ -165,41 +159,70 @@ contains
        qt=global_time
     end if
 
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid,level,refineflag,coarsenflag,norefineflag,nocoarsenflag)")}$
+    do iigrid=1,igridstail; igrid=igrids(iigrid);
+
+       level=node(plevel_,igrid)
+
+       refineflag = .false.
+       coarsenflag = .true.
+       norefineflag = .true.
+       nocoarsenflag = .false.
+
 #:if defined('REFINE_USR')
-    call usr_refine_grid(igrid,level,ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2, &
-         ixGhi3,ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,qt, &
-         bg(1)%w(:,:,:,:, igrid), ps(igrid)%x, &
-         my_refine,my_coarsen)
+       ! the user rule sets per-cell flags
+       ${GPU_LOOP_VECTOR("collapse(3) private(rf, cf, nrf, ncf, wloc, xloc) reduction(.or.:refineflag) reduction(.and.:coarsenflag) reduction(.and.:norefineflag) reduction(.or.:nocoarsenflag)")}$
+       do ix3 = ixMlo3, ixMhi3
+          do ix2 = ixMlo2, ixMhi2
+             do ix1 = ixMlo1, ixMhi1
+                rf = .false.
+                cf = .true.
+                nrf = .true.
+                ncf = .false.
+                ! Copy into fixed-size private arrays: passing the strided
+                ! sections directly makes the compiler malloc a temporary on
+                ! the device heap for every cell.
+                wloc = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
+                xloc = bgeo%x(ix1, ix2, ix3, 1:ndim, igrid)
+                call usr_refine_grid(level, qt, wloc, xloc, rf, cf, nrf, ncf)
+                refineflag = refineflag .or. rf
+                coarsenflag = coarsenflag .and. cf
+                norefineflag = norefineflag .and. nrf
+                nocoarsenflag = nocoarsenflag .or. ncf
+             end do
+          end do
+       end do
 #:endif
 
-    if (my_coarsen==1) then
-       if (level>1) then
-          refine(igrid,mype)=.false.
-          coarsen(igrid,mype)=.true.
-       else
-          refine(igrid,mype)=.false.
+       if (coarsenflag) then
+          if (level>1) then
+             refine(igrid,mype)=.false.
+             coarsen(igrid,mype)=.true.
+          else
+             refine(igrid,mype)=.false.
+             coarsen(igrid,mype)=.false.
+          end if
+       end if
+
+       if (nocoarsenflag) then
           coarsen(igrid,mype)=.false.
        end if
-    end if
 
-    if (my_coarsen==-1)then
-       coarsen(igrid,mype)=.false.
-    end if
-
-    if (my_refine==1) then
-       if (level<refine_max_level) then
-          refine(igrid,mype)=.true.
-          coarsen(igrid,mype)=.false.
-       else
-          refine(igrid,mype)=.false.
-          coarsen(igrid,mype)=.false.
+       if (refineflag) then
+          if (level<refine_max_level) then
+             refine(igrid,mype)=.true.
+             coarsen(igrid,mype)=.false.
+          else
+             refine(igrid,mype)=.false.
+             coarsen(igrid,mype)=.false.
+          end if
        end if
-    end if
 
-    if (my_refine==-1) then
-      refine(igrid,mype)=.false.
-    end if
+       if (norefineflag) then
+         refine(igrid,mype)=.false.
+       end if
 
+    end do
   end subroutine forcedrefine_grid
 
   subroutine forcedrefine_grid_io(igrid,w)
