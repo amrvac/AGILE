@@ -192,6 +192,7 @@ contains
 
   !> Read in the user-supplied parameter-file
   subroutine read_par_files()
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use mod_global_parameters
     use mod_physics, only: phys_energy, physics_type, phys_wider_stencil
     use mod_limiter
@@ -272,7 +273,7 @@ contains
 
     namelist /methodlist/ time_stepper,time_integrator, source_split_usr,&
        typesourcesplit,local_timestep,dimsplit,typedimsplit,flux_scheme,&
-       fv_face_flux,limiter,gradient_limiter,cada3_radius,loglimit,&
+       fv_face_flux,limiter,gradient_limiter,cada3_radius,loglimit,weno_js_epsilon,mp5_tolerance,&
        H_correction, typegrad,&
        typediv,typecurl,flatcd,flatsh,&
        rk2_alfa,imex222_lambda,ssprk_order,rk3_switch,imex_switch,&
@@ -1230,6 +1231,11 @@ contains
     allocate(type_gradient_limiter(nlevelshi))
 
     do level=1,nlevelshi
+       select case (trim(limiter(level)))
+       case ('minmod', 'vanleer', 'mcbeta', 'koren', 'weno5', 'mp5')
+       case default
+          call mpistop('Unsupported FV limiter: '//trim(limiter(level)))
+       end select
        type_limiter(level) = limiter_type(limiter(level))
        type_gradient_limiter(level) = limiter_type(gradient_limiter(level))
     end do
@@ -1574,57 +1580,29 @@ contains
       flatsh=.false.
     end if
 
-    if(any(limiter(1:nlevelshi)=='mp5')) then
+    ! Reconstruction radius is independent of the width used by sources.
+    nghostcells=max(nghostcells,2)
+    if (.not.ieee_is_finite(weno_js_epsilon)) &
+       call mpistop('weno_js_epsilon must be finite and positive')
+    if (weno_js_epsilon <= 0.d0) &
+       call mpistop('weno_js_epsilon must be finite and positive')
+    if (.not.ieee_is_finite(mp5_tolerance)) call mpistop('mp5_tolerance must be finite and nonnegative')
+    if (mp5_tolerance < 0.d0) call mpistop('mp5_tolerance must be finite and nonnegative')
+#:for reconstruction in ['weno5','mp5']
+    if(any(limiter(1:nlevelshi)=='${reconstruction}$')) then
       nghostcells=max(nghostcells,3)
+      if (physics_type /= 'hd' .and. physics_type /= 'mhd') &
+         call mpistop('${reconstruction}$ supports only HD/MHD')
+      if (.not.phys_energy) call mpistop('${reconstruction}$ requires the energy equation')
+#:if GEOM != 'Cartesian'
+      call mpistop('${reconstruction}$ supports only Cartesian geometry')
+#:endif
+#:if defined('FLUX_AD')
+      call mpistop('${reconstruction}$ cannot be combined with FLUX_AD')
+#:endif
     end if
-
-    if(any(limiter(1:nlevelshi)=='weno5')) then
-      nghostcells=max(nghostcells,3)
-    end if
-
-    if(any(limiter(1:nlevelshi)=='weno5nm')) then
-      nghostcells=max(nghostcells,3)
-    end if
-
-    if(any(limiter(1:nlevelshi)=='wenoz5')) then
-      nghostcells=max(nghostcells,3)
-    end if
-
-    if(any(limiter(1:nlevelshi)=='wenoz5nm')) then
-      nghostcells=max(nghostcells,3)
-    end if
-
-    if(any(limiter(1:nlevelshi)=='wenozp5')) then
-      nghostcells=max(nghostcells,3)
-    end if
-
-    if(any(limiter(1:nlevelshi)=='wenozp5nm')) then
-      nghostcells=max(nghostcells,3)
-    end if
-
-    if(any(limiter(1:nlevelshi)=='teno5ad')) then
-      nghostcells=max(nghostcells,3)
-    end if
-
-    if(any(limiter(1:nlevelshi)=='weno5cu6')) then
-      nghostcells=max(nghostcells,3)
-    end if
-
-    if(any(limiter(1:nlevelshi)=='ppm')) then
-      if(flatsh .or. flatcd) then
-        nghostcells=max(nghostcells,4)
-      else
-        nghostcells=max(nghostcells,3)
-      end if
-    end if
-
-    if(any(limiter(1:nlevelshi)=='weno7')) then
-      nghostcells=max(nghostcells,4)
-    end if
-
-    if(any(limiter(1:nlevelshi)=='mpweno7')) then
-      nghostcells=max(nghostcells,4)
-    end if
+#:endfor
+    ${GPU_UPDATE_DEVICE('weno_js_epsilon, mp5_tolerance')}$
 
     ! If a wider stencil is used, extend the number of ghost cells
     nghostcells = nghostcells + phys_wider_stencil
@@ -1723,6 +1701,12 @@ contains
     if (any(block_nx_vec < 4) .or. any(mod(block_nx_vec,&
         2) == 1)) call mpistop&
        ('Block size (block_nx^D) has to be even and >= 4')
+
+    ! A coarse representative must contain every restricted halo cell.
+    if (any(block_nx_vec < nghostcells)) &
+       call mpistop('block_nx must be >= nghostcells in every direction')
+    if (refine_max_level > 1 .and. any(block_nx_vec < 2*nghostcells)) &
+       call mpistop('AMR requires block_nx >= 2*nghostcells in every direction')
 
      if(mod(domain_nx1,block_nx1)/=0) call &
         mpistop('Grid (domain_nx^D) and block (block_nx^D) must be consistent')
