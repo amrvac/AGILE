@@ -1,0 +1,25 @@
+{
+  "name": "fypp-fortran",
+  "displayName": "fypp syntax (AGILE)",
+  "description": "Highlights fypp preprocessor syntax inside Fortran free-form files, injected into the Modern Fortran grammar.",
+  "version": "0.1.0",
+  "publisher": "agile",
+  "private": true,
+  "engines": {
+    "vscode": "^1.67.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "grammars": [
+      {
+        "scopeName": "source.fypp.injection",
+        "path": "./syntaxes/fypp.injection.tmLanguage.json",
+        "injectTo": [
+          "source.fortran.free"
+        ]
+      }
+    ]
+  }
+}

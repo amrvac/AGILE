@@ -23,6 +23,10 @@ module load OpenMPI/4.1.5-NVHPC-24.5-CUDA-12.1.1
   or the OpenMP target-offload backend via `make arch=nvidia OPENMP=1`
   (`OPENACC` and `OPENMP` are mutually exclusive)
 
+For VS Code, `tools/vscode/setup.sh` adds fypp syntax highlighting, code
+navigation and working diagnostics for the `.fpp` sources; see
+[tools/vscode/README.md](tools/vscode/README.md).
+
 
 ## Currently supported features on master
 - Cartesian, spherical `(r, theta, phi)`, and cylindrical `(r, z, phi)` grids, each curvilinear one also in a logarithmically stretched radial variant (`logSpherical`, `logCylindrical`), and all including the polar/cylindrical axis

@@ -39,7 +39,10 @@ source $AGILE_DIR/.venv/bin/activate
 ```
 
 `AGILE_DIR` and an activated venv (providing `fypp`, `fortdepend`, `f90nml`)
-are required for every build. Requires Python >=3.13.
+are required for every build. Requires Python >=3.13. `tools/vscode/setup.sh` sets
+up VS Code for the `.fpp` sources — fypp syntax highlighting, `fortls` for
+navigation (the `ide` extra), and a linter that runs fypp before gfortran; see
+`tools/vscode/README.md`.
 
 ## Building
 
