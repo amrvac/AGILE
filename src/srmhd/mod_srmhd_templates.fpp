@@ -178,6 +178,7 @@
     phys_total_energy  = .true.
     phys_gamma = srmhd_gamma
 
+    phys_write_info => srmhd_write_info
 
     phys_internal_e=.false.
     phys_partial_ionization=.false.
@@ -918,8 +919,25 @@ end subroutine addsource_geometry
 #:enddef
 #:endif
 
+#:def write_info()
+  !> Write this module's parameters to a snapshot
+  subroutine srmhd_write_info(fh)
+    use mod_global_parameters
+    integer, intent(in)                 :: fh
 
+    integer                             :: er
+    integer, parameter                  :: n_par = 1
+    double precision                    :: values(n_par)
+    integer, dimension(MPI_STATUS_SIZE) :: st
+    character(len=name_len)             :: names(n_par)
 
+    call MPI_FILE_WRITE(fh, n_par, 1, MPI_INTEGER, st, er)
 
+    names(1) = "gamma"
+    values(1) = srmhd_gamma
+    call MPI_FILE_WRITE(fh, values, n_par, MPI_DOUBLE_PRECISION, st, er)
+    call MPI_FILE_WRITE(fh, names, n_par * name_len, MPI_CHARACTER, st, er)
+  end subroutine srmhd_write_info
+#:enddef
 
 #:endif
