@@ -886,7 +886,8 @@ same loop, cell by cell (with `dx_d` again the physical cell size):
 - **gravity** (`*_gravity`, hd, ffhd and mhd): `dt < sqrt(dx_d / |g_d|)` in
   every direction, with `g` from the case's `gravity_field`;
 - **resistivity** (`mhd_resistivity`): `dt < dtdiffpar * dx_d**2 / mhd_eta`.
-  This is the only use of `dtdiffpar`.
+  This is the only use of `dtdiffpar`. With `mhd_eta_usr`, `mhd_eta` is the
+  largest η that `eta_usr` returns.
 
 Nothing else adds a limit. Switching on radiative cooling or a user source
 term does compile in this per-cell check, but contributes no term to it:
@@ -1042,6 +1043,7 @@ equations of state.
   mhd_glm_alpha= 0.5 | DOUBLE in [0,1]   ! GLM div B cleaning: diffusive/advective time scale
   mhd_resistivity= F | T                 ! compile time: resistive terms
   mhd_eta= 0 | DOUBLE                    ! uniform resistivity, with mhd_resistivity
+  mhd_eta_usr= F | T                     ! compile time: eta_usr in mod_usr (mhd_eta = its maximum)
   mhd_gravity= F | T                     ! compile time: gravity_field in mod_usr
   mhd_radiative_cooling= F | T           ! compile time: reads &rc_list
   mhd_source_usr= F | T                  ! compile time: addsource_usr in mod_usr

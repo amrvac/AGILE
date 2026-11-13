@@ -280,6 +280,147 @@ small enough `courantpar` or `dtpar`. `tests/ffhd/TI3D` is a working example.
 The `usr_source` procedure pointer in
 `mod_usr_methods` is a leftover of MPI-AMRVAC and is never called.
 
+## Magnetohydrodynamics: mhd {: #eq_mhd }
+
+```fortran
+&methodlist
+   phys            = 'mhd'
+/
+```
+
+The MHD module combines mass conservation and the tracer equation above
+with the following generalizations of momentum and energy, and adds the
+induction equation for the magnetic field **B**:
+
+\begin{equation}
+\partial_t \mathbf{m} + \nabla \cdot \left(\mathbf{v}\mathbf{m}+(p+{\textstyle{\frac{1}{2}}}B^2)\mathbf{I}-\mathbf{B}\mathbf{B}\right)  = \rho\mathbf{g}
+\end{equation}
+
+\begin{equation}
+  \partial_t e_{\mathrm{mhd}}+\nabla\cdot\left[\mathbf{v}(e_{\mathrm{mhd}}+p+{\textstyle{\frac{1}{2}}}B^2)-\mathbf{B}(\mathbf{v}\cdot\mathbf{B})+\mathbf{q}\right]
+  = \rho\mathbf{v}\cdot\mathbf{g} -n_e  n_H\Lambda(T) + \nabla \cdot \left[ \mathbf{B} \times \eta \mathbf{J}\right]\,,
+\end{equation}
+
+\begin{equation}
+\partial_t\mathbf{B}+\nabla\cdot\left[\mathbf{v}\mathbf{B}-\mathbf{B}\mathbf{v} +\psi\mathbf{I}\right] = -\nabla\times\eta \mathbf{J} \,,
+\end{equation}
+
+where the total energy density closure is
+
+\begin{equation}
+    e_{\mathrm{mhd}}=\frac{p}{\hat{\gamma}-1}+\frac{1}{2}\rho v^2+\frac{1}{2}B^2 \,,
+\end{equation}
+
+**q** is the conductive heat flux, which is zero unless [hyperbolic thermal
+conduction](#eq_mhd_htc) is switched on. **J** = ∇×**B** is the current density, and the magnetic field is
+measured in units for which the magnetic permeability is 1. The resistive
+terms, those with η, are compiled in only with **mhd_resistivity=.true.** in
+`agile.par`; they are then added with the compact stencil detailed in Porth
+& Xia et al. (2014), and also limit the time step. The GLM field ψ used to
+control the divergence of **B** numerically is described in [Divergence B
+source treatments](#eq_divB_fix) below.
+
+Parameters of magnetohydrodynamics are read in the **mhd_list** of the
+parameter file. The equation parameters are the ratio of specific heats
+**mhd_gamma** and the resistivity **mhd_eta**, which only has an effect when
+`mhd_resistivity` is on.
+
+A non-uniform resistivity, for example an anomalous resistivity confined to
+a current sheet, is compiled in with **mhd_eta_usr=.true.** (which implies
+`mhd_resistivity`). The case then provides in `mod_usr` the function
+
+```fortran
+pure real(dp) function eta_usr(wprim, J, x, qt) result(eta)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in) :: wprim(nw_phys), J(3), x(1:ndim), qt
+```
+
+returning η at position `x` and time `qt`, from the cell's primitive state
+`wprim` and its current density `J`. The induction source becomes
+−∇×(η**J**) = η∇²**B** − ∇η×**J**, with ∇η by central differences of
+`eta_usr` over the six face neighbours. **J** is only known in the cell
+itself, so the neighbours are evaluated with that cell's **J**: ∇η follows
+how η varies with position, time and state, but not with **J**. `mhd_eta`
+must then be set to the largest η, which is used for the time step.
+
+The gas law p = n k_B T counts the particles per hydrogen nucleus as
+b = 1 + `H_ion_fr` + `He_abundance` (`He_ion_fr` (`He_ion_fr2` + 1) + 1),
+with the ionisation fractions `H_ion_fr` = H⁺/(H⁺+H),
+`He_ion_fr` = (He²⁺+He⁺)/(He²⁺+He⁺+He) and `He_ion_fr2` = He²⁺/(He²⁺+He⁺),
+all 1 (fully ionised) by default; this gives b = 2 + 3 He_a as for `hd`.
+`He_abundance = 0` with `H_ion_fr = 0` gives a neutral hydrogen gas,
+p = n k_B T. The magnetic field unit is set to √(4π p_unit).
+
+This equation module can be combined with physical sources for (local)
+optically thin [radiative losses](radiative_cooling.html) by setting
+**mhd_radiative_cooling=.true.**, with the external gravity module by
+setting **mhd_gravity=.true.**, and with [user source
+terms](#eq_usr_source) by setting **mhd_source_usr=.true.**; all three are
+compile-time switches. **mhd_energy_only=.true.** freezes ρ, **v** and
+**B** and evolves only the energy equation, for example to follow
+conduction or cooling on a fixed background.
+
+### Hyperbolic thermal conduction {: #eq_mhd_htc }
+
+With **mhd_hyperbolic_thermal_conduction=.true.** (compile time), `mhd`
+evolves the field-aligned heat flux q as an extra variable, relaxing it
+towards the Spitzer value instead of solving a parabolic equation. It enters
+the energy equation above as the heat flux **q** = q **b̂**, and obeys
+
+\begin{equation}
+    \partial_t q = -\frac{q + f_{\mathrm{sat}}\,\kappa_\parallel\,\mathbf{\hat{b}}\cdot\nabla T}{\tau} \,,
+\end{equation}
+
+so that it tends to −f_sat κ_∥ **b̂**·∇T, the conductive flux. The
+conductivity is κ_∥ = κ_∥,0 T^(5/2) with the Spitzer coefficient
+κ_∥,0 = 8×10⁻⁷ (cgs, converted to code units in `phys_units`), or the
+constant **tc_kappa_par** when that is set positive. The flux saturates as
+f_sat = 1/(1 + |κ_∥ **b̂**·∇T|/q_sat), with q_sat = 1.5 ρ (p/ρ)^(3/2). The
+relaxation time is τ = max(4Δt, f_sat κ_∥ T C² (γ̂−1)/(p c²)), where C is
+`courantpar` and c the largest fast speed of the cell.
+
+**mhd_hyperbolic_thermal_conduction_anisotropic=.true.** (which implies the
+switch above) evolves the full heat-flux vector **q** instead, which then
+enters the energy flux directly, and relaxes
+its parallel and perpendicular parts separately, each with its own
+saturation and τ. The perpendicular conductivity is
+κ_⊥ = κ_∥/(1 + χ²), with the magnetisation χ = C_χ B T^(3/2)/ρ (code
+units; C_χ is set in `phys_units`), or the constant **tc_kappa_perp** when
+that is set positive. Both conductivity coefficients κ_∥,0 and C_χ are
+derived from the units and are not parameters.
+
+### Divergence B source treatments {: #eq_divB_fix }
+
+To control magnetic monopole buildup numerically, AGILE uses the
+generalized Lagrangian multiplier (GLM) approach of Dedner et al. (2002),
+where ψ is an added evolved variable obeying
+
+\begin{equation}
+    \partial_t \psi+c_{h}^{2} \nabla \cdot \mathbf{B} = -\frac{c_h^2}{c_p^2}\psi \,.
+\end{equation}
+
+This equation has a hyperbolic advection speed c_h and a parabolic
+factor c_p. In practice, the left-hand side is dealt with using the flux
+prescription c²_max**B**, while the right-hand side (the damping term) is
+solved exactly over the time step Δt_n through
+
+\begin{equation}
+    \psi^{n+1}=\psi^n\exp\left(-\Delta t_n c_{\mathrm{max}}\alpha_{\mathrm{GLM}}/\min_{i=1,3}(\Delta x_i)\right)
+\end{equation}
+
+using second-order operator splitting. This implies availability of the
+maximal, global physical propagation speed c_max that also sets the time
+step, while
+
+\begin{equation}
+    \alpha_{\mathrm{GLM}}=\min_{i=1,3}(\Delta x_i)\,c_h/c_p^2
+\end{equation}
+
+becomes a fixed parameter, **mhd_glm_alpha** in `&mhd_list`, set to 0.5 by
+default but generally taken within [0,1] (Mignone, Tzeferacos & Bodo 2010).
+Δx_i is the physical extent of the cell, which on a curvilinear grid varies
+from cell to cell.
+
 ## Frozen-field hydrodynamics: ffhd {: #eq_ffhd }
 
 ```fortran
