@@ -60,9 +60,9 @@ jobs:
       - name: compile and run tests (OpenACC mode)
         run: |
           cd tests
-          NUM_PROCS=2 arch=nvidia OPENACC=1 ./test_runner.sh
+          NUM_PROCS=2 arch=nvidia OPENACC=1 SILENT=1 ./test_runner.sh
 
       - name: compile and run tests (OpenMP mode)
         run: |
           cd tests
-          NUM_PROCS=2 arch=nvidia OPENMP=1 ./test_runner.sh
+          NUM_PROCS=2 arch=nvidia OPENMP=1 SILENT=1 ./test_runner.sh

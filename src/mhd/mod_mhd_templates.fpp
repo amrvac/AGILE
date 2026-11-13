@@ -349,6 +349,8 @@
     inv_gamma_1=1.0_dp/gamma_1
  ${GPU_UPDATE_DEVICE('physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,gamma_1,inv_gamma_1')}$
 
+    phys_write_info => mhd_write_info
+
     use_particles = mhd_particles
 
     ! Determine flux variables
@@ -1124,6 +1126,26 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
 end subroutine estimate_speeds_minmax
 #:enddef
 
+#:def write_info()
+  !> Write this module's parameters to a snapshot
+  subroutine mhd_write_info(fh)
+    use mod_global_parameters
+    integer, intent(in)                 :: fh
+
+    integer                             :: er
+    integer, parameter                  :: n_par = 1
+    double precision                    :: values(n_par)
+    integer, dimension(MPI_STATUS_SIZE) :: st
+    character(len=name_len)             :: names(n_par)
+
+    call MPI_FILE_WRITE(fh, n_par, 1, MPI_INTEGER, st, er)
+
+    names(1) = "gamma"
+    values(1) = mhd_gamma
+    call MPI_FILE_WRITE(fh, values, n_par, MPI_DOUBLE_PRECISION, st, er)
+    call MPI_FILE_WRITE(fh, names, n_par * name_len, MPI_CHARACTER, st, er)
+  end subroutine mhd_write_info
+#:enddef
 
 #:def estimate_speeds_hllc()
 !> Outer signal speeds for HLLC: the same Davis (1988) fast-magnetosonic bounds
@@ -1260,6 +1282,242 @@ subroutine hllc_star_flux(uK, fK, sK, unK, s_star, whll, flux_dim, F)
   F = fK + sK*(ustar - uK(1:nw_flux))
 
 end subroutine hllc_star_flux
+#:enddef
+
+
+#:def estimate_speeds_hlld()
+!> Outer signal speeds for HLLD: the same Davis (1988) fast-magnetosonic bounds
+!> HLL uses, as upstream MPI-AMRVAC does.
+subroutine estimate_speeds_hlld(uL, uR, xC, flux_dim, sL, sR)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)  :: xC(ndim)
+  integer,  intent(in)  :: flux_dim
+  real(dp), intent(out) :: sL, sR
+
+  call estimate_speeds_minmax(uL, uR, xC, flux_dim, sL, sR)
+
+end subroutine estimate_speeds_hlld
+#:enddef
+
+
+#:def hlld_flux()
+!> HLLD flux for ideal MHD after Miyoshi T. & Kusano K., JCP 208 (2005) 315,
+!> the five-wave solver upstream MPI-AMRVAC has as get_Riemann_flux_hlld.
+!> The fan sL < sL* < sM < sR* < sR is resolved into the four states
+!> U*L, U**L, U**R, U*R; total pressure, normal velocity sM and normal field
+!> are constant across it.
+!> The normal field is that of the HLL average state, bx = B_n of U_hll
+!> (Li 2005 Eq. 33), as upstream and as hllc_flux. Every slot without a
+!> star-state formula of its own (psi, B_n, the HYPERTC heat fluxes) takes
+!> U* = U** = U_hll, which makes its flux exactly the HLL flux; B_n and psi are
+!> then overwritten by the flux_type override in riemann_hlld_prim, as under
+!> 'hll' and 'hllc'. Unlike upstream, the pole of Eqs. 44-47 (sK meeting the
+!> star Alfven speed) is regularised, see hlld_star_state.
+!> uL/uR are primitive on entry and conservative on exit. degenerate is set
+!> when sR - sL vanishes, and F is then left for the caller to replace with
+!> its LLF fallback.
+subroutine hlld_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)    :: flux_l(nw_flux), flux_r(nw_flux)
+  real(dp), intent(in)    :: sL, sR
+  integer,  intent(in)    :: flux_dim
+  real(dp), intent(out)   :: F(nw_flux)
+  logical,  intent(out)   :: degenerate
+
+  real(dp) :: whll(nw_flux), usL(nw_flux), usR(nw_flux), uss(nw_flux)
+  real(dp) :: unL, unR, ptL, ptR, ds, suL, suR, sM, pt_star, bx, sK2
+  real(dp), parameter :: eps = 1e-14_dp
+
+  degenerate = .false.
+
+  ! normal velocities and total pressures, cached before uL/uR are
+  ! overwritten to conservative
+  unL = uL(iw_mom(flux_dim))
+  unR = uR(iw_mom(flux_dim))
+  ptL = uL(iw_e) + 0.5_dp*(uL(iw_mag(1))**2 + uL(iw_mag(2))**2 + uL(iw_mag(3))**2)
+  ptR = uR(iw_e) + 0.5_dp*(uR(iw_mag(1))**2 + uR(iw_mag(2))**2 + uR(iw_mag(3))**2)
+
+  call to_conservative(uL)
+  call to_conservative(uR)
+
+  if (0._dp .le. sL) then
+    F = flux_l
+    return
+  elseif (0._dp .ge. sR) then
+    F = flux_r
+    return
+  end if
+
+  ds = sR - sL
+  if (ds <= eps*(abs(sL) + abs(sR))) then
+    degenerate = .true.
+    F = 0._dp
+    return
+  end if
+
+  whll = (sR*uR(1:nw_flux) - sL*uL(1:nw_flux) + flux_l - flux_r) / ds
+  bx   = whll(iw_mag(flux_dim))
+
+  ! contact speed (Eq. 38) and star total pressure (Eq. 41). suR > 0 > suL,
+  ! since sL < unL and sR > unR, so the denominator cannot vanish.
+  suL = uL(iw_rho)*(sL - unL)
+  suR = uR(iw_rho)*(sR - unR)
+  sM  = (suR*unR - suL*unL - ptR + ptL) / (suR - suL)
+
+  if (sM <= sL .or. sM >= sR) then
+    ! contact speed outside the fan: fall back to the HLL flux
+    F = (sR*flux_l - sL*flux_r + sL*sR*(uR(1:nw_flux) - uL(1:nw_flux))) / ds
+    return
+  end if
+
+  pt_star = (suR*ptL - suL*ptR + suL*suR*(unR - unL)) / (suR - suL)
+
+  ! both star states are needed for either double-star state
+  call hlld_star_state(uL, flux_l, sL, unL, sM, pt_star, bx, whll, flux_dim, usL)
+  call hlld_star_state(uR, flux_r, sR, unR, sM, pt_star, bx, whll, flux_dim, usR)
+
+  ! Alfven waves (Eq. 51); with bx = 0 they merge with the contact and the
+  ! double-star regions have no width
+  if (sM >= 0._dp) then
+    sK2 = sM - abs(bx)/sqrt(usL(iw_rho))
+    if (sK2 <= 0._dp) then
+      call hlld_double_star_state(usL, usR, -1._dp, bx, flux_dim, uss)
+      F = flux_l + sK2*uss - (sK2 - sL)*usL - sL*uL(1:nw_flux)
+    else
+      F = flux_l + sL*(usL - uL(1:nw_flux))
+    end if
+  else
+    sK2 = sM + abs(bx)/sqrt(usR(iw_rho))
+    if (sK2 >= 0._dp) then
+      call hlld_double_star_state(usL, usR, 1._dp, bx, flux_dim, uss)
+      F = flux_r + sK2*uss - (sK2 - sR)*usR - sR*uR(1:nw_flux)
+    else
+      F = flux_r + sR*(usR - uR(1:nw_flux))
+    end if
+  end if
+
+end subroutine hlld_flux
+
+!> Star state U*_K between the fast wave sK and the Alfven wave sK*,
+!> Miyoshi & Kusano (2005) Eqs. 43-48. uK is conservative, fK its flux, unK
+!> its normal velocity. The energy follows from the Rankine-Hugoniot condition
+!> across sK with the flux actually used, which is Eq. 48 for ideal MHD and
+!> stays consistent where the energy flux has further terms (HYPERTC).
+subroutine hlld_star_state(uK, fK, sK, unK, sM, pt_star, bx, whll, flux_dim, ustar)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: uK(nw_phys), fK(nw_flux)
+  real(dp), intent(in)  :: sK, unK, sM, pt_star, bx
+  real(dp), intent(in)  :: whll(nw_flux)
+  integer,  intent(in)  :: flux_dim
+  real(dp), intent(out) :: ustar(nw_flux)
+
+  real(dp) :: rho_fac, rho_star, den, inv_den, fac_v, fac_b, vt, bt, vdotb_star
+  real(dp), parameter :: eps_den = 1e-2_dp   ! see the star-state comment below
+  integer  :: idir
+
+  ! psi, B_n (= bx) and any heat flux slots: the HLL state
+  ustar = whll
+
+  rho_fac  = (sK - unK) / (sK - sM)
+  rho_star = uK(iw_rho) * rho_fac
+  ustar(iw_rho) = rho_star
+#:if defined('N_TRACER')
+  #:for i in range(1, N_TRACER_+1)
+  ustar(tracer(${i}$)) = uK(tracer(${i}$)) * rho_fac
+  #:endfor
+#:endif
+
+  ! tangential velocity and field (Eqs. 44-47):
+  !   v*_t = v_t - fac_v*B_t,   B*_t = fac_b*B_t,
+  !   fac_v = bx (sM - unK)/den,  fac_b = 1 + rho (sK - unK)(sM - unK)/den,
+  !   den   = rho (sK - unK)(sK - sM) - bx^2 = rho* [(sK - sM)^2 - (sK* - sM)^2],
+  ! so den has a pole where the outer speed estimate meets the star Alfven
+  ! speed sK*. That is not only Miyoshi & Kusano's degenerate case (B_t = 0,
+  ! where the limit fac_v = 0, fac_b = 1 is exact): with the Davis bounds it
+  ! also happens at B_t /= 0, e.g. in Orszag-Tang, where |fac_v*B_t| reached
+  ! 10-90 against |v| ~ 1 and mirrored faces amplified their round-off
+  ! differences by bx^2/|den| ~ 1e5, breaking the point symmetry. 1/den is
+  ! therefore regularised as den/(den^2 + eps^2), eps = eps_den*|pt*|: exact
+  ! to O(eps^2/den^2) away from the pole, and going continuously to the
+  ! degenerate limit at it. A hard switch at |den| = eps instead jumps by
+  ! O(fac_v*B_t) there, so mirrored faces can still land on opposite sides.
+  ! Of eps_den = 1e-4, 1e-3 and 1e-2, only 1e-2 held Orszag-Tang (256^2,
+  ! koren, to t = 1) point-symmetric to round-off; the other two still lost
+  ! it from t = 0.93, 1e-3 more weakly. Against 1e-4, 1e-2 moved the density
+  ! by 2e-5 in L1, where hlld and hllc differ by 6e-2.
+  den     = uK(iw_rho)*(sK - unK)*(sK - sM) - bx**2
+  inv_den = den / max(den**2 + (eps_den*pt_star)**2, tiny(1._dp))
+  fac_v   = bx*(sM - unK)*inv_den
+  fac_b   = 1._dp + uK(iw_rho)*(sK - unK)*(sM - unK)*inv_den
+
+  vdotb_star = sM*bx
+  do idir = 1, 3
+     if (idir == flux_dim) then
+        ustar(iw_mom(idir)) = rho_star*sM
+     else
+        vt = uK(iw_mom(idir))/uK(iw_rho) - fac_v*uK(iw_mag(idir))
+        bt = fac_b*uK(iw_mag(idir))
+        ustar(iw_mom(idir)) = rho_star*vt
+        ustar(iw_mag(idir)) = bt
+        vdotb_star = vdotb_star + vt*bt
+     end if
+  end do
+
+  ustar(iw_e) = (sK*uK(iw_e) - fK(iw_e) + pt_star*sM - bx*vdotb_star) / (sK - sM)
+
+end subroutine hlld_star_state
+
+!> Double-star state U**_K between the Alfven wave sK* and the contact,
+!> Miyoshi & Kusano (2005) Eqs. 59-63, from both star states. side is -1 for
+!> K = L and +1 for K = R. Density, normal velocity and everything without a
+!> formula of its own are those of U*_K.
+subroutine hlld_double_star_state(usL, usR, side, bx, flux_dim, uss)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: usL(nw_flux), usR(nw_flux)
+  real(dp), intent(in)  :: side, bx
+  integer,  intent(in)  :: flux_dim
+  real(dp), intent(out) :: uss(nw_flux)
+
+  real(dp) :: sqL, sqR, inv_sq, sgn, sqK, vL, vR, vt, bt, vdotb_s, vdotb_ss
+  integer  :: idir
+
+  sqL    = sqrt(usL(iw_rho))
+  sqR    = sqrt(usR(iw_rho))
+  inv_sq = 1._dp / (sqL + sqR)
+  sgn    = sign(1._dp, bx)
+
+  if (side < 0._dp) then
+     uss = usL
+     sqK = sqL
+  else
+     uss = usR
+     sqK = sqR
+  end if
+
+  ! v*_K . B*_K and v** . B**; the normal components are common to both
+  vdotb_s  = 0._dp
+  vdotb_ss = 0._dp
+  do idir = 1, 3
+     vdotb_s = vdotb_s + uss(iw_mom(idir))*uss(iw_mag(idir))/uss(iw_rho)
+     if (idir == flux_dim) then
+        vdotb_ss = vdotb_ss + uss(iw_mom(idir))*uss(iw_mag(idir))/uss(iw_rho)
+     else
+        vL = usL(iw_mom(idir))/usL(iw_rho)
+        vR = usR(iw_mom(idir))/usR(iw_rho)
+        vt = (sqL*vL + sqR*vR + (usR(iw_mag(idir)) - usL(iw_mag(idir)))*sgn) * inv_sq
+        bt = (sqL*usR(iw_mag(idir)) + sqR*usL(iw_mag(idir)) &
+             + sqL*sqR*(vR - vL)*sgn) * inv_sq
+        uss(iw_mom(idir)) = uss(iw_rho)*vt
+        uss(iw_mag(idir)) = bt
+        vdotb_ss = vdotb_ss + vt*bt
+     end if
+  end do
+
+  uss(iw_e) = uss(iw_e) + side*sqK*(vdotb_s - vdotb_ss)*sgn
+
+end subroutine hlld_double_star_state
 #:enddef
 
 
