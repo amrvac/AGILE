@@ -64,6 +64,7 @@ contains
 
 ! subroutine to convert initial b_phi condition to cartesian coordinates
 elemental subroutine vec_cyl_to_car(a1, a2, a3, x, y)
+   ${GPU_ROUTINE_SEQ()}$
    real(dp), intent(inout) :: a1, a2, a3   ! in: (a_rho, a_phi, a_z); out: (a_x, a_y, a_z)
    real(dp), intent(in)    :: x, y         ! Cartesian position of the point
    real(dp) :: rho, c, s, ax, ay
@@ -106,7 +107,7 @@ end subroutine vec_cyl_to_car
 
 
      
-     r_sqr(:,:,:) = (x_(:,:,:,1)**2+x_(:,:,:,2)**2)
+     r_sqr(:,:,:) = x_(:,:,:,1)**2+x_(:,:,:,2)**2
 
    !initialise all b to 0
      w_(:,:,:,iw_mag(1)) = 0.0d0
