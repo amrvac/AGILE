@@ -139,6 +139,8 @@
     nvector = 0
     ${GPU_UPDATE_DEVICE('nvector')}$
 
+    phys_write_info => rho_write_info
+
   end subroutine phys_init
 #:enddef
 
@@ -250,5 +252,14 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
 
 end subroutine estimate_speeds_minmax
 #:enddef
+
+#:def write_info()
+  !> Write this module's parameters to a snapshot
+  subroutine rho_write_info(fh)
+    integer, intent(in)                 :: fh
+
+  end subroutine rho_write_info
+#:enddef
+
 
 #:endif
