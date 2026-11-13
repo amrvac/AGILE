@@ -329,13 +329,13 @@ the step counter.
 ## methodlist {: #par_methodlist }
 ```fortran
 &methodlist
- phys= 'hd' | 'mhd' | 'ffhd' | 'srhd'                        ! compile time
+ phys= 'hd' | 'rho' | 'ffhd' | 'srhd' | 'mhd' | 'srmhd'     ! compile time
  time_stepper= 'twostep' | 'onestep' | 'threestep' | 'fourstep' | 'fivestep'
  time_integrator= 'default' | 'Forward_Euler' | 'Predictor_Corrector' | 'ssprk2' | 'RK2_alfa' | 'ssprk3' | 'RK3_BT' | 'ssprk4' | 'rk4' | 'ssprk5'  ! must match time_stepper
  ssprk_order= 3 | 2
  rk2_alfa= 0.5d0 | DOUBLE in (0,1]
  rk3_switch= 3 | 1 | 2 | 4
- flux_scheme= nlevelshi*'tvdlf' | 'hll' | 'hllc'            ! only the first entry is used
+ flux_scheme= nlevelshi*'tvdlf' | 'hll' | 'hllc' | 'hlld'   ! only the first entry is used
  fv_face_flux= 'per_cell' | 'shared'
  limiter= nlevelshi*'minmod' | 'vanleer' | 'mcbeta' | 'koren' ! per level
  flux_adaptive_diffusion= F | T                             ! compile time, tvdlf only
@@ -384,7 +384,7 @@ See [Time integration](time_integration.html) for the order, stability limit
 and memory cost of each scheme and variant.
 
 ### flux_scheme {: #par_flux_scheme }
-The numerical flux at the cell faces. Three are implemented, each with MUSCL
+The numerical flux at the cell faces. Four are implemented, each with MUSCL
 reconstruction of the primitive variables:
 
 - `'tvdlf'` (the default): local Lax-Friedrichs (Rusanov), with the largest
@@ -393,15 +393,18 @@ reconstruction of the primitive variables:
 - `'hll'`: the two-wave HLL solver. Not available for `ffhd`.
 - `'hllc'`: HLL with a restored contact wave. `hd` (Toro 2010) and `mhd`
   (Li 2005); not available with `MHD_ENERGY_ONLY`.
+- `'hlld'`: the five-wave MHD solver of Miyoshi & Kusano (2005), which also
+  restores the rotational (Alfvén) discontinuities. `mhd` only, with an
+  energy equation (`mhd_energy = T`) and not with `MHD_ENERGY_ONLY`.
 
 Any other name stops the run, and so does a scheme the physics module does
 not support. In `mhd`, GLM's `psi` and the normal field always take the
-`tvdlf` flux, under `'hll'` and `'hllc'` alike. See the
+`tvdlf` flux, under `'hll'`, `'hllc'` and `'hlld'` alike. See the
 [table of solvers per module](equations.html#eq_list_physics).
 
 `flux_scheme` is an array with one entry per refinement level, as upstream,
 but **only the first entry is used, on every level**. Upstream's `'tvd'`,
-`'tvdmu'`, `'hlld'`, `'hllcd'`, `'cd'`, `'fd'`, `'source'` and `'nul'` do not
+`'tvdmu'`, `'hllcd'`, `'cd'`, `'fd'`, `'source'` and `'nul'` do not
 exist, nor do their options (`typetvd`, `typeentropy`, `entropycoef`,
 `typeboundspeed`, `typeaverage`, `tvdlfeps`, `flathllc`, `nxdiffusehllc`);
 setting one of those keys now fails the namelist read.
@@ -462,7 +465,7 @@ as the jump between the neighbouring cell centres, phi =
 `flux_ad_scale` * (face jump / centre jump)^2, clipped to
 [`flux_ad_min`, 1]; elsewhere phi = 1, full diffusion. This lowers the
 diffusion in smooth regions and keeps it at discontinuities. It has no effect
-on `hll` or `hllc`.
+on `hll`, `hllc` or `hlld`.
 
 ### source_split_usr, typesourcesplit {: #par_sourcesplit }
 The physics source terms (gravity, radiative cooling, `addsource_usr`) are
@@ -585,7 +588,7 @@ The types act on the **conserved** variables:
 - `'aperiodic'` is periodic with a sign flip, for the variables that change
   sign across the period; the rest of that direction must be `'periodic'`.
 - `'noinflow'` is `'cont'`, except that the momentum component with index
-  `1 + idim` (the normal one in `hd`, `mhd` and `srhd`) is clipped so that it
+  `1 + idim` (the normal one in `hd`, `srhd` and `mhd`) is clipped so that it
   cannot point into the domain. The index is fixed rather than looked up, so
   it is only meaningful for those three modules.
 - `'special'` leaves the ghost cells to the case, see
@@ -896,10 +899,11 @@ raise `courantpar` itself to profit from that; see
 When a compiled-in source term has a time-step limit, it is applied in the
 same loop, cell by cell (with `dx_d` again the physical cell size):
 
-- **gravity** (`*_gravity`, hd, mhd and ffhd): `dt < sqrt(dx_d / |g_d|)` in
+- **gravity** (`*_gravity`, hd, ffhd and mhd): `dt < sqrt(dx_d / |g_d|)` in
   every direction, with `g` from the case's `gravity_field`;
 - **resistivity** (`mhd_resistivity`): `dt < dtdiffpar * dx_d**2 / mhd_eta`.
-  This is the only use of `dtdiffpar`.
+  This is the only use of `dtdiffpar`. With `mhd_eta_usr`, `mhd_eta` is the
+  largest η that `eta_usr` returns.
 
 Nothing else adds a limit. Switching on radiative cooling or a user source
 term does compile in this per-cell check, but contributes no term to it:
@@ -941,7 +945,7 @@ prints an error (but does not stop the run, see [dtmin](#par_dtmin)), and
 
 # Physics-dependent Namelists {: #par_pdpnamelists }
 
-AGILE has four physics modules, `hd`, `mhd`, `ffhd` and `srhd`. Which one a
+AGILE has six physics modules, `rho`, `hd`, `ffhd`, `srhd`, `mhd` and `srmhd`. Which one a
 build uses is chosen by `phys` in `&methodlist` of the case's `agile.par`, and
 only that module's namelist is read. The equations, and what each option
 does, are described in [Physics modules and equations](equations.html); this
@@ -972,6 +976,17 @@ Three things upstream MPI-AMRVAC users should know:
   and `srhd_particles` are declared, but nothing initialises the particles,
   so leave them at `F`.
 
+## rho_list {: #par_rholist }
+```fortran
+&rho_list
+  rho_v= 1.0d0, 1.0d0, 1.0d0 | DOUBLE(3)  ! constant advection velocity, Cartesian components
+/
+```
+
+`rho_v` may not be zero in all components. Upstream's `rho_particles` is not
+read; a par file that still sets it stops at the namelist read. See
+[Scalar advection](equations.html#eq_rho).
+
 ## hd_list {: #par_hdlist }
 ```fortran
 &hd_list
@@ -993,6 +1008,49 @@ corner) ghost cells as well, which the conversion to primitive variables
 expects. `hd_adiab` and `hd_partial_ionization` are still accepted for
 compatibility but have no effect, and `hd_particles` must stay `F`.
 
+## ffhd_list {: #par_ffhdlist }
+```fortran
+&ffhd_list
+  ffhd_gamma= 1.666666666666667d0 | DOUBLE  ! adiabatic index
+  ffhd_gravity= F | T                    ! compile time: gravity_field in mod_usr
+  ffhd_radiative_cooling= F | T          ! compile time: reads &rc_list
+  ffhd_hyperbolic_thermal_conduction= F | T  ! compile time: field-aligned conduction
+  ffhd_pdivb= F | T                      ! compile time: p div(b) source term
+  ffhd_source_usr= F | T                 ! compile time: addsource_usr in mod_usr
+  He_abundance= 0.1 | DOUBLE from 0 to 1 ! He/H number ratio
+  ffhd_small_density= 0 | DOUBLE         ! floor in reconstructed face states
+  ffhd_small_pressure= 0 | DOUBLE
+  ffhd_energy= T                         ! must stay T, see above
+/
+```
+
+The frozen field direction is not a parameter: a case supplies it through
+`usr_set_nwextra` in its `mod_usr.fpp`, see
+[Setting the frozen field](equations.html#eq_ffhd_bhat). The conductivity of
+`ffhd_hyperbolic_thermal_conduction` is Spitzer's, derived from the units.
+`ffhd_pdivb` computes div(b) as a plain finite difference, which is correct
+on a Cartesian grid only. `ffhd_partial_ionization` is still accepted but
+has no effect.
+
+## srhd_list {: #par_srhdlist }
+```fortran
+&srhd_list
+  srhd_gamma= 1.666666666666667d0 | DOUBLE  ! adiabatic index (ideal gas)
+  srhd_eos= F | T                        ! F: ideal gas, T: Synge gas
+  srhd_n_tracer= 0 | INTEGER             ! compile time: passive tracers
+  srhd_source_usr= F | T                 ! compile time: addsource_usr in mod_usr
+  He_abundance= 0.1 | DOUBLE from 0 to 1 ! He/H number ratio, for the units
+  srhd_small_density= 0 | DOUBLE         ! floors, see below
+  srhd_small_pressure= 0 | DOUBLE
+/
+```
+
+The velocity unit is the speed of light. `srhd_small_pressure` is also the
+lower bracket of the pressure root-find in the conservative-to-primitive
+inversion; see [the srhd floors](equations.html#eq_srhd_floors) and
+[Special relativistic hydrodynamics](equations.html#eq_srhd) for the two
+equations of state.
+
 ## mhd_list {: #par_mhdlist }
 ```fortran
 &mhd_list
@@ -1001,6 +1059,7 @@ compatibility but have no effect, and `hd_particles` must stay `F`.
   mhd_glm_alpha= 0.5 | DOUBLE in [0,1]   ! GLM div B cleaning: diffusive/advective time scale
   mhd_resistivity= F | T                 ! compile time: resistive terms
   mhd_eta= 0 | DOUBLE                    ! uniform resistivity, with mhd_resistivity
+  mhd_eta_usr= F | T                     ! compile time: eta_usr in mod_usr (mhd_eta = its maximum)
   mhd_gravity= F | T                     ! compile time: gravity_field in mod_usr
   mhd_radiative_cooling= F | T           ! compile time: reads &rc_list
   mhd_source_usr= F | T                  ! compile time: addsource_usr in mod_usr
@@ -1050,48 +1109,21 @@ Upstream's magnetic field splitting (`B0field`, `Bdip`, ...), TRAC
 internal or hydrodynamic energy, semirelativistic MHD and the splitting of a
 hydrostatic equilibrium (`has_equi_*`) are not available in AGILE.
 
-## ffhd_list {: #par_ffhdlist }
+## srmhd_list {: #par_srmhdlist }
 ```fortran
-&ffhd_list
-  ffhd_gamma= 1.666666666666667d0 | DOUBLE  ! adiabatic index
-  ffhd_gravity= F | T                    ! compile time: gravity_field in mod_usr
-  ffhd_radiative_cooling= F | T          ! compile time: reads &rc_list
-  ffhd_hyperbolic_thermal_conduction= F | T  ! compile time: field-aligned conduction
-  ffhd_pdivb= F | T                      ! compile time: p div(b) source term
-  ffhd_source_usr= F | T                 ! compile time: addsource_usr in mod_usr
-  He_abundance= 0.1 | DOUBLE from 0 to 1 ! He/H number ratio
-  ffhd_small_density= 0 | DOUBLE         ! floor in reconstructed face states
-  ffhd_small_pressure= 0 | DOUBLE
-  ffhd_energy= T                         ! must stay T, see above
-/
-```
-
-The frozen field direction is not a parameter: a case supplies it through
-`usr_set_nwextra` in its `mod_usr.fpp`, see
-[Setting the frozen field](equations.html#eq_ffhd_bhat). The conductivity of
-`ffhd_hyperbolic_thermal_conduction` is Spitzer's, derived from the units.
-`ffhd_pdivb` computes div(b) as a plain finite difference, which is correct
-on a Cartesian grid only. `ffhd_partial_ionization` is still accepted but
-has no effect.
-
-## srhd_list {: #par_srhdlist }
-```fortran
-&srhd_list
-  srhd_gamma= 1.666666666666667d0 | DOUBLE  ! adiabatic index (ideal gas)
-  srhd_eos= F | T                        ! F: ideal gas, T: Synge gas
-  srhd_n_tracer= 0 | INTEGER             ! compile time: passive tracers
-  srhd_source_usr= F | T                 ! compile time: addsource_usr in mod_usr
+&srmhd_list
+  srmhd_gamma= 1.666666666666667d0 | DOUBLE  ! gamma-hat of the ideal-gas EOS
+  srmhd_eos= F                           ! T (Synge gas) stops the run
+  srmhd_glm_alpha= 0.5 | DOUBLE          ! GLM damping parameter
+  srmhd_n_tracer= 0 | INTEGER            ! compile time: passive tracers
+  srmhd_source_usr= F | T                ! compile time: addsource_usr in mod_usr
   He_abundance= 0.1 | DOUBLE from 0 to 1 ! He/H number ratio, for the units
-  srhd_small_density= 0 | DOUBLE         ! floors, see below
-  srhd_small_pressure= 0 | DOUBLE
+  srmhd_small_density= 1d-14 | DOUBLE    ! floors in reconstructed face states
+  srmhd_small_pressure= 0 | DOUBLE
 /
 ```
 
-The velocity unit is the speed of light. `srhd_small_pressure` is also the
-lower bracket of the pressure root-find in the conservative-to-primitive
-inversion; see [the srhd floors](equations.html#eq_srhd_floors) and
-[Special relativistic hydrodynamics](equations.html#eq_srhd) for the two
-equations of state.
+See [Special relativistic magnetohydrodynamics](equations.html#eq_srmhd).
 
 ## emissionlist (synthetic EUV/SXR/whitelight emission) {: #par_emissionlist }
 

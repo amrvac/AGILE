@@ -630,6 +630,7 @@ module mod_global_parameters
   !> flux schemes
   integer, parameter :: fs_hll=1
   integer, parameter :: fs_hllc=2
+  integer, parameter :: fs_hlld=3
   integer, parameter :: fs_tvdlf=5
 
   !> Finite-volume layout (fv_face_flux in &methodlist): fv_per_cell, the

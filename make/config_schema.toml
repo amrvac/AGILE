@@ -55,7 +55,7 @@ default = false
 [methodlist.phys]
 type = "option"
 name = "PHYS"
-options = ["hd", "mhd", "ffhd", "srhd", "srmhd"]
+options = ["rho", "hd", "ffhd", "srhd", "mhd", "srmhd"]
 flags = ["fypp", "hash"]
 default = "hd"
 implies.ffhd = ["components.fill_nwextra_analytic"]
@@ -164,6 +164,13 @@ name = "RESISTIVE"
 flags = ["fypp", "hash"]
 default = false
 implies = ["components.source_compact"]
+
+[mhd_list.mhd_eta_usr]
+type = "flag"
+name = "ETA_USR"
+flags = ["fypp", "hash"]
+default = false
+implies = ["mhd_list.mhd_resistivity"]
 
 [mhd_list.mhd_radiative_cooling]
 type = "flag"
