@@ -6,6 +6,7 @@ Fortran and MPI. Run from the repository root:
 ```sh
 export AGILE_DIR=$PWD
 python tests/mp5/test_kernel.py
+python tests/mp5/test_gpu_private.py
 make -C tests/weno_js5/hd -j4
 python tests/mp5/test_faces.py
 python tests/mp5/test_layouts.py --output /tmp/agile-layout-check
@@ -37,3 +38,7 @@ MP5 can fail that criterion near roundoff even when spatial order passes.
 Production diagnostic counters have been removed. Unmeasured fallback counts
 are null, not zero. Donor replacement itself is tested through returned states.
 Full GPU runtime acceptance and performance comparison are separate tasks.
+`test_gpu_private.py` needs only Fypp and checks conditional primitive-buffer
+declarations against OpenACC/OpenMP private clauses for HD/MHD, both layouts,
+all reconstructions/fluxes, and each optional source type. It does not compile
+or execute GPU code.
