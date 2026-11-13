@@ -59,9 +59,6 @@
   integer, public            :: mu_
   ${GPU_DECLARE_CREATE('mu_')}$
 
-
-
-
   !> Index of the Lorentz factor
   integer, public     :: lfac_
   ${GPU_DECLARE_CREATE('lfac_')}$
@@ -234,7 +231,7 @@
     lfac_= var_set_auxvar('lfac','lfac')
 
     if (nwflux > nw_recon .or. mu_ <= nw_recon .or. lfac_ <= nw_recon) &
-      call mpistop("srhd phys_init: flux variables must occupy 1:nw_recon "//&
+      call mpistop("srmhd phys_init: flux variables must occupy 1:nw_recon "//&
       "and the auxiliaries mu, lfac come after them")
 
     ${GPU_UPDATE_DEVICE('mu_,lfac_')}$
@@ -409,7 +406,9 @@
       eps=0
     end if
 
+
     u(iw_rho) = d/lfac  
+    
 
     if (srmhd_eos) then
       u(iw_e) = synge_eos(u(iw_rho), eps)
@@ -438,22 +437,17 @@
 
     real(dp)    ::  v_sqr, b_sqr, v_dot_b
 
-    real(dp)    :: E_th, E, h
+    real(dp)    :: E_th, E, h, p, rho
 
-
-
-
-    
 
     u(lfac_) = sqrt(1+u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2)
 
     if (srmhd_eos) then 
-      E_th = u(iw_e) * 1/(srmhd_gamma-1)
-      E    = E_th + dsqrt(E_th**2+u(iw_rho)**2)
-      ! writing rho/E on purpose, for numerics 
-      h = 0.5_dp * ((srmhd_gamma+1.0_dp) * E &
-          - (srmhd_gamma-1) * (u(iw_rho)/E))
-
+      p = u(iw_e)
+      rho = u(iw_rho)
+      E = p/rho/(srmhd_gamma-1)+sqrt((p/rho/(srmhd_gamma-1))**2+1)
+      h = 0.5_dp*((srmhd_gamma+1)*E - (srmhd_gamma-1)/E)
+  
       u(mu_) = 1/u(lfac_)/h
     else
       u(mu_) = 1/u(lfac_)/(1 + srmhd_gamma / (srmhd_gamma-1) / u(iw_rho) * u(iw_e))
@@ -668,13 +662,21 @@ end subroutine addsource_local
   pure subroutine fix_prim_state(u)
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
+    real(dp) :: p, rho, E, h
 
     u(iw_rho) = max(u(iw_rho), srmhd_small_density)
     u(iw_e)   = max(u(iw_e),   srmhd_small_pressure)
 
     u(lfac_) = sqrt(1+u(iw_mom(1))**2 + u(iw_mom(2))**2 + u(iw_mom(3))**2)
-
-    u(mu_) = 1/u(lfac_)/(1 + srmhd_gamma / (srmhd_gamma-1) / u(iw_rho) * u(iw_e))
+    if (srmhd_eos) then 
+        p = u(iw_e)
+        rho = u(iw_rho)
+        E = p/rho/(srmhd_gamma-1)+sqrt((p/rho/(srmhd_gamma-1))**2+1)
+        h = 0.5_dp*((srmhd_gamma+1)*E - (srmhd_gamma-1)/E) 
+        u(mu_) = 1/u(lfac_)/h
+    else
+        u(mu_) = 1/u(lfac_)/(1 + srmhd_gamma / (srmhd_gamma-1) / u(iw_rho) * u(iw_e))
+    end if
 
   end subroutine fix_prim_state
 #:enddef

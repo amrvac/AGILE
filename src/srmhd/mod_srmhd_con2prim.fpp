@@ -740,16 +740,21 @@ contains
         eps_hat=w_hat*(q_bar - mu*r_bar_sqr) + v_hat_sqr*w_hat**2/(1 + w_hat) !(42)
 
         !add a limiter for valid eps and rho
+
         if (eps_hat<0) then
             eps_hat=0
         end if
 
+
+        if (rho_hat<srmhd_small_density) rho_hat=srmhd_small_density
+        
 
         if (.not. srmhd_eos) then 
             p_hat = ideal_eos(rho_hat, eps_hat) !(43)
         else
             p_hat = synge_eos(rho_hat, eps_hat) !(43)
         end if
+
 
 
         a_hat=p_hat/rho_hat/(1 + eps_hat) !(43)
@@ -762,7 +767,7 @@ contains
 
         mu_hat = 1.0_dp/(nu_hat + mu*r_bar_sqr) !(45)
 
-        f=mu - mu_hat!(44)
+        f = mu - mu_hat !(44)
 
     end subroutine master_function
 
@@ -929,10 +934,6 @@ contains
 
     !$:con2prim_template("con2prim", "toms", "aux_toms")
 
-
-   
-
-    
 
 end module srmhd_con2prim
 
