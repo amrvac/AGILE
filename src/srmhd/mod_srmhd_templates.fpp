@@ -409,15 +409,12 @@
 
     u(iw_rho) = d/lfac  
     
-    !if (u(iw_rho)<srmhd_small_density) u(iw_rho) = srmhd_small_density
 
     if (srmhd_eos) then
       u(iw_e) = synge_eos(u(iw_rho), eps)
     else
       u(iw_e) = ideal_eos(u(iw_rho), eps)
     end if 
-
-    !if (u(iw_e)<srmhd_small_pressure) u(iw_e) = srmhd_small_pressure
 
     u(iw_mom(1)) = vel(1)*lfac
 

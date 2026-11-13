@@ -755,7 +755,6 @@ contains
             p_hat = synge_eos(rho_hat, eps_hat) !(43)
         end if
 
-        !if (p_hat<srmhd_small_pressure) p_hat=srmhd_small_pressure
 
 
         a_hat=p_hat/rho_hat/(1 + eps_hat) !(43)
