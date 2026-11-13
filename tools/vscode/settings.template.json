@@ -12,15 +12,11 @@
   "fortran.linter.fypp.includes": [
     "${workspaceFolder}/src"
   ],
-  // Exactly one build gets linted. These two go together: the defines pick the
-  // fypp branch, the module path must come from a build of that same branch.
-  "fortran.linter.fypp.definitions": {
-    "PHYS": "'hd'",
-    "GEOM": "'Cartesian'"
-  },
-  "fortran.linter.includePaths": [
-    "@MODULE_DIR@"
-  ],
+  // Both of these are read off one build's config.mk by setup.sh, so the fypp
+  // branch that gets preprocessed and the .mod files it links against can
+  // never disagree. Build another case and re-run the script to switch.
+  "fortran.linter.fypp.definitions": @DEFINITIONS@,
+  "fortran.linter.includePaths": @MODULE_DIRS@,
   // gfortran writes a .mod per module even with -fsyntax-only; keep them out
   // of the source tree.
   "fortran.linter.modOutput": "${workspaceFolder}/build/lint-mods",

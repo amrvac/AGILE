@@ -54,18 +54,39 @@ parse fypp directives, so its own diagnostics are turned off and the real ones
 come from gfortran, which the extension runs *after* fypp — fypp's line markers
 map any error back to the `.fpp` line.
 
-Two limits follow from that, both of them inherent:
+Linting needs a build, for two things: the fypp defines and the `.mod` files
+that `use` statements resolve against. The script takes both from one build's
+generated `config.mk` and its `f90/` directory, so they always describe the
+same configuration. By default it picks the most recently built case anywhere
+in the tree. Call `setup.sh` with a `--case` to choose a specific build for the linter to adapt:
 
-- **One configuration is linted.** `PHYS` and `GEOM` are fypp defines, so a
-  lint pass only sees one branch of the tree. The template pins
-  `PHYS='hd'`, `GEOM='Cartesian'`. To check another, change
-  `fortran.linter.fypp.definitions` *and* point `fortran.linter.includePaths`
-  at a build of that same configuration — `.mod` files are per-configuration
-  too.
-- **It needs a build.** `use` statements resolve against the `.mod` files of
-  `tests/hd/KH3D`; without them every file reports "Cannot open module file".
-  The script detects this and leaves `fortran.linter.compiler` at `Disabled`
-  until you have run `make arch=gnu` there.
+```bash
+tools/vscode/setup.sh --case tests/mhd/spherical_pole
+```
+
+The chosen configuration is printed, e.g.
+
+```
+  diagnostics   gfortran on fypp output
+                configuration PHYS='hd' SPECIALBOUNDARY= REFINE_USR= GEOM='spherical'
+                from tests/hd/spherical_pole
+```
+
+Two consequences, both inherent to a compile-time-configured code:
+
+- **One configuration at a time.** `PHYS`, `GEOM` and the feature flags are
+  fypp defines, so a lint pass only ever preprocesses one branch. Code behind
+  the others is not checked — not wrongly flagged, just unvisited. Build the
+  case you are working on and re-run the script, and the branch you are
+  editing is the one that gets checked, that case's own `mod_usr.fpp`
+  included.
+- **With no build, diagnostics stay off.** Without `.mod` files every file
+  would report "Cannot open module file", so the script leaves
+  `fortran.linter.compiler` at `Disabled` and says which command fixes it.
+
+The module path points at `build/latest`, which follows the newest build of
+that case, so re-running the script is only needed when switching cases, not
+after an ordinary rebuild.
 
 ## Troubleshooting
 
