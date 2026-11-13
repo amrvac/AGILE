@@ -40,7 +40,9 @@ define fypp_rule
 
 $(patsubst %.fpp, $(build_dir)/f90/%.f90, $(notdir $(1))): $(1)
 	@mkdir -p $$(@D)
+ifneq ($(strip $(SILENT)),1)
 	@echo -e "Precompiling $(_magenta)$$(<:$(agile)/src/%=%)$(_reset)"
+endif
 	@python $(agile)/make/fypp-deps.py $(addprefix -I ,$(fypp_include_dirs)) $$< $$@
 	@fypp $(fypp_flags) $$<  $$@
 endef
