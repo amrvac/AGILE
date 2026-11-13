@@ -294,6 +294,24 @@ parameter file. The equation parameters are the ratio of specific heats
 **mhd_gamma** and the resistivity **mhd_eta**, which only has an effect when
 `mhd_resistivity` is on.
 
+A non-uniform resistivity, for example an anomalous resistivity confined to
+a current sheet, is compiled in with **mhd_eta_usr=.true.** (which implies
+`mhd_resistivity`). The case then provides in `mod_usr` the function
+
+```fortran
+pure real(dp) function eta_usr(wprim, J, x, qt) result(eta)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in) :: wprim(nw_phys), J(3), x(1:ndim), qt
+```
+
+returning η at position `x` and time `qt`, from the cell's primitive state
+`wprim` and its current density `J`. The induction source becomes
+−∇×(η**J**) = η∇²**B** − ∇η×**J**, with ∇η by central differences of
+`eta_usr` over the six face neighbours. **J** is only known in the cell
+itself, so the neighbours are evaluated with that cell's **J**: ∇η follows
+how η varies with position, time and state, but not with **J**. `mhd_eta`
+must then be set to the largest η, which is used for the time step.
+
 The gas law p = n k_B T counts the particles per hydrogen nucleus as
 b = 1 + `H_ion_fr` + `He_abundance` (`He_ion_fr` (`He_ion_fr2` + 1) + 1),
 with the ionisation fractions `H_ion_fr` = H⁺/(H⁺+H),
