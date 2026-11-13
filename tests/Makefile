@@ -38,8 +38,7 @@ MHD_EXTENDED := mhd/blast_wave_Cartesian_3D mhd/BrioWu mhd/spherical mhd/cylindr
                 mhd/spherical_pole mhd/log_spherical mhd/log_cylindrical
 SRMHD_BASIC := srmhd/shock_tube srmhd/spherical_pole
 SRMHD_EXTENDED := srmhd/CPA srmhd/spherical srmhd/cylindrical \
-                  srmhd/cylindrical_pole srmhd/log_spherical srmhd/log_cylindrical srmhd/jet_0B
-
+                  srmhd/cylindrical_pole srmhd/log_spherical srmhd/log_cylindrical
 RHO_DIRS := $(RHO_BASIC) $(RHO_EXTENDED)
 HD_DIRS := $(HD_BASIC) $(HD_EXTENDED)
 FFHD_DIRS := $(FFHD_BASIC) $(FFHD_EXTENDED)
