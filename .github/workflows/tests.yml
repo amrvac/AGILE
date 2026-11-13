@@ -78,7 +78,7 @@ jobs:
       - name: compile and run tests
         run: |
           cd tests
-          arch=gnu ./test_runner.sh
+          arch=gnu SILENT=1 ./test_runner.sh
 
   INTEL:
     # labelling a PR reruns CI only for the full-tests label
@@ -127,4 +127,4 @@ jobs:
       - name: compile
         run: |
           cd tests
-          arch=ifx ./test_runner.sh
+          arch=ifx SILENT=1 ./test_runner.sh
