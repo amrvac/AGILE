@@ -136,6 +136,13 @@ module mod_global_parameters
   !> cell prolongation then needs volumes and dx-intervals one cell beyond it.
   integer :: ixGextmin1,ixGextmin2,ixGextmin3,ixGextmax1,ixGextmax2,ixGextmax3
 
+  !> MP5 early-acceptance tolerance on products of conserved-variable differences.
+  double precision :: mp5_tolerance = 1.d-10
+  ${GPU_DECLARE_COPYIN('mp5_tolerance')}$
+  !> JS weights use code-unit conserved variables; no automatic rescaling.
+  double precision :: weno_js_epsilon = 1.d-6
+  ${GPU_DECLARE_COPYIN('weno_js_epsilon')}$
+
   !> Number of ghost cells surrounding a grid
   integer :: nghostcells = 2
   ${GPU_DECLARE_COPYIN('nghostcells')}$

@@ -407,7 +407,8 @@ exist, nor do their options (`typetvd`, `typeentropy`, `entropycoef`,
 setting one of those keys now fails the namelist read.
 
 ### fv_face_flux {: #par_fv_face_flux }
-How the finite-volume kernel organises the face fluxes. Both give the same
+How the finite-volume kernel organises the face fluxes. Both layouts support
+MUSCL, WENO-JS5 and MP5. Both give the same
 result to the last bit; they differ only in speed and device memory.
 
 - `'per_cell'` (the default): each cell computes both of its faces itself,
@@ -426,8 +427,7 @@ most cases, by far more when the flux is expensive: measured on one A100,
 for KH3D at 256^3 in 64^3 blocks (64 blocks). Any other value stops the run.
 
 ### limiter {: #par_typelimiter }
-The slope limiter of the MUSCL reconstruction, per level (this one is
-honoured level by level):
+The reconstruction, selected per level (honoured level by level):
 
 - `'minmod'` (the default): the most diffusive;
 - `'vanleer'`: van Leer's harmonic limiter;
@@ -435,12 +435,24 @@ honoured level by level):
   code);
 - `'koren'`: Koren's third-order limiter.
 
-**Any other name runs first order without a warning.** `read_par_files` still
-accepts upstream's names (`woodward`, `superbee`, `albada`, `cada`, `cada3`,
-`schmid1`, `schmid2`, `venk`, `ppm`, `mp5`, the `weno*`/`teno*` family, ...),
-but the reconstruction falls through to piecewise-constant states for them.
-The upstream keys that tune those limiters (`cada3_radius`,
-`schmid_rad1..3`, `flatcd`, `flatsh`, `loglimit`) are read and ignored.
+- `'mp5'`: Suresh--Huynh fifth-order monotonicity-preserving reconstruction of
+  conserved cell averages; Cartesian HD/MHD with energy, at least three ghost
+  layers. `mp5_tolerance=1.d-10` must be finite and nonnegative (zero allowed);
+  alpha is fixed at four. See [MP5](mp5.md).
+
+- `'weno5'`: the original Jiang--Shu fifth-order weights and smoothness
+  indicators, applied component-wise to **conserved cell averages**. Supported
+  for Cartesian HD/MHD with energy, without `flux_adaptive_diffusion`.
+  Uses at least three ghost layers. See [WENO-JS5](weno_js5.md).
+
+Other reconstruction names now stop at startup instead of silently selecting
+first-order states. The upstream limiter enumeration remains available for
+other consumers; it does not imply implementation in the FV kernel.
+
+`weno_js_epsilon` in `&methodlist` defaults to `1.d-6` and must be finite and
+positive. It is added to the smoothness indicator of each conserved variable
+in code units, with exponent 2. No automatic rescaling, WENO-Z correction or
+mapping is applied. Existing MUSCL defaults are unchanged.
 
 ### flux_adaptive_diffusion {: #par_flux_ad }
 `flux_adaptive_diffusion = T` (compile time) scales the dissipative part of the
@@ -628,12 +640,17 @@ missing. See [The polar axis](coordinate_systems.html#geom_polar_axis)
 for the conventions and the tests.
 
 ### nghostcells {: #par_nghostcells }
-The number of ghost-cell layers around every block, default 2, which is what
-every reconstruction AGILE implements needs (`minmod`, `vanleer`, `mcbeta`,
-`koren`; see [methodlist](#par_methodlist)). It is raised automatically for the
-wider-stencil limiter names upstream has (`mp5`, the WENO family, `ppm`), but
-those are not implemented here. Every block carries the extra layers, so do
-not raise it without a reason.
+The number of ghost-cell layers around every block, default 2. It is raised
+to the largest requirement of the selected reconstruction on any level:
+2 for MUSCL, 3 for WENO-JS5. Physics-specific extra layers and the existing
+staggered-AMR even-width rule are then applied. Every rank and time level uses
+the resulting width. User boundary callbacks must fill their entire supplied
+range, including the third or fourth layer.
+
+Each block dimension must be at least `nghostcells`; with AMR it must be at
+least `2*nghostcells`, so a coarse representative can supply the restricted
+halo. Block sizes must also retain the existing even, at-least-four rule.
+Increasing this parameter alone does not change reconstruction order.
 
 ### ghost_copy {: #par_ghost_copy }
 At a level jump, the ghost cells of a fine block are prolonged from the

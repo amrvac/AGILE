@@ -7,6 +7,10 @@
 
 module mod_finite_volume
 
+  use mod_weno_js5, only: weno_js5_left
+  use mod_mp5, only: mp5_left
+  use mod_limiter, only: limiter_weno5, limiter_mp5
+
   use mod_variables
   use mod_physics_vars
   use mod_global_parameters, only: ndim
@@ -46,6 +50,7 @@ contains
   ('muscl_hllc', 'fs_hllc',  'reconflux_muscl_hllc_prim')]
   ! finite-volume layouts, selected at run time by fv_face_flux
 #:set layouts = ['shared', 'per_cell']
+#:set reconstructions = ['muscl','weno','mp5'] if PHYS in ['hd','mhd'] and GEOM == 'Cartesian' else ['muscl']
 
   subroutine finite_volume_local(qdt, dtfactor, ixImin1,ixImin2,&
     ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
@@ -61,18 +66,6 @@ contains
     ! remember, old names map as: wCT => bga, wnew => bgb
     type(block_grid_t)                                    :: bga
     type(block_grid_t)                                    :: bgb
-    ! .. local ..
-    integer                :: n, iigrid, ix1,ix2,ix3
-    double precision       :: uprim(nw_phys, ixImin1:ixImax1,ixImin2:ixImax2,&
-      ixImin3:ixImax3)
-    real(dp)               :: tmp(nw_phys,5)
-    real(dp)               :: f(nw_flux, 2)
-    real(dp)               :: inv_dr(ndim)
-    real(dp)               :: dr(ndim)
-    integer                :: typelim
-    real(dp)               :: xloc(ndim)
-    real(dp)               :: xlocC(ndim,2)
-    real(dp)               :: wprim(nw_phys), wCT(nw_phys), wnew(nw_phys)
     integer :: method
     !-----------------------------------------------------------------------------
 
@@ -83,9 +76,17 @@ contains
       select case (fv_layout)
 #:for layout in layouts
       case (fv_${layout}$)
-        call finite_volume_local_${scheme_tag}$_${layout}$(qdt, dtfactor, ixImin1,ixImin2,&
+#:for reconstruction in reconstructions
+#:if reconstruction == 'muscl'
+        if (any(type_limiter /= limiter_weno5 .and. type_limiter /= limiter_mp5)) then
+#:else
+        if (any(type_limiter == ${'limiter_weno5' if reconstruction == 'weno' else 'limiter_mp5'}$)) then
+#:endif
+        call finite_volume_local_${reconstruction}$_${scheme_tag}$_${layout}$(qdt, dtfactor, ixImin1,ixImin2,&
               ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
               ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
+        end if
+#:endfor
 #:endfor
       end select
 #:endfor
@@ -104,12 +105,17 @@ end subroutine finite_volume_local
 #! upper face ix_d+1/2 for s = 0, its lower face ix_d-1/2 for s = -1. Both
 #! layouts build every face through this, so they hand the flux routine the
 #! same stencil and position for the same face.
-#:def FACE_FLUX(d, s, f, faceflux_proc)
+#:def FACE_FLUX(d, s, f, faceflux_proc, reconstruction)
+#:set radius = 1 if reconstruction == 'muscl' else 2
 #:set lo = '-1' if s == -1 else ''
 #:set cell = ', '.join('ix%d%s' % (k, lo if k == d else '') for k in range(1, 4))
-#:set sten = ', '.join('ix%d%+d:ix%d%+d' % (k, s-1, k, s+2) if k == d else 'ix%d' % k for k in range(1, 4))
+#:set sten = ', '.join('ix%d%+d:ix%d%+d' % (k, s-radius, k, s+radius+1) if k == d else 'ix%d' % k for k in range(1, 4))
                    ! face ix${d}$${lo}$+1/2, between cell ix${d}$${lo}$ and cell ix${d}$${lo}$+1
-                   tmp4 = uprim(1:nw_phys, ${sten}$)
+#:if reconstruction == 'muscl'
+                   face_stencil = uprim(1:nw_phys, ${sten}$)
+#:else
+                   face_stencil = transpose(bga%w(${sten}$,1:nw_phys,n))
+#:endif
                    ! Transverse components on the lower cell's barycentre, the
                    ! normal one on the face, in the lower-corner form of cell
                    ! ix${d}$${lo}$+1: the one form right in every geometry (cannot be
@@ -123,7 +129,7 @@ end subroutine finite_volume_local
                    ! which covers these faces: domain faces, s = 0 being r = 0
                    xC(1) = log_ra*dexp(xC(1)) + log_rb
 #:endif
-                   call ${faceflux_proc}$(tmp4, xC, ${d}$, ${f}$, typelim)
+                   call ${faceflux_proc}$(face_stencil, xC, ${d}$, ${f}$, typelim)
 #:enddef
 
 #! Update cell (ix1,ix2,ix3) with the difference of its lower and upper face
@@ -184,8 +190,9 @@ end subroutine finite_volume_local
 #! computes each face once into the per-gang fface and lets both cells read
 #! it; 'per_cell' has each cell compute both of its faces, which costs a
 #! second flux per face but needs no fface (fv_face_flux in &methodlist).
-#:def FV_KERNEL(scheme_tag, faceflux_proc, layout)
-  subroutine finite_volume_local_${scheme_tag}$_${layout}$(qdt, dtfactor, ixImin1,ixImin2,&
+#:def FV_KERNEL(scheme_tag, faceflux_proc, layout, reconstruction)
+#:set needs_primitive = reconstruction == 'muscl' or GEOM != 'Cartesian' or defined('SOURCE_LOCAL') or defined('SOURCE_NONLOCAL') or defined('SOURCE_COMPACT')
+  subroutine finite_volume_local_${reconstruction}$_${scheme_tag}$_${layout}$(qdt, dtfactor, ixImin1,ixImin2,&
      ixImin3,ixImax1,ixImax2,ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
      ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
     use mod_global_parameters
@@ -202,12 +209,14 @@ end subroutine finite_volume_local
     ! .. local ..
     integer                :: n, iigrid, ix1,ix2,ix3
     integer                :: nx1,nx2,nx3, nxCo1,nxCo2,nxCo3
+#:if needs_primitive
     double precision       :: uprim(nw_phys, ixImin1:ixImax1,ixImin2:ixImax2,&
        ixImin3:ixImax3)
+#:endif
     real(dp)               :: tmp(nw_phys,5)
     real(dp)               :: tmp1(nw_phys,3),tmp2(nw_phys,3),tmp3(nw_phys,3)
-    ! One face: its 4-cell stencil, its position and its numerical flux
-    real(dp)               :: tmp4(nw_phys,4)
+    ! One face: four primitive cells for MUSCL, six conserved cells for JS5/MP5.
+    real(dp)               :: face_stencil(nw_phys,${4 if reconstruction == 'muscl' else 6}$)
     real(dp)               :: xC(ndim)
     real(dp)               :: fx(nw_flux)
 #:if layout == 'shared'
@@ -266,6 +275,12 @@ end subroutine finite_volume_local
        ${GPU_PARALLEL_LOOP_GANG("private(uprim" + (", fface" if layout == 'shared' else "") + ", inv_dr, dr, n, xlo, typelim, ix1, ix2, ix3, fC1, fC2, fC3, neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, neighbor_type_3p)")}$
        do iigrid = igrid_beg, igrid_end
           n = igrids_active(iigrid)
+#:if reconstruction == 'muscl'
+          if (type_limiter(node(plevel_,n)) == limiter_weno5 .or. &
+              type_limiter(node(plevel_,n)) == limiter_mp5) cycle
+#:else
+          if (type_limiter(node(plevel_,n)) /= ${'limiter_weno5' if reconstruction == 'weno' else 'limiter_mp5'}$) cycle
+#:endif
 
           dr  = rnode(rpdx1_:rnodehi, n)
           inv_dr  = 1/dr
@@ -283,6 +298,7 @@ end subroutine finite_volume_local
           neighbor_type_3m = neighbor_type(0,0,-1,n)
           neighbor_type_3p = neighbor_type(0,0, 1,n)
 
+#:if needs_primitive
           ${GPU_LOOP_VECTOR("collapse(ndim)")}$
           do ix3=ixImin3,ixImax3 
              do ix2=ixImin2,ixImax2 
@@ -294,17 +310,19 @@ end subroutine finite_volume_local
              end do
           end do
 
+#:endif
+
 #:for d in range(1, 4)
           ! ---------------------------------------------------------------
 #:if layout == 'shared'
           ! Direction ${d}$. Every face gets one reconstruction and one Riemann
           ! flux, shared by the two cells on either side of it: the faces
           ! ixOmin${d}$-1/2 .. ixOmax${d}$+1/2, i.e. fface(ixOmin${d}$-1:ixOmax${d}$).
-          ${GPU_LOOP_VECTOR("collapse(ndim) private(tmp4, xC, fx)")}$
+          ${GPU_LOOP_VECTOR("collapse(ndim) private(face_stencil, xC, fx)")}$
           do ix3=ixOmin3${'-1' if d == 3 else ''}$,ixOmax3
              do ix2=ixOmin2${'-1' if d == 2 else ''}$,ixOmax2
                 do ix1=ixOmin1${'-1' if d == 1 else ''}$,ixOmax1
-$:FACE_FLUX(d, 0, 'fx', faceflux_proc)
+$:FACE_FLUX(d, 0, 'fx', faceflux_proc, reconstruction)
                    fface(ix1, ix2, ix3, 1:nw_flux) = fx
                 end do
              end do
@@ -322,12 +340,12 @@ $:FV_CELL_UPDATE(d, 'fface(%s, 1:nw_flux)' % lower[d], 'fface(ix1, ix2, ix3, 1:n
           ! Direction ${d}$. Each cell computes both of its faces itself, so
           ! every interior face is computed twice, but no per-block face
           ! buffer is needed.
-          ${GPU_LOOP_VECTOR("collapse(ndim) private(tmp4, xC, fxlo, fx" + (", inv_dvol" if GEOM != 'Cartesian' else "") + ")")}$
+          ${GPU_LOOP_VECTOR("collapse(ndim) private(face_stencil, xC, fxlo, fx" + (", inv_dvol" if GEOM != 'Cartesian' else "") + ")")}$
           do ix3=ixOmin3,ixOmax3
              do ix2=ixOmin2,ixOmax2
                 do ix1=ixOmin1,ixOmax1
-$:FACE_FLUX(d, -1, 'fxlo', faceflux_proc)
-$:FACE_FLUX(d, 0, 'fx', faceflux_proc)
+$:FACE_FLUX(d, -1, 'fxlo', faceflux_proc, reconstruction)
+$:FACE_FLUX(d, 0, 'fx', faceflux_proc, reconstruction)
 $:FV_CELL_UPDATE(d, 'fxlo(1:nw_flux)', 'fx(1:nw_flux)')
                 end do
              end do
@@ -515,17 +533,79 @@ $:FV_CELL_UPDATE(d, 'fxlo(1:nw_flux)', 'fx(1:nw_flux)')
        end do
     end do
 
-  end subroutine finite_volume_local_${scheme_tag}$_${layout}$
+  end subroutine finite_volume_local_${reconstruction}$_${scheme_tag}$_${layout}$
   #:enddef
 
 
 #:for scheme_tag, method_enum, faceflux_proc in schemes
 #:for layout in layouts
-#:call FV_KERNEL(scheme_tag, faceflux_proc, layout)
+#:for reconstruction in reconstructions
+#:call FV_KERNEL(scheme_tag, faceflux_proc if reconstruction == 'muscl' else 'reconflux_'+reconstruction+'_'+scheme_tag, layout, reconstruction)
 #:endcall
 #:endfor
 #:endfor
+#:endfor
 
+
+#:if PHYS in ['hd','mhd'] and GEOM == 'Cartesian'
+  !> Convert only admissible conserved states (avoid division by bad density).
+  subroutine highorder_face_primitive(u, donor)
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+    real(dp), intent(in) :: donor(nw_phys)
+    logical :: valid
+    valid=all(ieee_is_finite(u))
+    if (valid) valid=u(iw_rho)>0.d0
+    if (valid) then
+      call to_primitive(u)
+      valid=all(ieee_is_finite(u))
+      if (valid) then
+        call fix_prim_state(u)
+        valid=all(ieee_is_finite(u)) .and. u(iw_rho)>0.d0 .and. u(iw_e)>0.d0
+      end if
+    end if
+    if (.not.valid) then
+      u=donor
+      call to_primitive(u)
+      call fix_prim_state(u)
+    end if
+  end subroutine highorder_face_primitive
+
+#:for reconstruction, procedure, parameter in [('weno','weno_js5_left','weno_js_epsilon'),('mp5','mp5_left','mp5_tolerance')]
+  ! A single face lies between input cells 3 and 4. Both layouts use this routine.
+  subroutine ${reconstruction}$_reconstruct_face(u,uL,uR)
+    use mod_global_parameters, only: ${parameter}$
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(in) :: u(nw_phys,6)
+    real(dp), intent(out) :: uL(nw_phys),uR(nw_phys)
+    integer :: iw
+    do iw=1,nw_recon
+      call ${procedure}$(u(iw,1:5),${parameter}$,uL(iw))
+      call ${procedure}$(u(iw,6:2:-1),${parameter}$,uR(iw))
+    end do
+    call highorder_face_primitive(uL,u(:,3))
+    call highorder_face_primitive(uR,u(:,4))
+  end subroutine ${reconstruction}$_reconstruct_face
+
+#:for scheme_tag, method_enum, faceflux_proc in schemes
+#:set solver = {'fs_tvdlf':'llf','fs_hll':'hll','fs_hllc':'hllc'}[method_enum]
+  subroutine reconflux_${reconstruction}$_${scheme_tag}$(u,xlocC,flux_dim,flux,typelim)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(in) :: u(nw_phys,6), xlocC(ndim)
+    integer, intent(in) :: flux_dim,typelim
+    real(dp), intent(out) :: flux(nw_flux)
+    real(dp) :: uL(nw_phys),uR(nw_phys)
+    call ${reconstruction}$_reconstruct_face(u,uL,uR)
+      call riemann_${solver}$_prim(uL,uR,xlocC,flux_dim,flux#{if solver == 'llf' and defined('FLUX_AD')}#, spread(1.d0,1,nw_flux)#{endif}#)
+#:if defined('MHD_ENERGY_ONLY') and solver == 'llf'
+    flux(1:iw_e-1)=0.d0
+    flux(iw_e+1:nw_flux)=0.d0
+#:endif
+  end subroutine reconflux_${reconstruction}$_${scheme_tag}$
+#:endfor
+#:endfor
+#:endif
 
   !> MUSCL reconstruction in primitive variables at one face from a 4-point
   !> stencil: the face lies between cells 2 and 3, uL is cell 2 plus half its
