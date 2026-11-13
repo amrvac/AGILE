@@ -39,17 +39,30 @@ Section 2.3, which is also the citable reference for AGILE 1.0.
 | `srmhd` | `LF`, `HLL` |
 
 The scheme is chosen with `flux_scheme` in `&methodlist` (`'tvdlf'` for
-`LF`, `'hll'`, `'hllc'`; `'tvdlf'` is the default). `flux_scheme` is an
+`LF`, `'hll'`, `'hllc'`, `'hlld'`; `'tvdlf'` is the default). `flux_scheme` is an
 array with one entry per refinement level, as in MPI-AMRVAC, but **AGILE
 uses only its first entry, for every level**: different schemes on
 different levels are not implemented yet. The slope limiter, `limiter`, is
 applied per level. `srhd`'s `HLL` uses the relativistic Davis (1988) min/max
-signal-speed estimate in `estimate_speeds_minmax`. `HLLC` is a shared frame,
-`riemann_hllc_prim`, around a per-module star-region flux, `hllc_flux`: `hd`
-uses Toro's (2010) variant 2 with PVRS signal speeds, and `mhd` the solver of
-Li (2005) with the Davis fast-magnetosonic speeds of `HLL`, as upstream
-MPI-AMRVAC does. In `mhd` the normal field and GLM's `psi` still take the
-`LF` flux, exactly as under `HLL`. `srhd` has no `HLLC`. A solver not listed for a module in the table is
+signal-speed estimate in `estimate_speeds_minmax`. `HLLC` and `HLLD` share
+one physics-independent frame, the `STAR_SOLVER` macro in
+`src/mod_finite_volume.fpp`, which expands to `riemann_<solver>_prim`
+around two per-module hooks, `estimate_speeds_<solver>` and
+`<solver>_flux`. For `HLLC`, `hd` uses Toro's (2010) variant 2 with PVRS
+signal speeds, and `mhd` the solver of Li (2005) with the Davis
+fast-magnetosonic speeds of `HLL`, as upstream MPI-AMRVAC does. `HLLD` is
+the five-wave solver of Miyoshi & Kusano (2005), with the same speeds and
+the same normal field as `mhd`'s `HLLC`; it resolves isolated contacts and
+rotational discontinuities exactly, and needs an energy equation. Its
+star-state tangential velocity and field (Miyoshi & Kusano Eqs. 44-47)
+divide by a denominator that vanishes wherever the outer speed estimate
+meets the star Alfvén speed, which happens at non-zero tangential field
+too; `hlld_star_state` replaces `1/den` by `den/(den² + ε²)`,
+`ε = 10⁻² |p*_tot|`, which changes it only by O(ε²/den²) away from that pole and
+keeps it continuous through it (a hard cut-off there broke the point
+symmetry of Orszag-Tang). In `mhd`
+the normal field and GLM's `psi` still take the `LF` flux, exactly as under
+`HLL`. `srhd` has no `HLLC`. A solver not listed for a module in the table is
 not supported by it: the module has no signal-speed estimate for it, only a
 placeholder that calls `mpistop`.
 
@@ -732,7 +745,7 @@ pure subroutine fix_prim_state(u)
 It is called from `muscl_reconstruct_prim` in `src/mod_finite_volume.fpp`
 for the left and right state at both faces of a cell, in every direction,
 whatever the limiter. That routine is the single producer of face states, so
-this one call covers all three Riemann solvers (`tvdlf`, `hll`, `hllc`). The
+this one call covers every Riemann solver (`tvdlf`, `hll`, `hllc`, `hlld`). The
 reconstruction limits every slot of the state independently, so a face
 state can come out with a negative density or pressure even where both
 neighbouring cells are admissible. The hook is the place to repair it.

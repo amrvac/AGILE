@@ -38,12 +38,15 @@ contains
 @:estimate_speeds_minmax()
 @:estimate_speeds_hllc()
 @:hllc_flux()
+@:estimate_speeds_hlld()
+@:hlld_flux()
 
   ! flux scheme list : (scheme_tag, method_enum, faceflux_proc)
 #:set schemes = [ &
   ('muscl_llf',  'fs_tvdlf', 'reconflux_muscl_llf_prim'), &
   ('muscl_hll',  'fs_hll',   'reconflux_muscl_hll_prim'), &
-  ('muscl_hllc', 'fs_hllc',  'reconflux_muscl_hllc_prim')]
+  ('muscl_hllc', 'fs_hllc',  'reconflux_muscl_hllc_prim'), &
+  ('muscl_hlld', 'fs_hlld',  'reconflux_muscl_hlld_prim')]
   ! finite-volume layouts, selected at run time by fv_face_flux
 #:set layouts = ['shared', 'per_cell']
 
@@ -671,13 +674,18 @@ $:FV_CELL_UPDATE(d, 'fxlo(1:nw_flux)', 'fx(1:nw_flux)')
   end subroutine apply_flux_type_tvdlf
 
 
-  !> One-face HLLC numerical flux from primitive L/R states.
-  !> The physics-independent frame: the outer signal speeds come from the
-  !> physics module's estimate_speeds_hllc, the star-region flux from its
-  !> hllc_flux (hd: Toro (2010) chapter 10, variant 2; mhd: Li (2005)).
-  !> Falls back to LLF where hllc_flux reports a degenerate fan, and takes
+#! The physics-independent frame of every star-region solver (star_solvers,
+#! set in physics/mod_physics_dummies.fpp): the outer signal speeds come from
+#! the physics module's estimate_speeds_<solver>, the star-region flux from
+#! its <solver>_flux. A new solver of this shape needs only those two hooks,
+#! their dummies, and a row in the schemes list above.
+#:def STAR_SOLVER(solver)
+  !> One-face ${solver.upper()}$ numerical flux from primitive L/R states.
+  !> The outer signal speeds come from the physics module's
+  !> estimate_speeds_${solver}$, the star-region flux from its ${solver}$_flux.
+  !> Falls back to LLF where ${solver}$_flux reports a degenerate fan, and takes
   !> flux_type(flux_dim,nw_flux) into account like riemann_hll_prim.
-  subroutine riemann_hllc_prim(uL, uR, xC, flux_dim, F)
+  subroutine riemann_${solver}$_prim(uL, uR, xC, flux_dim, F)
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
     real(dp), intent(in)    :: xC(ndim)
@@ -691,11 +699,11 @@ $:FV_CELL_UPDATE(d, 'fxlo(1:nw_flux)', 'fx(1:nw_flux)')
     call get_flux(uL, xC, flux_dim, flux_l)
     call get_flux(uR, xC, flux_dim, flux_r)
 
-    call estimate_speeds_hllc(uL, uR, xC, flux_dim, sL, sR)
+    call estimate_speeds_${solver}$(uL, uR, xC, flux_dim, sL, sR)
     wmax = max(abs(sL), abs(sR))
 
     ! converts uL/uR to conservative
-    call hllc_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
+    call ${solver}$_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
 
     if (degenerate) then
       F = 0.5_dp * ((flux_l + flux_r) - wmax * (uR(1:nw_flux) - uL(1:nw_flux)))
@@ -703,7 +711,29 @@ $:FV_CELL_UPDATE(d, 'fxlo(1:nw_flux)', 'fx(1:nw_flux)')
 
     call apply_flux_type_tvdlf(flux_l, flux_r, uL, uR, wmax, flux_dim, F)
 
-  end subroutine riemann_hllc_prim
+  end subroutine riemann_${solver}$_prim
+
+
+  !> MUSCL (primitive-variable) reconstruction with slope limiter;
+  !> ${solver.upper()}$ approximate Riemann flux at faces.
+  subroutine reconflux_muscl_${solver}$_prim(u, xC, flux_dim, flux, typelim)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(in)  :: u(nw_phys, 4)
+    real(dp), intent(in)  :: xC(1:ndim)
+    integer, intent(in)   :: flux_dim, typelim
+    real(dp), intent(out) :: flux(nw_flux)
+
+    real(dp) :: uL(nw_phys), uR(nw_phys)
+
+    call muscl_reconstruct_prim(u, typelim, uL, uR)
+    call riemann_${solver}$_prim(uL, uR, xC, flux_dim, flux)
+  end subroutine reconflux_muscl_${solver}$_prim
+#:enddef
+
+#:for solver in star_solvers
+$:STAR_SOLVER(solver)
+
+#:endfor
 
 
   !> MUSCL (primitive-variable) reconstruction with slope limiter; HLL two-wave approximate Riemann flux at faces.
@@ -766,22 +796,6 @@ $:FV_CELL_UPDATE(d, 'fxlo(1:nw_flux)', 'fx(1:nw_flux)')
 #:endif
 
   end subroutine reconflux_muscl_llf_prim
-
-
-  !> MUSCL (primitive-variable) reconstruction with slope limiter; HLLC approximate Riemann flux at faces.
-  !> Restores the contact wave (and shear in Euler/HD), typically sharper than HLL for similar cost.
-  subroutine reconflux_muscl_hllc_prim(u, xC, flux_dim, flux, typelim)
-    ${GPU_ROUTINE_SEQ()}$
-    real(dp), intent(in)  :: u(nw_phys, 4)
-    real(dp), intent(in)  :: xC(1:ndim)
-    integer, intent(in)   :: flux_dim, typelim
-    real(dp), intent(out) :: flux(nw_flux)
-
-    real(dp) :: uL(nw_phys), uR(nw_phys)
-
-    call muscl_reconstruct_prim(u, typelim, uL, uR)
-    call riemann_hllc_prim(uL, uR, xC, flux_dim, flux)
-  end subroutine reconflux_muscl_hllc_prim
 
 
   pure real(dp) function vanleer(a, b) result(phi)

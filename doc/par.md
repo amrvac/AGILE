@@ -335,7 +335,7 @@ the step counter.
  ssprk_order= 3 | 2
  rk2_alfa= 0.5d0 | DOUBLE in (0,1]
  rk3_switch= 3 | 1 | 2 | 4
- flux_scheme= nlevelshi*'tvdlf' | 'hll' | 'hllc'            ! only the first entry is used
+ flux_scheme= nlevelshi*'tvdlf' | 'hll' | 'hllc' | 'hlld'   ! only the first entry is used
  fv_face_flux= 'per_cell' | 'shared'
  limiter= nlevelshi*'minmod' | 'vanleer' | 'mcbeta' | 'koren' ! per level
  flux_adaptive_diffusion= F | T                             ! compile time, tvdlf only
@@ -384,7 +384,7 @@ See [Time integration](time_integration.html) for the order, stability limit
 and memory cost of each scheme and variant.
 
 ### flux_scheme {: #par_flux_scheme }
-The numerical flux at the cell faces. Three are implemented, each with MUSCL
+The numerical flux at the cell faces. Four are implemented, each with MUSCL
 reconstruction of the primitive variables:
 
 - `'tvdlf'` (the default): local Lax-Friedrichs (Rusanov), with the largest
@@ -393,15 +393,18 @@ reconstruction of the primitive variables:
 - `'hll'`: the two-wave HLL solver. Not available for `ffhd`.
 - `'hllc'`: HLL with a restored contact wave. `hd` (Toro 2010) and `mhd`
   (Li 2005); not available with `MHD_ENERGY_ONLY`.
+- `'hlld'`: the five-wave MHD solver of Miyoshi & Kusano (2005), which also
+  restores the rotational (Alfvén) discontinuities. `mhd` only, with an
+  energy equation (`mhd_energy = T`) and not with `MHD_ENERGY_ONLY`.
 
 Any other name stops the run, and so does a scheme the physics module does
 not support. In `mhd`, GLM's `psi` and the normal field always take the
-`tvdlf` flux, under `'hll'` and `'hllc'` alike. See the
+`tvdlf` flux, under `'hll'`, `'hllc'` and `'hlld'` alike. See the
 [table of solvers per module](equations.html#eq_list_physics).
 
 `flux_scheme` is an array with one entry per refinement level, as upstream,
 but **only the first entry is used, on every level**. Upstream's `'tvd'`,
-`'tvdmu'`, `'hlld'`, `'hllcd'`, `'cd'`, `'fd'`, `'source'` and `'nul'` do not
+`'tvdmu'`, `'hllcd'`, `'cd'`, `'fd'`, `'source'` and `'nul'` do not
 exist, nor do their options (`typetvd`, `typeentropy`, `entropycoef`,
 `typeboundspeed`, `typeaverage`, `tvdlfeps`, `flathllc`, `nxdiffusehllc`);
 setting one of those keys now fails the namelist read.
@@ -451,7 +454,7 @@ as the jump between the neighbouring cell centres, phi =
 `flux_ad_scale` * (face jump / centre jump)^2, clipped to
 [`flux_ad_min`, 1]; elsewhere phi = 1, full diffusion. This lowers the
 diffusion in smooth regions and keeps it at discontinuities. It has no effect
-on `hll` or `hllc`.
+on `hll`, `hllc` or `hlld`.
 
 ### source_split_usr, typesourcesplit {: #par_sourcesplit }
 The physics source terms (gravity, radiative cooling, `addsource_usr`) are
