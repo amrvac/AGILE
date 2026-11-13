@@ -10,11 +10,11 @@ module mod_usr
   implicit none
 
 ! User parameters.
-  double precision :: rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet
-  double precision :: Qjet, Mdotjet, p0val, t0val, tcross, vhead
+  double precision :: rjet,zjet,rhob,lfacjet, rm, betam, bm, alpha, p0
 
-  ${GPU_DECLARE_CREATE('rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet')}$
-  ${GPU_DECLARE_CREATE('Qjet,Mdotjet,p0val,t0val,tcross,vhead')}$
+
+  ${GPU_DECLARE_CREATE('rjet,zjet,rhob,lfacjet, rm, betam, bm, alpha, p0')}$
+
 
 contains
 
@@ -31,8 +31,8 @@ contains
     call set_coordinate_system("Cartesian_3D")
     usr_set_parameters => set_parameters_usr
     usr_init_one_grid  => initonegrid_usr
-    usr_aux_output     => specialvar_output
-    usr_add_aux_names  => specialvarnames_output
+   !  usr_aux_output     => specialvar_output
+   !  usr_add_aux_names  => specialvarnames_output
     usr_process_adv_global => apply_floor
 
     call phys_activate()
@@ -43,7 +43,7 @@ contains
     character(len=*), intent(in) :: files(:)
     integer                      :: n
 
-    namelist /usr_list/  rjet, zjet, rhob, etarho, pb, zetap, lfacjet
+    namelist /usr_list/  rjet, zjet, rhob, lfacjet, rm, betam, bm
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -51,15 +51,40 @@ contains
 111    close(unitpar)
     end do
 
-    ${GPU_UPDATE_DEVICE('rjet,zjet,rhob,etarho,pb,zetap,lfacjet')}$
+    ${GPU_UPDATE_DEVICE('rjet,zjet,rhob,lfacjet,rm,betam,bm')}$
 
-    rhojet=etarho*rhob
-    pjet=zetap*pb
-    vjet=dsqrt(1.0d0-1.0d0/lfacjet**2)
 
-    ${GPU_UPDATE_DEVICE('rhojet,pjet,vjet')}$
+    alpha = 1.0d0 - 1.0d0/betam * (rm/rjet)**2
+    p0 = 0.5d0* betam * bm**2
+
+    ${GPU_UPDATE_DEVICE('alpha,p0')}$
 
   end subroutine usr_params_read
+
+
+! subroutine to convert initial b_phi condition to cartesian coordinates
+elemental subroutine vec_cyl_to_car(a1, a2, a3, x, y)
+   real(dp), intent(inout) :: a1, a2, a3   ! in: (a_rho, a_phi, a_z); out: (a_x, a_y, a_z)
+   real(dp), intent(in)    :: x, y         ! Cartesian position of the point
+   real(dp) :: rho, c, s, ax, ay
+
+   rho = hypot(x, y)
+   if (rho > 0.0d0) then
+      c = x/rho
+      s = y/rho
+   else
+      c = 1.0d0      
+      s = 0.0d0
+   end if
+
+   ax = c*a1 - s*a2
+   ay = s*a1 + c*a2
+   a1 = ax
+   a2 = ay
+
+end subroutine vec_cyl_to_car
+
+
 
 
   subroutine initonegrid_usr(ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3,&
@@ -71,38 +96,65 @@ contains
     double precision, intent(inout) :: w(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
        ixGmin3:ixGmax3,1:nw)
     integer :: itr
+    real(dp) :: r_sqr(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
+       ixGmin3:ixGmax3)
+#
 
     associate(&
       w_ => w(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :),&
       x_ => x(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :))
 
-     where(x_(:,:,:,3)<zjet.and.(x_(:,:,:,1)**2+x_(:,:,:,2)**2)<rjet**2)
-       w_(:,:,:,iw_rho)    = rhojet
-       w_(:,:,:,iw_e)      = pjet
-       w_(:,:,:,iw_mom(1)) = 0.0d0
-       w_(:,:,:,iw_mom(2)) = 0.0d0
-       w_(:,:,:,iw_mom(3)) = vjet*lfacjet
-       w_(:,:,:,lfac_)     = lfacjet
-     elsewhere
-       w_(:,:,:,iw_rho)    = rhob
-       w_(:,:,:,iw_e)      = pb
-       w_(:,:,:,iw_mom(1)) = 0.0d0
-       w_(:,:,:,iw_mom(2)) = 0.0d0
-       w_(:,:,:,iw_mom(3)) = 0.0d0
-       w_(:,:,:,lfac_)     = 1.0d0
-     endwhere
 
+     
+     r_sqr(:,:,:) = (x_(:,:,:,1)**2+x_(:,:,:,2)**2)
+
+   !initialise all b to 0
      w_(:,:,:,iw_mag(1)) = 0.0d0
      w_(:,:,:,iw_mag(2)) = 0.0d0
      w_(:,:,:,iw_mag(3)) = 0.0d0
 
-     ! call set_aux(w_)
+     
+      
+     where(x(:,:,:,3)<zjet .and. r_sqr(:,:,:)<rm**2)
+
+      w_(:,:,:,iw_e)      = p0*(alpha + 2/betam*(1 - r_sqr(:,:,:)/rm**2))
+
+      w_(:,:,:,lfac_) = lfacjet*(1 - r_sqr(:,:,:)/rjet**2) + r_sqr(:,:,:)/rjet**2
+      w_(:,:,:,iw_mom(3)) = sqrt(w_(:,:,:,lfac_)**2 - 1)
+
+      ! b field in cylindrical
+      w_(:,:,:,iw_mag(2)) = bm*sqrt(r_sqr)/rm
+
+
+     elsewhere (x(:,:,:,3)<zjet .and. r_sqr(:,:,:)<rjet**2 .and. r_sqr(:,:,:)>=rm**2)
+
+      w_(:,:,:,iw_e)      = p0*alpha
+
+      w_(:,:,:,lfac_) = lfacjet*(1 - r_sqr(:,:,:)/rjet**2) + r_sqr(:,:,:)/rjet**2
+      w_(:,:,:,iw_mom(3)) = sqrt(w_(:,:,:,lfac_)**2 - 1)
+      ! b field in cylindrical
+      w_(:,:,:,iw_mag(2)) = bm/sqrt(r_sqr)*rm
+
+     elsewhere
+      w_(:,:,:,iw_e)      = p0
+      w_(:,:,:,lfac_)     = 0.0d0
+      w_(:,:,:,iw_mom(3)) = 0.0d0
+     endwhere
+
+      w_(:,:,:,iw_rho)    = rhob
+
+      !convert b field to cartesian
+      call vec_cyl_to_car(w_(:,:,:,iw_mag(1)), w_(:,:,:,iw_mag(2)), w_(:,:,:,iw_mag(3)),&
+                           x(:,:,:,1), x(:,:,:,2))
+
+
+
 
      #:if defined(N_TRACER)
      if(srmhd_n_tracer>0)then
        do itr=1,srmhd_n_tracer
           where(x_(:,:,:,3)<zjet.and.(x_(:,:,:,1)**2+x_(:,:,:,2)**2)<rjet**2)
-            w_(:,:,:,tracer(itr)) = w_(:,:,:,iw_rho)*lfacjet
+            w_(:,:,:,tracer(itr)) = w_(:,:,:,iw_rho)*w_(:,:,:, lfac_)
           elsewhere
             w_(:,:,:,tracer(itr)) = 0.0d0
           endwhere
@@ -120,94 +172,24 @@ contains
     implicit none
     character(len=*), parameter :: fmt = '(A20,1X,SP,ES12.2)'
     character(len=20) :: printsettingformat
-    double precision :: rhoL,pL,rhohL,E_th,E
-    double precision :: hjet,bracket,hb,etar,vhead,tcross
+
 
 
    printsettingformat='(1x,A50,ES15.7,A7)'
 
     print *, '------------------ PARAMETERS ------------------'
-      write(*,*) "Jet (Seo et al ApJ 2021, 920, 144) setup:"
+      write(*,*) "Jet (Porth O., Komissarov S. S., 2015) setup:"
+      write(*,printsettingformat) "dimensionless core radius ",rm," input"
+      write(*,printsettingformat) "betam ",betam," input"
+      write(*,printsettingformat) "Magnetic field magnitude ",bm," input"
       write(*,printsettingformat) "dimensionless jet radius ",rjet," input"
       write(*,printsettingformat) "dimensionless jet length ",zjet," input"
-      write(*,printsettingformat) "dimensionless density in medium ",rhob," input"
-      write(*,printsettingformat) "density in jet: via  ",etarho," input"
-      write(*,printsettingformat) "dimensionless pressure background ",pb," input"
-      write(*,printsettingformat) "pressure in jet: via ",zetap," input"
-      write(*,printsettingformat) "jet lorentz factor ",lfacjet," input"
+      write(*,printsettingformat) "dimensionless density ",rhob," input"
+      write(*,printsettingformat) "Jet Lorentz factor ",lfacjet," input"
       print fmt,  'srmhd_gamma',       srmhd_gamma
-      write(*,*) "Deduced dimensionless values:"
-      write(*,printsettingformat) "jet density  ",rhojet," output"
-      write(*,printsettingformat) "jet pressure ",pjet," output"
-      write(*,printsettingformat) "jet velocity ",vjet," output"
-    print *, '------------------------------------------------'
-    write(*,*) "units from"
-      write(*,*) "SI_unit ",SI_unit," should be false!!"
-      write(*,printsettingformat) "unit_velocity ",unit_velocity," fixed"
-      write(*,printsettingformat) "unit n ",unit_numberdensity," input"
-      write(*,printsettingformat) "unit length ",unit_length," input"
-      write(*,printsettingformat) "He-abundance ",He_abundance," input"
-      write(*,printsettingformat) "unit rho ",unit_density," output"
-      write(*,printsettingformat) "unit p ",unit_pressure," output"
-      write(*,printsettingformat) "unit time ",unit_time," output"
     print *, '------------------------------------------------'
 
-      rhoL=rhojet
-      pL=pjet
-      !!call srmhd_get_enthalpy_eos(rhoL,pL,rhohL)
-      if(srmhd_eos) then
-        E_th = pL*1/(srmhd_gamma-1)
-        E    = E_th+dsqrt(E_th**2+rhoL**2)
-        rhohL = 0.5_dp*((srmhd_gamma+1.0_dp)*E &
-                   - (srmhd_gamma-1)*rhoL*(rhoL/E))
 
-      else
-        rhohL = rhoL+srmhd_gamma/(srmhd_gamma-1)*pL
-      end if
-      hjet=rhohL/rhojet
-      bracket=(lfacjet**2*rhojet*hjet-lfacjet*rhojet)*unit_density*unit_velocity**2
-      Qjet=dpi*(rjet*unit_length)**2*vjet*unit_velocity*bracket
-      bracket=(lfacjet**2*(rhojet*unit_density)*hjet*(vjet*unit_velocity)**2+pjet*unit_pressure)
-      Mdotjet=dpi*(rjet*unit_length)**2*bracket
-      p0val=rhob*unit_density*unit_velocity**2
-      t0val=rjet*unit_length/unit_velocity
-      ! switch to years
-      t0val=t0val/(365.0d0*24.0d0*60.0d0*60.0d0)
-      
-      rhoL=rhob
-      pL=pb
-      !!call srmhd_get_enthalpy_eos(rhoL,pL,rhohL)
-      if(srmhd_eos) then
-        E_th = pL*1/(srmhd_gamma-1)
-        E    = E_th+dsqrt(E_th**2+rhoL**2)
-        rhohL = 0.5_dp*((srmhd_gamma+1.0_dp)*E &
-                   - (srmhd_gamma-1)*rhoL*(rhoL/E))
-      else
-        rhohL = rhoL+srmhd_gamma/(srmhd_gamma-1)*pL
-      end if
-      hb=rhohL/rhob
-      etar=rhojet*hjet*lfacjet**2/(rhob*hb)
-      vhead=(vjet*unit_velocity)*dsqrt(etar)/(dsqrt(etar)+one)
-      tcross=rjet*unit_length/vhead
-      ! switch to years 
-      tcross=tcross/(365.0d0*24.0d0*60.0d0*60.0d0)
-
-      write(*,*) "Deduced values (with dimensions):"
-      write(*,printsettingformat) "p0 value  ",p0val," output"
-      write(*,printsettingformat) "t0 value in years ",t0val," output"
-      write(*,printsettingformat) "tcross in years ",tcross," output"
-      write(*,printsettingformat) "one crossing time is in code units",rjet*unit_length/vhead/unit_time," output"
-      write(*,printsettingformat) "jet power  ",Qjet," output"
-      write(*,printsettingformat) "jet thrust ",Mdotjet," output"
-      write(*,printsettingformat) "pb in cgs",pb*unit_pressure," output"
-      write(*,printsettingformat) "Tb in K",pb*unit_pressure &
-                 /((2.0d0+3.0d0*He_abundance)*unit_numberdensity*kB_cgs)," output"
-      write(*,*) "Deduced values (dimensionless):"
-      write(*,printsettingformat) "jet enthalpy ",hjet," output"
-      write(*,printsettingformat) "background enthalpy ",hb," output"
-      write(*,printsettingformat) "vhead/c ",vhead/unit_velocity," output"
-      write(*,printsettingformat) "pb/p0",pb*unit_pressure/p0val," in-output"
-    print *, '------------------------------------------------'
 
 
   end subroutine
@@ -231,7 +213,6 @@ contains
        iB, w, x)
     use mod_global_parameters
     use mod_physics_vars
-    !use srmhd_con2prim, only: ideal_eos, synge_eos
     ${GPU_ROUTINE_VECTOR()}$
     implicit none
     integer, intent(in) :: ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3
@@ -243,7 +224,7 @@ contains
     double precision, intent(in),&
          dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:ndim) :: x
     integer              :: ix1, ix2, ix3, iw
-    double precision     :: rhoh, E_th, E, b_sqr
+    double precision     :: rhoh, E_th, E, b_sqr, r_sqr, vz, p, alpha
 
     select case(iB)
     case(5)
@@ -256,36 +237,98 @@ contains
       do ix3 = ixOmin3, ixOmax3
          do ix2 = ixOmin2, ixOmax2
             do ix1 = ixOmin1, ixOmax1
-               if (x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2 < rjet**2) then
-                                 
-                  if(srmhd_eos) then
-                     E_th = pjet * 1/(srmhd_gamma-1)
-                     E    = E_th + dsqrt(E_th**2+rhojet**2)
-                     ! writing rho/E on purpose, for numerics 
-                     rhoh = 0.5_dp * ((srmhd_gamma+1.0_dp) * E &
-                          - (srmhd_gamma-1) * rhojet * (rhojet/E))
-                  else
-                     rhoh = rhojet + srmhd_gamma/(srmhd_gamma-1)*pjet
-                  end if
+               r_sqr = x(ix1,ix2,ix3,1)**2+x(ix1,ix2,ix3,2)**2
 
-                  w(ix1,ix2,ix3,iw_mag(1)) =   0
-                  w(ix1,ix2,ix3,iw_mag(2)) =   0
-                  w(ix1,ix2,ix3,iw_mag(3)) =   0
+
+               if (r_sqr < rm**2) then
+                  
+                  w(ix1,ix2,ix3,iw_mag(1)) =   0.0d0
+                  w(ix1,ix2,ix3,iw_mag(2)) = bm*sqrt(r_sqr)/rm
+                  w(ix1,ix2,ix3,iw_mag(3)) =   0.0d0
+
+                  call vec_cyl_to_car(w(ix1,ix2,ix3,iw_mag(1)), w(ix1,ix2,ix3,iw_mag(2)), w(ix1,ix2,ix3,iw_mag(3)),&
+                                      x(ix1,ix2,ix3,1), x(ix1,ix2,ix3,2))
+                  
 
                   b_sqr = w(ix1,ix2,ix3,iw_mag(1))**2 &
                         + w(ix1,ix2,ix3,iw_mag(2))**2 &
                         + w(ix1,ix2,ix3,iw_mag(3))**2
+
+                  w(ix1,ix2,ix3,lfac_) = lfacjet*(1 - r_sqr/rjet**2) + r_sqr/rjet**2
+                  vz = sqrt(w(ix1,ix2,ix3,lfac_)**2 - 1)
                   
-                  w(ix1,ix2,ix3,iw_rho)    = rhojet*lfacjet
+                  w(ix1,ix2,ix3,iw_rho)    = rhob* w(ix1,ix2,ix3,lfac_)
+
+                  p =p0*(alpha + 2/betam*(1 - r_sqr/rm**2))
+
+                  if(srmhd_eos) then
+                     E_th = p * 1/(srmhd_gamma-1)
+                     E    = E_th + dsqrt(E_th**2+rhob**2)
+                     ! writing rho/E on purpose, for numerics 
+                     rhoh = 0.5_dp * ((srmhd_gamma+1.0_dp) * E &
+                          - (srmhd_gamma-1) * rhob * (rhob/E))
+                  else
+                     rhoh = rhob + srmhd_gamma/(srmhd_gamma-1)*p
+                  end if
+
+                  w(ix1,ix2,ix3,mu_) = rhob/w(ix1,ix2,ix3,lfac_)/rhob
+
+
+
                   w(ix1,ix2,ix3,iw_mom(1)) = 0.0d0
                   w(ix1,ix2,ix3,iw_mom(2)) = 0.0d0
-                  w(ix1,ix2,ix3,iw_mom(3)) = rhoh * lfacjet**2 * vjet + b_sqr*vjet - w(ix1,ix2,ix3,iw_mag(3)) * vjet**2 
+                  w(ix1,ix2,ix3,iw_mom(3)) = rhoh * w(ix1,ix2,ix3,lfac_)**2 * vz + b_sqr*vz - w(ix1,ix2,ix3,iw_mag(3)) * vz**2 
                   w(ix1,ix2,ix3,iw_e)      = &
-                       rhoh * lfacjet**2 - pjet - rhojet * lfacjet &
-                       + 0.5_dp*(b_sqr*(1 + vjet**2) - (w(ix1,ix2,ix3,iw_mag(3)) * vjet)**2)
-                  ! call set_aux(w)
-                  w(ix1,ix2,ix3,lfac_) = lfacjet
-                  w(ix1,ix2,ix3,mu_) = rhojet/lfacjet/rhoh
+                       rhoh * w(ix1,ix2,ix3,lfac_)**2 - p - rhob * w(ix1,ix2,ix3,lfac_) &
+                       + 0.5_dp*(b_sqr*(1 + vz**2) - (w(ix1,ix2,ix3,iw_mag(3)) * vz)**2)
+
+               
+               else if (r_sqr >= rm**2 .and. r_sqr<rjet**2) then
+
+                  w(ix1,ix2,ix3,iw_mag(1)) =   0.0d0
+                  w(ix1,ix2,ix3,iw_mag(2)) = bm/sqrt(r_sqr)*rm
+                  w(ix1,ix2,ix3,iw_mag(3)) =   0.0d0
+
+                  call vec_cyl_to_car(w(ix1,ix2,ix3,iw_mag(1)), w(ix1,ix2,ix3,iw_mag(2)), w(ix1,ix2,ix3,iw_mag(3)),&
+                                      x(ix1,ix2,ix3,1), x(ix1,ix2,ix3,2))
+                  
+
+                  b_sqr = w(ix1,ix2,ix3,iw_mag(1))**2 &
+                        + w(ix1,ix2,ix3,iw_mag(2))**2 &
+                        + w(ix1,ix2,ix3,iw_mag(3))**2
+
+                  w(ix1,ix2,ix3,lfac_) = lfacjet*(1 - r_sqr/rjet**2) + r_sqr/rjet**2
+                  vz = sqrt(w(ix1,ix2,ix3,lfac_)**2 - 1)
+                  
+                  w(ix1,ix2,ix3,iw_rho)    = rhob* w(ix1,ix2,ix3,lfac_)
+
+                  p = p0*alpha
+
+                  if(srmhd_eos) then
+                     E_th = p * 1/(srmhd_gamma-1)
+                     E    = E_th + dsqrt(E_th**2+rhob**2)
+                     ! writing rho/E on purpose, for numerics 
+                     rhoh = 0.5_dp * ((srmhd_gamma+1.0_dp) * E &
+                          - (srmhd_gamma-1) * rhob * (rhob/E))
+                  else
+                     rhoh = rhob + srmhd_gamma/(srmhd_gamma-1)*p
+                  end if
+
+                  w(ix1,ix2,ix3,mu_) = rhob/w(ix1,ix2,ix3,lfac_)/rhoh
+
+
+
+                  w(ix1,ix2,ix3,iw_mom(1)) = 0.0d0
+                  w(ix1,ix2,ix3,iw_mom(2)) = 0.0d0
+                  w(ix1,ix2,ix3,iw_mom(3)) = rhoh * w(ix1,ix2,ix3,lfac_)**2 * vz + b_sqr*vz - w(ix1,ix2,ix3,iw_mag(3)) * vz**2 
+                  w(ix1,ix2,ix3,iw_e)      = &
+                       rhoh * w(ix1,ix2,ix3,lfac_)**2 - p - rhob * w(ix1,ix2,ix3,lfac_) &
+                       + 0.5_dp*(b_sqr*(1 + vz**2) - (w(ix1,ix2,ix3,iw_mag(3)) * vz)**2)
+
+
+
+
+                  
 
 
 
@@ -302,7 +345,7 @@ contains
                   w(ix1,ix2,ix3,iw_mag(3)) = - w(ix1,ix2,2*ixOmax3-ix3+1,iw_mag(3))
                   w(ix1,ix2,ix3,lfac_)      =   w(ix1,ix2,2*ixOmax3-ix3+1,lfac_)
                   w(ix1,ix2,ix3,mu_)      =   w(ix1,ix2,2*ixOmax3-ix3+1,mu_)
-                  ! call set_aux(w)
+
 
                endif
             end do
@@ -374,16 +417,7 @@ contains
       dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:ndim) :: x
     double precision                   :: normconv(0:nw+nwauxio)
     
-    ! print *, pack( w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,d_),w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,d_)<=0)
 
-
-    ! print *, pack( w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,lfac_),w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,lfac_)<=0)
-
-     w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,nw+1)= &
-        dlog10(w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,d_) &
-              /w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,lfac_))
-
-    ! w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,nw+1)= 1
 
    end subroutine specialvar_output
 
@@ -391,7 +425,7 @@ contains
 
    ! newly added variables
    character(len=*) :: varnames
-   varnames='log10rho'
+   !varnames='log10rho'
 
    end subroutine specialvarnames_output
 
