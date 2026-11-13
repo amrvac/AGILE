@@ -156,6 +156,11 @@
   logical, public                         :: mhd_resistivity = .false.
   ${GPU_DECLARE_COPYIN('mhd_resistivity')}$
 
+  !> resistivity from the user function eta_usr in mod_usr instead of the
+  !> uniform mhd_eta (compile time, ETA_USR); mhd_eta is then the upper
+  !> bound of eta used for the time step
+  logical, public                         :: mhd_eta_usr = .false.
+
   !> Whether plasma is partially ionized
   logical, public                         :: mhd_partial_ionization = .false.
   ${GPU_DECLARE_COPYIN('mhd_partial_ionization')}$
@@ -190,7 +195,7 @@
 
     namelist /mhd_list/ mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity,&
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
-      mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
+      mhd_resistivity, mhd_eta_usr, mhd_hyperbolic_thermal_conduction, &
       mhd_hyperbolic_thermal_conduction_anisotropic, &
       tc_kappa_par, tc_kappa_perp, &
       H_ion_fr, He_ion_fr, He_ion_fr2, &
@@ -204,6 +209,8 @@
     end do
 
     ${GPU_UPDATE_DEVICE('mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity')}$
+    if (mhd_eta_usr .and. mhd_eta <= 0.0d0) call mpistop(&
+       "mhd_eta_usr needs mhd_eta > 0: the largest eta, used for the time step.")
     if (mhd_small_pressure < 0.0d0) call mpistop(&
        "mhd_small_pressure should be positive.")
     if (mhd_small_density < 0.0d0) call mpistop(&
@@ -534,6 +541,9 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
 #:if defined('HYPERTC')
   use mod_global_parameters, only: dt, ndir, smalldouble, courantpar
 #:endif
+#:if defined('ETA_USR')
+  use mod_usr, only: eta_usr
+#:endif
   ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
@@ -545,6 +555,10 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
   real(dp)                 :: laplb_cd2
   real(dp)                 :: Jdir1,Jdir2,Jdir3
   integer                  :: idir
+#:if defined('ETA_USR')
+  real(dp)                 :: Jc(3), xn(1:ndim), eta_c, eta_p, eta_m
+  real(dp)                 :: geta(3), getaxj(3)
+#:endif
 #:if defined('HYPERTC')
     real(dp) :: Te_c, rho_c, pth_c
     real(dp) :: gradT(3), Bmag2, Bmag, Bmag2_safe, bgradT
@@ -562,10 +576,51 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
      !---------------------------------
 
 #:if defined('RESISTIVE')
-     ! using the compact stencil formulation and adopting constant eta
+     ! using the compact stencil formulation: with a uniform eta (mhd_eta),
+     ! or with eta from the user function eta_usr (ETA_USR)
+
+     ! J = curl B by central differences
+     Jdir1 = (wCTprim2(iw_mag(3),3) - wCTprim2(iw_mag(3),1)) &
+          / 2.0_dp/dx(2) &
+          - (wCTprim3(iw_mag(2),3) - wCTprim3(iw_mag(2),1)) &
+          / 2.0_dp/dx(3)
+     Jdir2 = (wCTprim3(iw_mag(1),3) - wCTprim3(iw_mag(1),1)) &
+          /2.0_dp/dx(3) &
+          - (wCTprim1(iw_mag(3),3) - wCTprim1(iw_mag(3),1)) &
+          / 2.0_dp/dx(1)
+     Jdir3 = (wCTprim1(iw_mag(2),3) - wCTprim1(iw_mag(2),1)) &
+          /2.0_dp/dx(1) &
+          - (wCTprim2(iw_mag(1),3) - wCTprim2(iw_mag(1),1)) &
+          / 2.0_dp/dx(2)
+
+#:if defined('ETA_USR')
+     ! eta = eta_usr(wprim, J, x, t) at this cell and at its six face
+     ! neighbours, grad(eta) by central differences. J is only known at
+     ! this cell (J at a neighbour needs cells outside the compact stencil),
+     ! so the neighbours are evaluated with this cell's J: grad(eta) follows
+     ! the variation of eta with position, time and state, not with J.
+     Jc = [Jdir1, Jdir2, Jdir3]
+     eta_c = eta_usr(wCTprim1(:,2), Jc, x, qtC)
+
+     xn = x; xn(1) = x(1) + dx(1); eta_p = eta_usr(wCTprim1(:,3), Jc, xn, qtC)
+     xn = x; xn(1) = x(1) - dx(1); eta_m = eta_usr(wCTprim1(:,1), Jc, xn, qtC)
+     geta(1) = (eta_p - eta_m) / (2.0_dp*dx(1))
+     xn = x; xn(2) = x(2) + dx(2); eta_p = eta_usr(wCTprim2(:,3), Jc, xn, qtC)
+     xn = x; xn(2) = x(2) - dx(2); eta_m = eta_usr(wCTprim2(:,1), Jc, xn, qtC)
+     geta(2) = (eta_p - eta_m) / (2.0_dp*dx(2))
+     xn = x; xn(3) = x(3) + dx(3); eta_p = eta_usr(wCTprim3(:,3), Jc, xn, qtC)
+     xn = x; xn(3) = x(3) - dx(3); eta_m = eta_usr(wCTprim3(:,1), Jc, xn, qtC)
+     geta(3) = (eta_p - eta_m) / (2.0_dp*dx(3))
+
+     ! -curl(eta J) = eta lapl(B) - grad(eta) x J
+     getaxj(1) = geta(2)*Jdir3 - geta(3)*Jdir2
+     getaxj(2) = geta(3)*Jdir1 - geta(1)*Jdir3
+     getaxj(3) = geta(1)*Jdir2 - geta(2)*Jdir1
+#:endif
 
      ! > eta*(laplacian of B)_idir          added to B_idir
      ! > B_idir*[eta*(laplacian of B)_idir] added to e_
+     ! (with ETA_USR both minus (grad(eta) x J)_idir)
      do idir = 1,ndim
         laplb_cd2 =  &
              ( &
@@ -587,24 +642,23 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
              ) &
              / dx(3)**2 
 
+#:if defined('ETA_USR')
+        wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) &
+             + qdt*(eta_c*laplb_cd2 - getaxj(idir))
+        wnew(iw_e) = wnew(iw_e) &
+             + qdt*(eta_c*laplb_cd2 - getaxj(idir)) * wCTprim1(iw_mag(1)-1+idir,2)
+#:else
         wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) + qdt*mhd_eta*laplb_cd2
         wnew(iw_e) = wnew(iw_e) + qdt * mhd_eta * laplb_cd2 * wCTprim1(iw_mag(1)-1+idir,2)
+#:endif
      enddo
 
      ! > eta* J**2 added to e
-     Jdir1 = (wCTprim2(iw_mag(3),3) - wCTprim2(iw_mag(3),1)) &
-          / 2.0_dp/dx(2) &
-          - (wCTprim3(iw_mag(2),3) - wCTprim3(iw_mag(2),1)) &
-          / 2.0_dp/dx(3)
-     Jdir2 = (wCTprim3(iw_mag(1),3) - wCTprim3(iw_mag(1),1)) &
-          /2.0_dp/dx(3) &
-          - (wCTprim1(iw_mag(3),3) - wCTprim1(iw_mag(3),1)) &
-          / 2.0_dp/dx(1)
-     Jdir3 = (wCTprim1(iw_mag(2),3) - wCTprim1(iw_mag(2),1)) &
-          /2.0_dp/dx(1) &
-          - (wCTprim2(iw_mag(1),3) - wCTprim2(iw_mag(1),1)) &
-          / 2.0_dp/dx(2)
+#:if defined('ETA_USR')
+     wnew(iw_e) = wnew(iw_e) + qdt*eta_c*(Jdir1**2+Jdir2**2+Jdir3**2)
+#:else
      wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*(Jdir1**2+Jdir2**2+Jdir3**2)
+#:endif
 #:endif
 
 #:if defined('HYPERTC')
