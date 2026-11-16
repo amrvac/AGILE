@@ -225,7 +225,7 @@ end subroutine vec_cyl_to_car
     double precision, intent(in),&
          dimension(ixImin1:ixImax1, ixImin2:ixImax2, ixImin3:ixImax3, 1:ndim) :: x
     integer              :: ix1, ix2, ix3, iw
-    double precision     :: rhoh, E_th, E, b_sqr, r_sqr, vz, p, alpha
+    double precision     :: rhoh, E_th, E, b_sqr, r_sqr, vz, p
 
     select case(iB)
     case(5)
@@ -256,7 +256,7 @@ end subroutine vec_cyl_to_car
                         + w(ix1,ix2,ix3,iw_mag(3))**2
 
                   w(ix1,ix2,ix3,lfac_) = lfacjet*(1 - r_sqr/rjet**2) + r_sqr/rjet**2
-                  vz = sqrt(w(ix1,ix2,ix3,lfac_)**2 - 1)
+                  vz = sqrt(w(ix1,ix2,ix3,lfac_)**2 - 1)/w(ix1,ix2,ix3,lfac_)
                   
                   w(ix1,ix2,ix3,iw_rho)    = rhob* w(ix1,ix2,ix3,lfac_)
 
@@ -272,7 +272,7 @@ end subroutine vec_cyl_to_car
                      rhoh = rhob + srmhd_gamma/(srmhd_gamma-1)*p
                   end if
 
-                  w(ix1,ix2,ix3,mu_) = rhob/w(ix1,ix2,ix3,lfac_)/rhob
+                  w(ix1,ix2,ix3,mu_) = rhob/w(ix1,ix2,ix3,lfac_)/rhoh
 
 
 
