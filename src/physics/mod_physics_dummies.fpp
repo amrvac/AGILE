@@ -26,8 +26,14 @@ end subroutine estimate_speeds_minmax
 #:enddef
 
 
-#:def estimate_speeds_hllc()
-subroutine estimate_speeds_hllc(uL, uR, xC, flux_dim, sL, sR)
+#! The star-region solvers (hllc, hlld) share one frame in mod_finite_volume,
+#! STAR_SOLVER, which calls two hooks per solver: estimate_speeds_<solver>
+#! and <solver>_flux. These are the stand-ins for a physics module that does
+#! not implement a solver; read_par_files rejects the scheme for it first.
+#:set star_solvers = ['hllc', 'hlld']
+
+#:def star_speeds_dummy(solver)
+subroutine estimate_speeds_${solver}$(uL, uR, xC, flux_dim, sL, sR)
 #ifndef _CRAYFTN
   use mod_comm_lib, only: mpistop
 #endif
@@ -38,17 +44,17 @@ subroutine estimate_speeds_hllc(uL, uR, xC, flux_dim, sL, sR)
   real(dp), intent(out) :: sL, sR
 
 #ifndef _CRAYFTN
-  call mpistop("estimate_speeds_hllc not implemented for this physics module")
+  call mpistop("estimate_speeds_${solver}$ not implemented for this physics module")
 #endif
   sL = -1._dp
   sR = -1._dp
 
-end subroutine estimate_speeds_hllc
+end subroutine estimate_speeds_${solver}$
 #:enddef
 
 
-#:def hllc_flux()
-subroutine hllc_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
+#:def star_flux_dummy(solver)
+subroutine ${solver}$_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
 #ifndef _CRAYFTN
   use mod_comm_lib, only: mpistop
 #endif
@@ -61,12 +67,29 @@ subroutine hllc_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
   logical,  intent(out)   :: degenerate
 
 #ifndef _CRAYFTN
-  call mpistop("hllc_flux not implemented for this physics module")
+  call mpistop("${solver}$_flux not implemented for this physics module")
 #endif
   F = 0._dp
   degenerate = .true.
 
-end subroutine hllc_flux
+end subroutine ${solver}$_flux
+#:enddef
+
+
+#:def estimate_speeds_hllc()
+$:star_speeds_dummy('hllc')
+#:enddef
+
+#:def hllc_flux()
+$:star_flux_dummy('hllc')
+#:enddef
+
+#:def estimate_speeds_hlld()
+$:star_speeds_dummy('hlld')
+#:enddef
+
+#:def hlld_flux()
+$:star_flux_dummy('hlld')
 #:enddef
 
 

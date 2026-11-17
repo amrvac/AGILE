@@ -8,7 +8,7 @@ colour scale.
 
     uv sync --extra analysis                 # numpy, matplotlib, scipy, imageio-ffmpeg
     make arch=gnu
-    for s in tvdlf hll hllc; do
+    for s in tvdlf hll hllc hlld; do
         mpirun -np 8 ./agile -i movie.par movie_$s.par
     done
     python movie.py                          # movie/ot_rho.mp4 (.gif if no ffmpeg is found)
@@ -45,7 +45,7 @@ def load_slice(filename):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dir", default="movie", help="slice directory")
-    parser.add_argument("--solvers", nargs="+", default=["tvdlf", "hll", "hllc"])
+    parser.add_argument("--solvers", nargs="+", default=["tvdlf", "hll", "hllc", "hlld"])
     parser.add_argument("--var", default="rho", help="conserved variable name")
     parser.add_argument("--limiter", default="koren", help="for the title only")
     parser.add_argument("--fps", type=int, default=15)
@@ -65,7 +65,7 @@ def main():
         print("[warning] solvers have different frame counts; using the first",
               nframes, {s: len(f) for s, f in files.items()})
 
-    # Load everything up front: 3 x ~100 frames of 256^2 doubles is small,
+    # Load everything up front: 4 x ~100 frames of 256^2 doubles is small,
     # and it gives one colour scale over the whole movie.
     frames = {s: [] for s in args.solvers}
     times = []

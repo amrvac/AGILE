@@ -1,4 +1,4 @@
-TESTS := tvdlf.log hll.log hllc.log
+TESTS := tvdlf.log hll.log hllc.log hlld.log
 
 include ../../test_rules.make
 
@@ -6,3 +6,4 @@ include ../../test_rules.make
 tvdlf.log: tvdlf.par
 hll.log: hll.par
 hllc.log: hllc.par
+hlld.log: hlld.par
