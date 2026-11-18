@@ -150,7 +150,7 @@ end subroutine vec_cyl_to_car
 
 
 
-     #:if defined(N_TRACER)
+     #:if defined('N_TRACER')
      if(srmhd_n_tracer>0)then
        do itr=1,srmhd_n_tracer
           where(x_(:,:,:,3)<zjet.and.(x_(:,:,:,1)**2+x_(:,:,:,2)**2)<rjet**2)
@@ -356,7 +356,7 @@ end subroutine vec_cyl_to_car
          end do
       end do
 
-#:if defined(N_TRACER)
+#:if defined('N_TRACER')
       if(srmhd_n_tracer>0)then
          do iw=1,srmhd_n_tracer
 #ifndef _OPENMP
