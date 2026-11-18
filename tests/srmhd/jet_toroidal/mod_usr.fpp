@@ -99,7 +99,6 @@ end subroutine vec_cyl_to_car
     integer :: itr
     real(dp) :: r_sqr(ixGmin1:ixGmax1,ixGmin2:ixGmax2,&
        ixGmin3:ixGmax3)
-#
 
     associate(&
       w_ => w(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :),&
@@ -278,7 +277,7 @@ end subroutine vec_cyl_to_car
 
                   w(ix1,ix2,ix3,iw_mom(1)) = 0.0d0
                   w(ix1,ix2,ix3,iw_mom(2)) = 0.0d0
-                  w(ix1,ix2,ix3,iw_mom(3)) = rhoh * w(ix1,ix2,ix3,lfac_)**2 * vz + b_sqr*vz - w(ix1,ix2,ix3,iw_mag(3)) * vz**2 
+                  w(ix1,ix2,ix3,iw_mom(3)) = rhoh * w(ix1,ix2,ix3,lfac_)**2 * vz + b_sqr*vz - vz * w(ix1,ix2,ix3,iw_mag(3))**2
                   w(ix1,ix2,ix3,iw_e)      = &
                        rhoh * w(ix1,ix2,ix3,lfac_)**2 - p - rhob * w(ix1,ix2,ix3,lfac_) &
                        + 0.5_dp*(b_sqr*(1 + vz**2) - (w(ix1,ix2,ix3,iw_mag(3)) * vz)**2)
@@ -299,7 +298,7 @@ end subroutine vec_cyl_to_car
                         + w(ix1,ix2,ix3,iw_mag(3))**2
 
                   w(ix1,ix2,ix3,lfac_) = lfacjet*(1 - r_sqr/rjet**2) + r_sqr/rjet**2
-                  vz = sqrt(w(ix1,ix2,ix3,lfac_)**2 - 1)
+                  vz = sqrt(w(ix1,ix2,ix3,lfac_)**2 - 1)/w(ix1,ix2,ix3,lfac_)
                   
                   w(ix1,ix2,ix3,iw_rho)    = rhob* w(ix1,ix2,ix3,lfac_)
 
@@ -321,7 +320,7 @@ end subroutine vec_cyl_to_car
 
                   w(ix1,ix2,ix3,iw_mom(1)) = 0.0d0
                   w(ix1,ix2,ix3,iw_mom(2)) = 0.0d0
-                  w(ix1,ix2,ix3,iw_mom(3)) = rhoh * w(ix1,ix2,ix3,lfac_)**2 * vz + b_sqr*vz - w(ix1,ix2,ix3,iw_mag(3)) * vz**2 
+                  w(ix1,ix2,ix3,iw_mom(3)) = rhoh * w(ix1,ix2,ix3,lfac_)**2 * vz + b_sqr*vz - vz * w(ix1,ix2,ix3,iw_mag(3))**2
                   w(ix1,ix2,ix3,iw_e)      = &
                        rhoh * w(ix1,ix2,ix3,lfac_)**2 - p - rhob * w(ix1,ix2,ix3,lfac_) &
                        + 0.5_dp*(b_sqr*(1 + vz**2) - (w(ix1,ix2,ix3,iw_mag(3)) * vz)**2)
@@ -349,6 +348,10 @@ end subroutine vec_cyl_to_car
 
 
                endif
+               ! psi takes this boundary's 'special' type too, so nothing
+               ! else fills it: left unset, the ghost cells keep whatever the
+               ! igrid slot last held.
+               w(ix1,ix2,ix3,psi_) = w(ix1,ix2,2*ixOmax3-ix3+1,psi_)
             end do
          end do
       end do
