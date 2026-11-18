@@ -635,6 +635,13 @@ module mod_global_parameters
   integer, parameter :: fv_per_cell=2
   integer :: fv_layout = fv_per_cell
 
+  !> Most blocks one finite-volume kernel launch handles (fv_max_batch in
+  !> &methodlist); more active blocks are split into several launches. The
+  !> kernel's per-gang private scratch is allocated for every block of a
+  !> launch, so this caps that device memory at fv_max_batch times the
+  !> per-block scratch, at the cost of partially filled waves at each launch
+  integer :: fv_max_batch = 4096
+
   !> Adaptive LLF diffusion (Rempel et al. 2009): phi in [flux_ad_min, 1] per face per variable
   logical  :: flux_adaptive_diffusion = .false.
   ${GPU_DECLARE_CREATE('flux_adaptive_diffusion')}$

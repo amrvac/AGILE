@@ -272,7 +272,7 @@ contains
 
     namelist /methodlist/ time_stepper,time_integrator, source_split_usr,&
        typesourcesplit,local_timestep,dimsplit,typedimsplit,flux_scheme,&
-       fv_face_flux,limiter,gradient_limiter,cada3_radius,loglimit,&
+       fv_face_flux,fv_max_batch,limiter,gradient_limiter,cada3_radius,loglimit,&
        H_correction, typegrad,&
        typediv,typecurl,flatcd,flatsh,&
        rk2_alfa,imex222_lambda,ssprk_order,rk3_switch,imex_switch,&
@@ -529,6 +529,7 @@ contains
        gradient_limiter(level) = 'minmod'
     end do
     fv_face_flux = 'per_cell'
+    fv_max_batch = 4096
 
     flatcd          = .false.
     flatsh          = .false.
@@ -809,6 +810,8 @@ contains
        call mpistop("unknown fv_face_flux: "//trim(fv_face_flux)//&
             " (use 'shared' or 'per_cell')")
     end select
+
+    if (fv_max_batch < 1) call mpistop("fv_max_batch must be at least 1")
 
     ! =========================================================================
     ! Limiter and spatial operator parsing

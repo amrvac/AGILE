@@ -337,6 +337,7 @@ the step counter.
  rk3_switch= 3 | 1 | 2 | 4
  flux_scheme= nlevelshi*'tvdlf' | 'hll' | 'hllc' | 'hlld'   ! only the first entry is used
  fv_face_flux= 'per_cell' | 'shared'
+ fv_max_batch= 4096 | INTEGER >= 1
  limiter= nlevelshi*'minmod' | 'vanleer' | 'mcbeta' | 'koren' ! per level
  flux_adaptive_diffusion= F | T                             ! compile time, tvdlf only
  flux_ad_min= 0 | DOUBLE in [0,1]
@@ -420,13 +421,35 @@ result to the last bit; they differ only in speed and device memory.
   side of it.
 
 The face buffer holds `(block_nx+1)**3 * nwflux` doubles per block for every
-block of a kernel launch (up to 4096), so `'shared'` needs that much more
+block of a kernel launch (up to [fv_max_batch](#par_fv_max_batch)), so `'shared'` needs that much more
 device memory: about 5.9 GB for 32^3 blocks of `hd`, enough to make a run
 that fits with `'per_cell'` fail with `CUDA_ERROR_OUT_OF_MEMORY`. That is why
 `'per_cell'` is the default. When memory allows, `'shared'` is faster in
 most cases, by far more when the flux is expensive: measured on one A100,
 +58% for the `srmhd` CPA case and +2% to +11% for `hd` KH3D, but 3% slower
 for KH3D at 256^3 in 64^3 blocks (64 blocks). Any other value stops the run.
+
+### fv_max_batch {: #par_fv_max_batch }
+The largest number of blocks one launch of the finite-volume kernel
+handles; a rank with more active blocks than this splits them over several
+launches. The default is 4096.
+
+The kernel runs one gang per block, and each gang's private scratch (the
+primitive state of the block, and with `fv_face_flux = 'shared'` its face
+buffer too) is allocated on the device for every block of a launch. That
+memory therefore grows with the number of *active* blocks, on top of what
+`max_blocks` reserves at startup, and a run that starts fine can fail with
+`CUDA_ERROR_OUT_OF_MEMORY` later, once refinement has added blocks. A
+smaller `fv_max_batch` caps the scratch at `fv_max_batch` blocks' worth.
+For an `srmhd` case with 20^3 blocks and `'shared'` it is about 2.3 MB
+per block, so the default can ask for up to 9.4 GB.
+
+The cost of a smaller value is occupancy: each launch ends in a partially
+filled wave, and a launch with fewer gangs than the GPU can run at once
+leaves part of it idle. Keep it well above the number of SMs times the gangs
+resident per SM, which on a large card such as an H100 (132 SMs) means
+leaving the default alone. Lower it on small cards where memory, not
+occupancy, is the limit. Values below 1 stop the run.
 
 ### limiter {: #par_typelimiter }
 The slope limiter of the MUSCL reconstruction, per level (this one is
