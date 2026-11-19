@@ -339,7 +339,7 @@ the step counter.
  fv_face_flux= 'per_cell' | 'shared'
  fv_max_batch= 4096 | INTEGER >= 1
  limiter= nlevelshi*'minmod' | 'vanleer' | 'mcbeta' | 'koren' | 'cada3' ! per level
- cada3_radius= 0.1 | DOUBLE                                 ! cada3 only
+ cada3_radius= 0.1 | DOUBLE > 0                             ! cada3 only
  flux_adaptive_diffusion= F | T                             ! compile time, tvdlf only
  flux_ad_min= 0 | DOUBLE in [0,1]
  flux_ad_scale= 1 | DOUBLE

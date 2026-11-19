@@ -130,7 +130,8 @@ end subroutine finite_volume_local
                    ! which covers these faces: domain faces, s = 0 being r = 0
                    xC(1) = log_ra*dexp(xC(1)) + log_rb
 #:endif
-                   ! cada3's smoothness radius as a length
+                   ! cada3's smoothness radius times the logical cell size
+                   ! (a length only on a Cartesian grid, as upstream's dxlevel)
                    call ${faceflux_proc}$(tmp4, xC, ${d}$, ${f}$, typelim, &
                         cada3_radius*dr(${d}$))
 #:enddef

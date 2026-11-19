@@ -1249,6 +1249,12 @@ contains
        end select
     end do
 
+    ! cada3 divides by (cada3_radius*dx)**2: a zero radius makes the
+    ! smoothness indicator 0*Inf = NaN in every flat region, and a negative
+    ! one would silently act as its absolute value.
+    if (any(limiter(1:nlevelshi) == 'cada3') .and. cada3_radius <= 0.0d0) &
+       call mpistop("cada3_radius must be > 0 for limiter='cada3'")
+
     if (any(limiter(1:nlevelshi)== 'ppm').and.(flatsh.and.physics_type==&
        'rho')) then
        call mpistop&
