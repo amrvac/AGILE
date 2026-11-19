@@ -55,6 +55,10 @@ contains
     ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
     use mod_global_parameters
     use mod_comm_lib, only: mpistop
+    ! Not used here, but nvfortran's -Minline inlines the kernels below into
+    ! this routine and loses cada3_radius's acc declare unless the name is
+    ! also visible here (S-1066 "CUDA DEVICE variable", then an ICE).
+    use mod_limiter, only: cada3_radius
 
     double precision, intent(in)                                       :: qdt,&
       dtfactor, qtC, qt
@@ -128,7 +132,7 @@ end subroutine finite_volume_local
 #:endif
                    ! cada3's smoothness radius as a length
                    call ${faceflux_proc}$(tmp4, xC, ${d}$, ${f}$, typelim, &
-                        cada3_radius_*dr(${d}$))
+                        cada3_radius*dr(${d}$))
 #:enddef
 
 #! Update cell (ix1,ix2,ix3) with the difference of its lower and upper face
@@ -229,9 +233,6 @@ end subroutine finite_volume_local
     real(dp)               :: inv_dr(ndim)
     real(dp)               :: dr(ndim)
     integer                :: typelim
-    ! host copy of cada3_radius (the device module variable cannot be read in
-    ! the kernel)
-    real(dp)               :: cada3_radius_
     real(dp)               :: xloc(ndim)
     real(dp)               :: wprim(nw_phys), wCT(nw_phys), wnew(nw_phys)
     ! Block corner in the logical coordinate, for building face positions.
@@ -264,7 +265,6 @@ end subroutine finite_volume_local
     nxCo3=nx3/2
 
     ${GPU_ENTER_DATA_COPYIN('nxCo1,nxCo2,nxCo3')}$
-    cada3_radius_ = cada3_radius
     ! batch-launch the kernels: the per-gang private scratch is allocated for
     ! every block of a launch, so fv_max_batch (&methodlist) caps its memory
     nbatches = (igridstail_active + fv_max_batch - 1) / fv_max_batch ! ceiling division

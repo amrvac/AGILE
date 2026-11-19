@@ -127,10 +127,10 @@ except ImportError:
           "  cd $AGILE_DIR && uv sync --extra analysis")
     sys.exit(0)
 
-LIMS = ["minmod", "vanleer", "mcbeta", "koren"]
+LIMS = ["minmod", "vanleer", "mcbeta", "koren", "cada3"]
 STEPS = ["onestep", "twostep", "threestep"]
 COL = {"minmod": "#1b9e77", "vanleer": "#d95f02", "mcbeta": "#7570b3",
-       "koren": "#e7298a"}
+       "koren": "#e7298a", "cada3": "#66a61e"}
 STEPLAB = {"onestep": "onestep (Forward Euler)",
            "twostep": "twostep (predictor-corrector)",
            "threestep": "threestep (ssprk3)"}
@@ -194,10 +194,10 @@ for lim in LIMS:
 ax.set_ylabel("L1 error")
 finish(ax, "(a) limiters, x wave (quasi-1D), ssprk3, tvdlf", ns_all, e_all)
 
-# (b) time steppers on the quasi-1D wave, for vanleer and koren
+# (b) time steppers on the quasi-1D wave, every limiter
 ax = axes[0, 1]
 ns_all, e_all = [], []
-for lim in ("vanleer", "koren"):
+for lim in LIMS:
     for st in STEPS:
         r = pick("x", lim, st)
         if r:
