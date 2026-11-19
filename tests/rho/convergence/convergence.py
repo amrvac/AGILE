@@ -131,9 +131,6 @@ LIMS = ["minmod", "vanleer", "mcbeta", "koren", "cada3"]
 STEPS = ["onestep", "twostep", "threestep"]
 COL = {"minmod": "#1b9e77", "vanleer": "#d95f02", "mcbeta": "#7570b3",
        "koren": "#e7298a", "cada3": "#66a61e"}
-STEPLAB = {"onestep": "onestep (Forward Euler)",
-           "twostep": "twostep (predictor-corrector)",
-           "threestep": "threestep (ssprk3)"}
 STEPSTY = {"onestep": ":", "twostep": "--", "threestep": "-"}
 
 
@@ -162,7 +159,8 @@ def curve(ax, res, label, color, ls="-", marker="o", idx=1):
     return ns, es
 
 
-def finish(ax, title, ns_all, e_all):
+def finish(ax, title, ns_all, e_all, loc="lower left", ncol=1, headroom=1.0):
+    """headroom > 1 raises the top of the y axis to leave room for the legend."""
     if not ns_all:
         ax.text(0.5, 0.5, "no runs", ha="center", va="center",
                 transform=ax.transAxes, color="0.5")
@@ -177,7 +175,10 @@ def finish(ax, title, ns_all, e_all):
     ax.set_xlabel("N (cells per direction)")
     ax.set_title(title, fontsize=10)
     ax.grid(True, which="major", lw=0.3, color="0.85")
-    ax.legend(fontsize=7, loc="lower left", framealpha=0.9,
+    if headroom > 1:
+        lo, hi = ax.get_ylim()
+        ax.set_ylim(lo, hi * headroom)
+    ax.legend(fontsize=7, loc=loc, ncol=ncol, framealpha=0.9,
               title="(order at finest pair)", title_fontsize=7)
 
 
@@ -201,11 +202,12 @@ for lim in LIMS:
     for st in STEPS:
         r = pick("x", lim, st)
         if r:
-            n, e = curve(ax, r, f"{lim}, {STEPLAB[st]}", COL[lim],
+            n, e = curve(ax, r, f"{lim}, {st}", COL[lim],
                          ls=STEPSTY[st])
             ns_all += n; e_all += e
 ax.set_ylabel("L1 error")
-finish(ax, "(b) time steppers, x wave, tvdlf", ns_all, e_all)
+finish(ax, "(b) time steppers, x wave, tvdlf: threestep solid, twostep "
+       "dashed", ns_all, e_all, loc="upper right", ncol=2, headroom=300)
 
 # (c) the fully 3D diagonal wave: L1 solid, Linf dashed
 ax = axes[1, 0]
@@ -219,7 +221,7 @@ for lim in LIMS:
         ns_all += n + n2; e_all += e + e2
 ax.set_ylabel("error")
 finish(ax, "(c) diag wave (3D), ssprk3, tvdlf: L1 solid, Linf dashed",
-       ns_all, e_all)
+       ns_all, e_all, loc="upper right", ncol=2, headroom=60)
 
 # (d) observed orders at the finest pair, every tvdlf scheme
 ax = axes[1, 1]
@@ -244,9 +246,9 @@ if rows:
     ax.set_yticks(y)
     ax.set_yticklabels([nm for nm, _ in rows], fontsize=7)
     ax.invert_yaxis()
-    ax.set_xlim(0, 3.3)
+    ax.set_xlim(0, max(3.3, max(max(fo[:3]) for _, fo in rows) + 0.15))
     ax.set_xlabel("observed order (two finest resolutions)")
-    ax.legend(fontsize=7, loc="lower right")
+    ax.legend(fontsize=7, loc="upper right")
 else:
     ax.text(0.5, 0.5, "no runs", ha="center", va="center",
             transform=ax.transAxes, color="0.5")
