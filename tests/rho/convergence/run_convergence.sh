@@ -23,7 +23,7 @@ OUTDIR=${OUTDIR:-../output/convergence}
 SETUPS=${SETUPS:-"x diag"}
 
 X_NLIST=${X_NLIST:-"50 100 200 400"}
-X_LIMITERS=${X_LIMITERS:-"minmod vanleer mcbeta koren"}
+X_LIMITERS=${X_LIMITERS:-"minmod vanleer mcbeta koren cada3"}
 X_STEPPERS=${X_STEPPERS:-"onestep twostep threestep"}
 X_FLUXES=${X_FLUXES:-"tvdlf hll"}
 

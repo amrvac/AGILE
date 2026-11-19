@@ -126,7 +126,9 @@ end subroutine finite_volume_local
                    ! which covers these faces: domain faces, s = 0 being r = 0
                    xC(1) = log_ra*dexp(xC(1)) + log_rb
 #:endif
-                   call ${faceflux_proc}$(tmp4, xC, ${d}$, ${f}$, typelim)
+                   ! cada3's smoothness radius as a length
+                   call ${faceflux_proc}$(tmp4, xC, ${d}$, ${f}$, typelim, &
+                        cada3_radius_*dr(${d}$))
 #:enddef
 
 #! Update cell (ix1,ix2,ix3) with the difference of its lower and upper face
@@ -193,6 +195,7 @@ end subroutine finite_volume_local
      ixOmax3, idimsmin,idimsmax, qtC, bga, qt, bgb)
     use mod_global_parameters
     use mod_fix_conserve
+    use mod_limiter, only: cada3_radius
 
     double precision, intent(in)                                       :: qdt,&
         dtfactor, qtC, qt
@@ -226,6 +229,9 @@ end subroutine finite_volume_local
     real(dp)               :: inv_dr(ndim)
     real(dp)               :: dr(ndim)
     integer                :: typelim
+    ! host copy of cada3_radius (the device module variable cannot be read in
+    ! the kernel)
+    real(dp)               :: cada3_radius_
     real(dp)               :: xloc(ndim)
     real(dp)               :: wprim(nw_phys), wCT(nw_phys), wnew(nw_phys)
     ! Block corner in the logical coordinate, for building face positions.
@@ -258,6 +264,7 @@ end subroutine finite_volume_local
     nxCo3=nx3/2
 
     ${GPU_ENTER_DATA_COPYIN('nxCo1,nxCo2,nxCo3')}$
+    cada3_radius_ = cada3_radius
     ! batch-launch the kernels: the per-gang private scratch is allocated for
     ! every block of a launch, so fv_max_batch (&methodlist) caps its memory
     nbatches = (igridstail_active + fv_max_batch - 1) / fv_max_batch ! ceiling division
@@ -533,14 +540,19 @@ $:FV_CELL_UPDATE(d, 'fxlo(1:nw_flux)', 'fx(1:nw_flux)')
   !> MUSCL reconstruction in primitive variables at one face from a 4-point
   !> stencil: the face lies between cells 2 and 3, uL is cell 2 plus half its
   !> limited slope towards it, uR cell 3 minus half its own.
-  pure subroutine muscl_reconstruct_prim(u, typelim, uL, uR)
-    use mod_limiter, only: limiter_minmod, limiter_vanleer, limiter_mcbeta, limiter_koren
+  pure subroutine muscl_reconstruct_prim(u, typelim, cada3_dx, uL, uR)
+    use mod_limiter, only: limiter_minmod, limiter_vanleer, limiter_mcbeta, limiter_koren, &
+         limiter_cada3
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys,4)
     integer,  intent(in)  :: typelim
+    !> cada3_radius times the logical cell size along the face normal
+    real(dp), intent(in)  :: cada3_dx
     real(dp), intent(out) :: uL(nw_phys), uR(nw_phys)
 
     integer  :: iw
+    ! for cada3
+    real(dp) :: rdelinv
 
     select case (typelim)
     case (limiter_minmod)
@@ -565,6 +577,15 @@ $:FV_CELL_UPDATE(d, 'fxlo(1:nw_flux)', 'fx(1:nw_flux)')
       do iw=1,nw_recon
         uL(iw) = u(iw,2) + 0.5_dp*koren(u(iw,3)-u(iw,2), u(iw,2)-u(iw,1))
         uR(iw) = u(iw,3) - 0.5_dp*koren(u(iw,3)-u(iw,2), u(iw,4)-u(iw,3))
+      end do
+    case (limiter_cada3)
+      ! cada3(a,b) = phi(a/b)*b:
+      ! towards a cell's right face it takes (dw-, dw+),
+      ! towards a cell's left  face it takes (dw+, dw-).
+      rdelinv = 1.0_dp/cada3_dx**2
+      do iw=1,nw_recon
+        uL(iw) = u(iw,2) + 0.5_dp*cada3(u(iw,2)-u(iw,1), u(iw,3)-u(iw,2), rdelinv)
+        uR(iw) = u(iw,3) - 0.5_dp*cada3(u(iw,4)-u(iw,3), u(iw,3)-u(iw,2), rdelinv)
       end do
     case default  ! Fallback: Godunov (piecewise constant)
       uL(:) = u(:,2)
@@ -716,16 +737,17 @@ $:FV_CELL_UPDATE(d, 'fxlo(1:nw_flux)', 'fx(1:nw_flux)')
 
   !> MUSCL (primitive-variable) reconstruction with slope limiter;
   !> ${solver.upper()}$ approximate Riemann flux at faces.
-  subroutine reconflux_muscl_${solver}$_prim(u, xC, flux_dim, flux, typelim)
+  subroutine reconflux_muscl_${solver}$_prim(u, xC, flux_dim, flux, typelim, cada3_dx)
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys, 4)
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim, typelim
     real(dp), intent(out) :: flux(nw_flux)
+    real(dp), intent(in)  :: cada3_dx
 
     real(dp) :: uL(nw_phys), uR(nw_phys)
 
-    call muscl_reconstruct_prim(u, typelim, uL, uR)
+    call muscl_reconstruct_prim(u, typelim, cada3_dx, uL, uR)
     call riemann_${solver}$_prim(uL, uR, xC, flux_dim, flux)
   end subroutine reconflux_muscl_${solver}$_prim
 #:enddef
@@ -738,16 +760,17 @@ $:STAR_SOLVER(solver)
 
   !> MUSCL (primitive-variable) reconstruction with slope limiter; HLL two-wave approximate Riemann flux at faces.
   !> Uses estimated left/right signal speeds (Davis (1988)) for less diffusion than LLF, no contact resolution.
-  subroutine reconflux_muscl_hll_prim(u, xC, flux_dim, flux, typelim)
+  subroutine reconflux_muscl_hll_prim(u, xC, flux_dim, flux, typelim, cada3_dx)
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys, 4)
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim, typelim
     real(dp), intent(out) :: flux(nw_flux)
+    real(dp), intent(in)  :: cada3_dx
 
     real(dp) :: uL(nw_phys), uR(nw_phys)
 
-    call muscl_reconstruct_prim(u, typelim, uL, uR)
+    call muscl_reconstruct_prim(u, typelim, cada3_dx, uL, uR)
     call riemann_hll_prim(uL, uR, xC, flux_dim, flux)
   end subroutine reconflux_muscl_hll_prim
 
@@ -755,12 +778,13 @@ $:STAR_SOLVER(solver)
   !> MUSCL (primitive-variable) reconstruction with slope limiter; LLF/Rusanov numerical flux at faces.
   !> Robust and diffusive; uses local max wavespeed for upwinding.
   !> Adaptive diffusion (Rempel et al. 2009) is compiled in only when FLUX_AD is defined.
-  subroutine reconflux_muscl_llf_prim(u, xC, flux_dim, flux, typelim)
+  subroutine reconflux_muscl_llf_prim(u, xC, flux_dim, flux, typelim, cada3_dx)
     ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys, 4)
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim, typelim
     real(dp), intent(out) :: flux(nw_flux)
+    real(dp), intent(in)  :: cada3_dx
 
     real(dp) :: uL(nw_phys), uR(nw_phys)
 #:if defined('FLUX_AD')
@@ -772,7 +796,7 @@ $:STAR_SOLVER(solver)
     real(dp) :: Fe
 #:endif
 
-    call muscl_reconstruct_prim(u, typelim, uL, uR)
+    call muscl_reconstruct_prim(u, typelim, cada3_dx, uL, uR)
 
 #:if defined('FLUX_AD')
     ! Rempel et al. (2009): reduce dissipation where reconstruction and cell-centre agree in sign
@@ -810,6 +834,34 @@ $:STAR_SOLVER(solver)
        phi = 0.0_dp
     end if
   end function vanleer
+
+  pure real(dp) function cada3(a, b, rdelinv)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(in) :: a, b, rdelinv
+    real(dp), parameter  :: alfa = 0.5_dp, beta = 2.0_dp, gamma = 1.6_dp
+    real(dp), parameter  :: epsi = 1.0e-14_dp, iepsi = 1.0e14_dp
+    real(dp)             :: s, ab, t, pA, pB, eta, psi
+
+    ! Avoid this small b regularization AMRVAC does. Instead factor b out, get
+    ! b/|b| = sgn(b). Then it remains 3rd order on smooth waves.
+    s   = sign(1.0_dp, b)
+    ab  = abs(b)
+    t   = a*s                          ! (a/b)*|b|
+    pA  = (2.0_dp*ab + t)/3.0_dp       ! phiA*|b|, unlimited third order
+    eta = (a*a + b*b)*rdelinv
+    if (eta <= 1.0_dp - epsi) then
+       cada3 = s*pA
+    else
+       ! phiB*|b|, the limited slope
+       pB = max(0.0_dp, min(pA, max(-alfa*t, min(beta*t, pA, gamma*ab))))
+       if (eta >= 1.0_dp + epsi) then
+          cada3 = s*pB
+       else
+          psi   = (eta - 1.0_dp)*iepsi
+          cada3 = s*0.5_dp*((1.0_dp - psi)*pA + (1.0_dp + psi)*pB)
+       end if
+    end if
+  end function cada3
 
   pure real(dp) function minmod(a, b)
     ${GPU_ROUTINE_SEQ()}$
