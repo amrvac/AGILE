@@ -555,7 +555,7 @@ solution `ps(igrid)%w` has to move it between host and device itself.
  specialboundary= F | T                  ! compile time: specialbound_usr in mod_usr
  nghostcells= 2 | INTEGER
  ghost_copy= F                           ! T is not implemented, see below
- internalboundary= F | T                 ! CPU builds only, see below
+ internalboundary= F | T                 ! compile time, see below
  save_physical_boundary= F | T
 /
 ```
@@ -675,11 +675,27 @@ still takes slopes there and so reads coarse cells next to that region. Leave
 it at the default `F`; no test case sets it.
 
 ### internalboundary {: #par_internalboundary }
-`internalboundary = T` calls the `usr_internal_bc` procedure pointer before
-every ghost-cell exchange, to overwrite values inside the domain. The routine
-runs on the host and writes the host copy of the solution, so **it only works
-in a CPU build**: in a GPU build the device copy, which is what the scheme
-advances, is not changed. No test case uses it.
+`internalboundary = T` overwrites values inside the domain before every
+ghost-cell exchange, to hold a region at a prescribed state (a star, a body
+on an orbit, ...). It is a compile-time switch as well as a run-time one: set
+it in `agile.par`, and the case's `mod_usr` must then define the per-cell
+device routine
+
+```fortran
+subroutine usr_internal_bc(level, qt, x, w)
+  ${GPU_ROUTINE_SEQ()}$
+  integer,          intent(in)    :: level         ! AMR level of the block
+  double precision, intent(in)    :: qt            ! time of the state
+  double precision, intent(in)    :: x(1:ndim)     ! cell barycentre
+  double precision, intent(inout) :: w(1:nw_phys)  ! conservative variables
+```
+
+which is applied on the device to every interior cell of every block, on the
+time level being exchanged (so on every Runge-Kutta stage). Overwrite `w`
+where the cell lies inside the region and leave it alone elsewhere; the ghost
+cells then follow from the exchange. The hook sees one cell at a time and
+cannot read its neighbours. It replaces upstream's `usr_internal_bc`
+procedure pointer, which ran on the host. See `tests/hd/internal_bc`.
 
 ### save_physical_boundary {: #par_save_physical_boundary }
 `save_physical_boundary = T` includes the ghost cells at the physical
