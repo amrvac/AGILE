@@ -15,7 +15,21 @@ module mod_usr_methods
   procedure(special_bc), pointer      :: usr_special_bc       => null()
   procedure(special_mg_bc), pointer   :: usr_special_mg_bc    => null()
 
-  procedure(internal_bc), pointer     :: usr_internal_bc      => null()
+  ! Internal boundary: NOT a procedure pointer. Like usr_refine_grid it is
+  ! called by name from device code (getintbc, in every getbc), so a build
+  ! with internalboundary=T in &boundlist of agile.par (the INTERNAL_BC flag)
+  ! must define in mod_usr
+  !
+  !   subroutine usr_internal_bc(level, qt, x, w)
+  !     GPU_ROUTINE_SEQ()   (the fypp macro, see mod_gpu_directives.fpp)
+  !     integer,          intent(in)    :: level      ! AMR level of the block
+  !     double precision, intent(in)    :: qt         ! time of the state
+  !     double precision, intent(in)    :: x(1:ndim)  ! cell barycentre
+  !     double precision, intent(inout) :: w(1:nw_phys) ! conservative state
+  !
+  ! It is applied to every interior cell of every block before each ghost-cell
+  ! exchange, on the time level being exchanged; overwrite w where the cell
+  ! lies inside the internal region and leave it untouched elsewhere.
 
   ! Output related
   procedure(p_no_args), pointer       :: usr_print_log        => null()
@@ -173,26 +187,6 @@ module mod_usr_methods
        use mod_global_parameters
        integer, intent(in)             :: iB
      end subroutine special_mg_bc
-
-    !> internal boundary, user defined
-    !> This subroutine can be used to artificially overwrite ALL conservative
-    !> variables in a user-selected region of the mesh, and thereby act as
-    !> an internal boundary region. It is called just before external (ghost cell)
-    !> boundary regions will be set by the BC selection. Here, you could e.g.
-    !> want to introduce an extra variable (nwextra, to be distinguished from nwaux)
-    !> which can be used to identify the internal boundary region location.
-    !> Its effect should always be local as it acts on the mesh.
-    subroutine internal_bc(level,qt,ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
-       ixImax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,w,x)
-      use mod_global_parameters
-      integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,&
-         ixImax2,ixImax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,level
-      double precision, intent(in)    :: qt
-      double precision, intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,&
-         ixImin3:ixImax3,1:nw)
-      double precision, intent(in)    :: x(ixImin1:ixImax1,ixImin2:ixImax2,&
-         ixImin3:ixImax3,1:ndim)
-    end subroutine internal_bc
 
     !> this subroutine is ONLY to be used for computing auxiliary variables
     !> which happen to be non-local (like div v), and are in no way used for

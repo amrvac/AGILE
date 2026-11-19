@@ -56,19 +56,21 @@
  /
  
 &srmhd_list
-   srmhd_gamma=1.666667d0
-   srmhd_eos=.true.
-   He_abundance=0.1d0
+   srmhd_gamma=1.33333333d0
+   srmhd_eos=.false.
+   He_abundance=0.0d0
    srmhd_source_usr=.false.
+   srmhd_small_density=1.0d-7
+   srmhd_small_pressure=1.0d-9
    srmhd_n_tracer=1
 /
 
 &usr_list
     rjet= 1.0d0
-    zjet=0.25d0
+    zjet=1.0d0
     rhob=1.0d0
-    etarho=1.0d-5
-    pb=7.64d-6
-    zetap=1.0d0
-    lfacjet=7.0d0
+    lfacjet=3.0d0
+    bm=1.0d0
+    betam=0.34d0
+    rm=0.37d0
 /

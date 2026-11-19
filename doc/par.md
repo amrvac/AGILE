@@ -337,6 +337,7 @@ the step counter.
  rk3_switch= 3 | 1 | 2 | 4
  flux_scheme= nlevelshi*'tvdlf' | 'hll' | 'hllc' | 'hlld'   ! only the first entry is used
  fv_face_flux= 'per_cell' | 'shared'
+ fv_max_batch= 4096 | INTEGER >= 1
  limiter= nlevelshi*'minmod' | 'vanleer' | 'mcbeta' | 'koren' ! per level
  flux_adaptive_diffusion= F | T                             ! compile time, tvdlf only
  flux_ad_min= 0 | DOUBLE in [0,1]
@@ -421,13 +422,35 @@ result to the last bit; they differ only in speed and device memory.
   side of it.
 
 The face buffer holds `(block_nx+1)**3 * nwflux` doubles per block for every
-block of a kernel launch (up to 4096), so `'shared'` needs that much more
+block of a kernel launch (up to [fv_max_batch](#par_fv_max_batch)), so `'shared'` needs that much more
 device memory: about 5.9 GB for 32^3 blocks of `hd`, enough to make a run
 that fits with `'per_cell'` fail with `CUDA_ERROR_OUT_OF_MEMORY`. That is why
 `'per_cell'` is the default. When memory allows, `'shared'` is faster in
 most cases, by far more when the flux is expensive: measured on one A100,
 +58% for the `srmhd` CPA case and +2% to +11% for `hd` KH3D, but 3% slower
 for KH3D at 256^3 in 64^3 blocks (64 blocks). Any other value stops the run.
+
+### fv_max_batch {: #par_fv_max_batch }
+The largest number of blocks one launch of the finite-volume kernel
+handles; a rank with more active blocks than this splits them over several
+launches. The default is 4096.
+
+The kernel runs one gang per block, and each gang's private scratch (the
+primitive state of the block, and with `fv_face_flux = 'shared'` its face
+buffer too) is allocated on the device for every block of a launch. That
+memory therefore grows with the number of *active* blocks, on top of what
+`max_blocks` reserves at startup, and a run that starts fine can fail with
+`CUDA_ERROR_OUT_OF_MEMORY` later, once refinement has added blocks. A
+smaller `fv_max_batch` caps the scratch at `fv_max_batch` blocks' worth.
+For an `srmhd` case with 20^3 blocks and `'shared'` it is about 2.3 MB
+per block, so the default can ask for up to 9.4 GB.
+
+The cost of a smaller value is occupancy: each launch ends in a partially
+filled wave, and a launch with fewer gangs than the GPU can run at once
+leaves part of it idle. Keep it well above the number of SMs times the gangs
+resident per SM, which on a large card such as an H100 (132 SMs) means
+leaving the default alone. Lower it on small cards where memory, not
+occupancy, is the limit. Values below 1 stop the run.
 
 ### limiter {: #par_typelimiter }
 The reconstruction, selected per level (honoured level by level):
@@ -543,7 +566,7 @@ solution `ps(igrid)%w` has to move it between host and device itself.
  specialboundary= F | T                  ! compile time: specialbound_usr in mod_usr
  nghostcells= 2 | INTEGER
  ghost_copy= F                           ! T is not implemented, see below
- internalboundary= F | T                 ! CPU builds only, see below
+ internalboundary= F | T                 ! compile time, see below
  save_physical_boundary= F | T
 /
 ```
@@ -668,11 +691,27 @@ still takes slopes there and so reads coarse cells next to that region. Leave
 it at the default `F`; no test case sets it.
 
 ### internalboundary {: #par_internalboundary }
-`internalboundary = T` calls the `usr_internal_bc` procedure pointer before
-every ghost-cell exchange, to overwrite values inside the domain. The routine
-runs on the host and writes the host copy of the solution, so **it only works
-in a CPU build**: in a GPU build the device copy, which is what the scheme
-advances, is not changed. No test case uses it.
+`internalboundary = T` overwrites values inside the domain before every
+ghost-cell exchange, to hold a region at a prescribed state (a star, a body
+on an orbit, ...). It is a compile-time switch as well as a run-time one: set
+it in `agile.par`, and the case's `mod_usr` must then define the per-cell
+device routine
+
+```fortran
+subroutine usr_internal_bc(level, qt, x, w)
+  ${GPU_ROUTINE_SEQ()}$
+  integer,          intent(in)    :: level         ! AMR level of the block
+  double precision, intent(in)    :: qt            ! time of the state
+  double precision, intent(in)    :: x(1:ndim)     ! cell barycentre
+  double precision, intent(inout) :: w(1:nw_phys)  ! conservative variables
+```
+
+which is applied on the device to every interior cell of every block, on the
+time level being exchanged (so on every Runge-Kutta stage). Overwrite `w`
+where the cell lies inside the region and leave it alone elsewhere; the ghost
+cells then follow from the exchange. The hook sees one cell at a time and
+cannot read its neighbours. It replaces upstream's `usr_internal_bc`
+procedure pointer, which ran on the host. See `tests/hd/internal_bc`.
 
 ### save_physical_boundary {: #par_save_physical_boundary }
 `save_physical_boundary = T` includes the ghost cells at the physical

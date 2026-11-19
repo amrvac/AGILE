@@ -1215,7 +1215,7 @@ contains
 
     ! fill internal physical boundary
     if (internalboundary) then
-       call getintbc(time,ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3)
+       call getintbc(time,bgstep,nwhead,nwtail)
     end if
 
     ! fill physical-boundary ghost cells before internal ghost-cell values exchange

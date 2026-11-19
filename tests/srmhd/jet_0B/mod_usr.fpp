@@ -98,7 +98,7 @@ contains
 
 
 
-     #:if defined(N_TRACER)
+     #:if defined('N_TRACER')
      if(srmhd_n_tracer>0)then
        do itr=1,srmhd_n_tracer
           where(x_(:,:,:,3)<zjet.and.(x_(:,:,:,1)**2+x_(:,:,:,2)**2)<rjet**2)
@@ -279,7 +279,7 @@ contains
                   w(ix1,ix2,ix3,iw_rho)    = rhojet*lfacjet
                   w(ix1,ix2,ix3,iw_mom(1)) = 0.0d0
                   w(ix1,ix2,ix3,iw_mom(2)) = 0.0d0
-                  w(ix1,ix2,ix3,iw_mom(3)) = rhoh * lfacjet**2 * vjet + b_sqr*vjet - w(ix1,ix2,ix3,iw_mag(3)) * vjet**2 
+                  w(ix1,ix2,ix3,iw_mom(3)) = rhoh * lfacjet**2 * vjet + b_sqr*vjet - vjet * w(ix1,ix2,ix3,iw_mag(3))**2
                   w(ix1,ix2,ix3,iw_e)      = &
                        rhoh * lfacjet**2 - pjet - rhojet * lfacjet &
                        + 0.5_dp*(b_sqr*(1 + vjet**2) - (w(ix1,ix2,ix3,iw_mag(3)) * vjet)**2)
@@ -305,11 +305,15 @@ contains
                   ! call set_aux(w)
 
                endif
+               ! psi takes this boundary's 'special' type too, so nothing
+               ! else fills it: left unset, the ghost cells keep whatever the
+               ! igrid slot last held.
+               w(ix1,ix2,ix3,psi_) = w(ix1,ix2,2*ixOmax3-ix3+1,psi_)
             end do
          end do
       end do
 
-#:if defined(N_TRACER)
+#:if defined('N_TRACER')
       if(srmhd_n_tracer>0)then
          do iw=1,srmhd_n_tracer
 #ifndef _OPENMP
@@ -330,23 +334,6 @@ contains
       endif
 
   #:endif
-
-      ! Curently broken, cannot call anything here.      
-      ! ! switch to conserved in ghost cells
-      ! ${GPU_LOOP_VECTOR("collapse(3)")}$
-      ! do ix3 = ixOmin3, ixOmax3
-      !    do ix2 = ixOmin2, ixOmax2
-      !       do ix1 = ixOmin1, ixOmax1
-      !          do iw = 1, nw_phys
-      !             u(iw) = w(ix1,ix2,ix3,iw)
-      !          end do
-      !          call to_conservative(u)
-      !          do iw = 1, nw_phys
-      !             w(ix1,ix2,ix3,iw) = u(iw)
-      !          end do
-      !       end do
-      !    end do
-      ! end do
 
    end select
 

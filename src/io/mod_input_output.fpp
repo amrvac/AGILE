@@ -530,6 +530,7 @@ contains
        gradient_limiter(level) = 'minmod'
     end do
     fv_face_flux = 'per_cell'
+    fv_max_batch = 4096
 
     flatcd          = .false.
     flatsh          = .false.
@@ -810,6 +811,8 @@ contains
        call mpistop("unknown fv_face_flux: "//trim(fv_face_flux)//&
             " (use 'shared' or 'per_cell')")
     end select
+
+    if (fv_max_batch < 1) call mpistop("fv_max_batch must be at least 1")
 
     ! =========================================================================
     ! Limiter and spatial operator parsing

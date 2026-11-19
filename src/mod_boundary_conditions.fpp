@@ -391,36 +391,49 @@ contains
   end associate
   end subroutine bc_phys
 
-  !> fill inner boundary values
-  subroutine getintbc(time,ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,ixGmax3)
-    use mod_usr_methods, only: usr_internal_bc
+  !> Fill internal boundary values: on the device, apply the user's by-name
+  !> per-cell hook usr_internal_bc (see mod_usr_methods) to every interior
+  !> cell of every block of time level bgstep. Only variables
+  !> nwhead:nwtail are written back, honouring getbc's variable range. Ghost
+  !> cells are not touched: getbc's exchange, which follows, fills them from
+  !> the overwritten interior.
+  subroutine getintbc(time,bgstep,nwhead,nwtail)
     use mod_global_parameters
-    use mod_geometry, only: sync_positions_host
+    use mod_comm_lib, only: mpistop
+#:if defined('INTERNAL_BC')
+    use mod_usr, only: usr_internal_bc
+    use mod_physics_vars, only: nw_phys
+#:endif
 
     double precision, intent(in)   :: time
-    integer, intent(in)            :: ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&
-       ixGmax3
-  
-    integer :: iigrid, igrid, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3
-  
-    ixOmin1=ixGmin1+nghostcells;ixOmin2=ixGmin2+nghostcells
-    ixOmin3=ixGmin3+nghostcells;ixOmax1=ixGmax1-nghostcells
-    ixOmax2=ixGmax2-nghostcells;ixOmax3=ixGmax3-nghostcells;
+    integer, intent(in)            :: bgstep, nwhead, nwtail
 
-    ! usr_internal_bc reads ps(igrid)%x on the host
-    if (associated(usr_internal_bc)) call sync_positions_host()
+#:if defined('INTERNAL_BC')
+    integer :: iigrid, igrid, level, ix1, ix2, ix3
+    double precision :: wloc(1:nw_phys), xloc(1:ndim)
 
-    do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
-       block=>ps(igrid)
-       dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
-       dxlevel(3)=rnode(rpdx3_,igrid);
-
-       if (associated(usr_internal_bc)) then
-          call usr_internal_bc(node(plevel_,igrid),time,ixGmin1,ixGmin2,&
-             ixGmin3,ixGmax1,ixGmax2,ixGmax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,&
-             ixOmax2,ixOmax3,ps(igrid)%w,ps(igrid)%x)
-       end if
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid, level)")}$
+    do iigrid = 1, igridstail; igrid = igrids(iigrid)
+       level = node(plevel_,igrid)
+       ${GPU_LOOP_VECTOR("collapse(3) private(wloc, xloc)")}$
+       do ix3 = ixMlo3, ixMhi3
+          do ix2 = ixMlo2, ixMhi2
+             do ix1 = ixMlo1, ixMhi1
+                ! fixed-size private copies, as in forcedrefine_grid: a
+                ! strided section would be a device-heap temporary per cell
+                wloc = bg(bgstep)%w(ix1,ix2,ix3,1:nw_phys,igrid)
+                xloc = bgeo%x(ix1,ix2,ix3,1:ndim,igrid)
+                call usr_internal_bc(level, time, xloc, wloc)
+                bg(bgstep)%w(ix1,ix2,ix3,nwhead:min(nwtail,nw_phys),igrid) = &
+                     wloc(nwhead:min(nwtail,nw_phys))
+             end do
+          end do
+       end do
     end do
+#:else
+    call mpistop('internalboundary=T needs a build with internalboundary=T '//&
+         'in &boundlist of agile.par (the INTERNAL_BC compile-time flag)')
+#:endif
 
   end subroutine getintbc
 
