@@ -338,7 +338,8 @@ the step counter.
  flux_scheme= nlevelshi*'tvdlf' | 'hll' | 'hllc' | 'hlld'   ! only the first entry is used
  fv_face_flux= 'per_cell' | 'shared'
  fv_max_batch= 4096 | INTEGER >= 1
- limiter= nlevelshi*'minmod' | 'vanleer' | 'mcbeta' | 'koren' ! per level
+ limiter= nlevelshi*'minmod' | 'vanleer' | 'mcbeta' | 'koren' | 'cada3' ! per level
+ cada3_radius= 0.1 | DOUBLE > 0                             ! cada3 only
  flux_adaptive_diffusion= F | T                             ! compile time, tvdlf only
  flux_ad_min= 0 | DOUBLE in [0,1]
  flux_ad_scale= 1 | DOUBLE
@@ -459,15 +460,8 @@ honoured level by level):
 - `'vanleer'`: van Leer's harmonic limiter;
 - `'mcbeta'`: the monotonised central limiter with beta = 1.4 (fixed in the
   code);
-- `'koren'`: Koren's third-order limiter.
-
-**Any other name stops the run** in `read_par_files`, with a message listing
-these four. Upstream's names (`woodward`, `superbee`, `albada`, `cada`,
-`cada3`, `schmid1`, `schmid2`, `venk`, `ppm`, `mp5`, the `weno*`/`teno*`
-family, ...) used to be accepted and silently ran piecewise-constant
-(first-order) reconstruction, since the kernel implements none of them.
-The upstream keys that tune those limiters (`cada3_radius`,
-`schmid_rad1..3`, `flatcd`, `flatsh`, `loglimit`) are read and ignored.
+- `'koren'`: Koren's third-order limiter;
+- `'cada3'`: Čada & Torrilhon (2009), unlimited where Δ₋² + Δ₊² < (`cada3_radius`·Δx)².
 
 ### flux_adaptive_diffusion {: #par_flux_ad }
 `flux_adaptive_diffusion = T` (compile time) scales the dissipative part of the
@@ -657,7 +651,7 @@ for the conventions and the tests.
 ### nghostcells {: #par_nghostcells }
 The number of ghost-cell layers around every block, default 2, which is what
 every reconstruction AGILE implements needs (`minmod`, `vanleer`, `mcbeta`,
-`koren`; see [methodlist](#par_methodlist)). It is raised automatically for the
+`koren`, `cada3`; see [methodlist](#par_methodlist)). It is raised automatically for the
 wider-stencil limiter names upstream has (`mp5`, the WENO family, `ppm`), but
 those are not implemented here. Every block carries the extra layers, so do
 not raise it without a reason.

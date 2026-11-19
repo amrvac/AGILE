@@ -400,8 +400,11 @@ cell averages, with all output in `tests/rho/output/convergence/`;
 (matplotlib: `uv sync --extra analysis`). Measured L1 orders at N = 200-400
 with ssprk3: koren 2.4 (third order away from the extrema, clipped at them),
 mcbeta and vanleer 2.0, minmod 1.9; L-infinity orders are 1.3-1.6, set by the
-extrema. `onestep` caps every limiter at order 1, and `twostep` caps koren
-near 2, so only ssprk3 lets koren's accuracy through. hll equals tvdlf to
+extrema. cada3 (default `cada3_radius`) is third order in L1, L2 and
+L-infinity alike once resolved (3.00 at N = 800-1600, pre-asymptotic orders
+of 4-7 between 200 and 400), because it does not clip smooth extrema.
+`onestep` caps every limiter at order 1, and `twostep` caps koren and cada3
+near 2, so only ssprk3 lets their accuracy through. hll equals tvdlf to
 round-off except under onestep, which amplifies round-off. A single plane
 wave, `setup = 'diag'` included, is blind to the O(h^2) face-quadrature error
 of the 3D update: its errors match the quasi-1D wave's to 0.1%.
@@ -590,12 +593,9 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   with no `loop`-specific optimisation. MFC's `omp_macros.fpp` likewise uses
   `loop` for NVHPC only.
 
-- **Only four slope limiters exist in the kernel.** `muscl_reconstruct_prim`
-  in `src/mod_finite_volume.fpp` implements minmod, vanleer, mcbeta and koren;
-  anything else used to fall through to piecewise-constant (first-order)
-  states without a word, although `limiter_type` still accepts upstream's
-  names (`cada3`, `mp5`, `weno5`, `ppm`, ...). It showed up as order 1 in the
-  rho convergence study. `read_par_files` now stops on any other limiter.
+- **Only five slope limiters exist in the kernel.** `muscl_reconstruct_prim`
+  in `src/mod_finite_volume.fpp` implements minmod, vanleer, mcbeta, koren and
+  cada3; `read_par_files` stops on any other limiter.
 
 ## API documentation (FORD)
 

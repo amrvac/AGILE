@@ -270,14 +270,16 @@ contains
     namelist /stoplist/ it_init,time_init,it_max,time_max,dtmin,reset_it,&
        reset_time,wall_time_max,final_dt_reduction
 
+    ! Not in the namelist: upstream's loglimit, flatcd, flatsh and
+    ! schmid_rad1..3. No implemented limiter uses them; the variables remain,
+    ! and the limiters that need them must read them again.
     namelist /methodlist/ time_stepper,time_integrator, source_split_usr,&
        typesourcesplit,local_timestep,dimsplit,typedimsplit,flux_scheme,&
-       fv_face_flux,fv_max_batch,limiter,gradient_limiter,cada3_radius,loglimit,&
+       fv_face_flux,fv_max_batch,limiter,gradient_limiter,cada3_radius,&
        H_correction, typegrad,&
-       typediv,typecurl,flatcd,flatsh,&
+       typediv,typecurl,&
        rk2_alfa,imex222_lambda,ssprk_order,rk3_switch,imex_switch,&
-       schmid_rad1,schmid_rad2,&
-       schmid_rad3, phys,&
+       phys,&
        flux_adaptive_diffusion, flux_ad_min, flux_ad_scale
 
     namelist /boundlist/ nghostcells,ghost_copy,internalboundary,&
@@ -482,11 +484,7 @@ contains
     typecourant     = 'maxsum'
     dimsplit        = .false.
     typedimsplit    = 'default'
-    if(physics_type=='mhd') then
-      cada3_radius  = 0.5d0
-    else
-      cada3_radius  = 0.1d0
-    end if
+    cada3_radius  = 0.1d0
     schmid_rad1 = 1.d0
     schmid_rad2 = 1.d0
     schmid_rad3 = 1.d0
@@ -1238,18 +1236,24 @@ contains
     end do
 
     ! The finite-volume kernel (muscl_reconstruct_prim in mod_finite_volume)
-    ! implements only these four slope limiters. Any other name that
+    ! implements only these five slope limiters. Any other name that
     ! limiter_type accepts would silently fall back to piecewise-constant,
     ! first-order reconstruction there, so refuse it here instead.
     do level=1,nlevelshi
        select case (limiter(level))
-       case ('minmod', 'vanleer', 'mcbeta', 'koren')
+       case ('minmod', 'vanleer', 'mcbeta', 'koren', 'cada3')
        case default
           call mpistop("limiter='"//trim(limiter(level))//"' is not &
              &implemented in the finite-volume kernel: use minmod, &
-             &vanleer, mcbeta or koren")
+             &vanleer, mcbeta, koren or cada3")
        end select
     end do
+
+    ! cada3 divides by (cada3_radius*dx)**2: a zero radius makes the
+    ! smoothness indicator 0*Inf = NaN in every flat region, and a negative
+    ! one would silently act as its absolute value.
+    if (any(limiter(1:nlevelshi) == 'cada3') .and. cada3_radius <= 0.0d0) &
+       call mpistop("cada3_radius must be > 0 for limiter='cada3'")
 
     if (any(limiter(1:nlevelshi)== 'ppm').and.(flatsh.and.physics_type==&
        'rho')) then
