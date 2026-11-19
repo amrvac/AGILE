@@ -244,7 +244,6 @@ end subroutine finite_volume_local
     real(dp)       :: fC1(2,ixImin2:ixOmax2,ixImin3:ixOmax3,1:nwflux)
     real(dp)       :: fC2(2,ixImin1:ixOmax1,ixImin3:ixOmax3,1:nwflux)
     real(dp)       :: fC3(2,ixImin1:ixOmax1,ixImin2:ixOmax2,1:nwflux)
-    integer, parameter     :: max_batch=4096
     integer                :: nbatches, ibatch, igrid_beg, igrid_end
     integer        :: neighbor_type_1m, neighbor_type_1p, neighbor_type_2m,&
               neighbor_type_2p, neighbor_type_3m, neighbor_type_3p
@@ -259,12 +258,13 @@ end subroutine finite_volume_local
     nxCo3=nx3/2
 
     ${GPU_ENTER_DATA_COPYIN('nxCo1,nxCo2,nxCo3')}$
-    ! batch-launch the kernels (oom issue when many ~30000 blocks):
-    nbatches = (igridstail_active + max_batch - 1) / max_batch ! ceiling division
-    
+    ! batch-launch the kernels: the per-gang private scratch is allocated for
+    ! every block of a launch, so fv_max_batch (&methodlist) caps its memory
+    nbatches = (igridstail_active + fv_max_batch - 1) / fv_max_batch ! ceiling division
+
     do ibatch = 1, nbatches
-       igrid_beg = (ibatch-1) * max_batch + 1
-       igrid_end = min(ibatch * max_batch, igridstail_active)
+       igrid_beg = (ibatch-1) * fv_max_batch + 1
+       igrid_end = min(ibatch * fv_max_batch, igridstail_active)
 
        ${GPU_PARALLEL_LOOP_GANG("private(uprim" + (", fface" if layout == 'shared' else "") + ", inv_dr, dr, n, xlo, typelim, ix1, ix2, ix3, fC1, fC2, fC3, neighbor_type_1m, neighbor_type_1p, neighbor_type_2m, neighbor_type_2p, neighbor_type_3m, neighbor_type_3p)")}$
        do iigrid = igrid_beg, igrid_end
