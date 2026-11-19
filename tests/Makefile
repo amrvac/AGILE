@@ -23,6 +23,7 @@ SUITE ?= basic
 RHO_BASIC := rho/ball_3D rho/cylindrical_pole
 RHO_EXTENDED := rho/spherical rho/spherical_pole
 HD_BASIC := hd/KH3D-SMR hd/spherical hd/cylindrical_pole hd/log_spherical \
+            hd/internal_bc \
             hd/log_cylindrical_pole
 HD_EXTENDED := hd/KH3D hd/KH3D-SMR-integrators hd/RT3D hd/KH3D_tracer \
                hd/sphere_advection hd/TRML hd/cloud_crushing hd/cylindrical \

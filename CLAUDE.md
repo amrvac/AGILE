@@ -419,7 +419,11 @@ Hooks that run on the GPU are not procedure pointers but routines the core
 calls by name from `mod_usr`, compiled in by a switch in `agile.par`:
 `gravity_field` (`*_gravity`), `addsource_usr` (`*_source_usr`; the
 `usr_source` pointer is a leftover and never called), `usr_refine_grid`
-(`refine_usr`) and `usr_set_nwextra` (ffhd). They are marked with
+(`refine_usr`), `usr_internal_bc` (`internalboundary` in `&boundlist`) and
+`usr_set_nwextra` (ffhd). `usr_internal_bc(level, qt, x, w)` is a per-cell
+internal boundary: `getintbc` applies it to every interior cell of the time
+level `getbc` is exchanging, before the exchange, writing back only that
+call's variable range (see `doc/par.md`, `tests/hd/internal_bc`). They are marked with
 `${GPU_ROUTINE_SEQ()}$`, so `mod_usr.fpp` starts with
 
 ```fortran
