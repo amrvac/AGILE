@@ -604,13 +604,14 @@ contains
       use mod_input_output_helper, only: version_number, save_now
       use mod_physics, only: physics_type, phys_write_info
 
-      integer, dimension(max_blocks*2) :: iorequest
-      integer, dimension(MPI_STATUS_SIZE,max_blocks*2) :: iostatus
-      integer(kind=MPI_OFFSET_KIND) :: offset, offset1
+      integer(kind=MPI_OFFSET_KIND) :: offset
+      integer(kind=MPI_OFFSET_KIND) :: nbytes_block
+      double precision, allocatable :: wbuf(:)
+      integer :: nhdr_dbl, nw_dbl, nblk_dbl, ibuf
       integer :: nsubleafs
       character(len=1024) :: filename, xlabel
       character(len=79)   :: xxlabel
-      integer :: amode, status(MPI_STATUS_SIZE), iwrite
+      integer :: amode, status(MPI_STATUS_SIZE)
       character(len=name_len) :: dname
 
       integer :: nsubparents, iw, ileaf, inode
@@ -710,8 +711,14 @@ contains
          call MPI_FILE_WRITE(slice_fh, stagger_grid, 1, MPI_LOGICAL, status,&
             ierrmpi)
 
+         ! fill_subnode goes through calc_grid, which converts to primitives
+         ! when saveprim is set, so name the variables accordingly
          do iw = 1, nw
-            dname = trim(adjustl(cons_wnames(iw)))
+            if (saveprim) then
+               dname = trim(adjustl(prim_wnames(iw)))
+            else
+               dname = trim(adjustl(cons_wnames(iw)))
+            end if
             call MPI_FILE_WRITE(slice_fh, dname, name_len, MPI_CHARACTER,&
                status, ierrmpi)
          end do
@@ -777,22 +784,41 @@ contains
 
       amode=ior(MPI_MODE_CREATE,MPI_MODE_WRONLY)
       call MPI_FILE_OPEN(icomm,filename,amode,MPI_INFO_NULL,slice_fh,ierrmpi)
-      iorequest=MPI_REQUEST_NULL
-      iwrite=0
+      ! This rank's leaves are consecutive in Morton order, so their records
+      ! (2*(ndim-1) integer header + nx*ny*nw doubles each) form one
+      ! contiguous file region. Pack them into a single buffer and write it
+      ! with one collective call: posting one small write per record costs
+      ! ~40 ms each on GPFS. The header is 8*(ndim-1) bytes, a whole number
+      ! of doubles, so the buffer can be double precision.
       n_ghost_sub = 0
+      nhdr_dbl = ndim-1
+      nw_dbl   = product(block_nx_sub)*nw
+      nblk_dbl = nhdr_dbl + nw_dbl
+      nbytes_block = int(2*(ndim-1)*size_int,kind=MPI_OFFSET_KIND) + &
+         int(nw_dbl,kind=MPI_OFFSET_KIND)*size_double
+      if (2*(ndim-1)*size_int /= nhdr_dbl*size_double) &
+         call mpistop("put_slice_dat: header is not a whole number of doubles")
+      if (any(ixsubMhi(1:ndim-1)-ixsubMlo(1:ndim-1)+1 /= block_nx_sub)) &
+         call mpistop("put_slice_dat: sub-block extent /= block_nx_sub")
 
+      allocate(wbuf(int(Njgrid,kind=8)*nblk_dbl))
+      offset = 0
+      if (Njgrid>0) offset = block_offset_sub(Morton_sub_start(mype))
+      ibuf = 0
       do jgrid=1,Njgrid
-         iwrite=iwrite+1
-         offset=block_offset_sub(int(Morton_sub_start(mype)+jgrid-1))
-         call MPI_FILE_IWRITE_AT(slice_fh,offset,n_ghost_sub,2*(ndim-1),&
-            MPI_INTEGER, iorequest(iwrite),ierrmpi)
-         iwrite=iwrite+1
-         offset1=offset+int(2*(ndim-1)*size_int,kind=MPI_OFFSET_KIND)
-         call MPI_FILE_IWRITE_AT(slice_fh,offset1,ps_sub(jgrid)%w,1,&
-            type_subblock_io, iorequest(iwrite),ierrmpi)
+         if (block_offset_sub(Morton_sub_start(mype)+jgrid-1) /= &
+            offset + (jgrid-1)*nbytes_block) &
+            call mpistop("put_slice_dat: rank's blocks not contiguous in file")
+         wbuf(ibuf+1:ibuf+nhdr_dbl) = transfer(n_ghost_sub, wbuf(1:1), nhdr_dbl)
+         ibuf = ibuf + nhdr_dbl
+         wbuf(ibuf+1:ibuf+nw_dbl) = reshape(ps_sub(jgrid)%w( &
+            ixsubMlo(1):ixsubMhi(1), ixsubMlo(2):ixsubMhi(2), 1:nw), [nw_dbl])
+         ibuf = ibuf + nw_dbl
       end do
 
-      if (iwrite>0) call MPI_WAITALL(iwrite,iorequest,iostatus,ierrmpi)
+      call MPI_FILE_WRITE_AT_ALL(slice_fh, offset, wbuf, Njgrid*nblk_dbl, &
+         MPI_DOUBLE_PRECISION, status, ierrmpi)
+      deallocate(wbuf)
       call MPI_BARRIER(icomm, ierrmpi)
       call MPI_FILE_CLOSE(slice_fh,ierrmpi)
 
