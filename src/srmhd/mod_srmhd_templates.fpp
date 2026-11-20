@@ -198,6 +198,11 @@
 
     allocate(mom(ndir))
     mom(:) = var_set_momentum(ndir)
+    ! the primitive momentum slots hold the four-velocity u^i = lfac v^i
+    ! (see to_primitive/to_conservative), not v^i
+    do idir = 1, ndir
+      write(prim_wnames(mom(idir)),"(A1,I1)") "u", idir
+    end do
     ${GPU_UPDATE_DEVICE('mom')}$
 
     ! Set index of energy variable
