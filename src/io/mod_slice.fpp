@@ -711,8 +711,14 @@ contains
          call MPI_FILE_WRITE(slice_fh, stagger_grid, 1, MPI_LOGICAL, status,&
             ierrmpi)
 
+         ! fill_subnode goes through calc_grid, which converts to primitives
+         ! when saveprim is set, so name the variables accordingly
          do iw = 1, nw
-            dname = trim(adjustl(cons_wnames(iw)))
+            if (saveprim) then
+               dname = trim(adjustl(prim_wnames(iw)))
+            else
+               dname = trim(adjustl(cons_wnames(iw)))
+            end if
             call MPI_FILE_WRITE(slice_fh, dname, name_len, MPI_CHARACTER,&
                status, ierrmpi)
          end do
