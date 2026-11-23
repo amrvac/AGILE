@@ -143,6 +143,9 @@
   !> taking values within [0, 1]
   double precision, public                :: mhd_glm_alpha = 0.5d0
   ${GPU_DECLARE_COPYIN('mhd_glm_alpha')}$
+  !> Dedner et al. (2002)'s extended GLM/EGLM-MHD source terms (eq. 24).
+  logical, public                         :: mhd_glm_extended = .false.
+  ${GPU_DECLARE_COPYIN('mhd_glm_extended')}$
 
   !> Whether to use gravity
   logical, public                         :: mhd_gravity = .false.
@@ -193,7 +196,7 @@
     character(len=*), intent(in) :: files(:)
     integer                      :: n
 
-    namelist /mhd_list/ mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity,&
+    namelist /mhd_list/ mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_glm_extended, mhd_gravity,&
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
       mhd_resistivity, mhd_eta_usr, mhd_hyperbolic_thermal_conduction, &
       mhd_hyperbolic_thermal_conduction_anisotropic, &
@@ -208,7 +211,13 @@
 111    close(unitpar)
     end do
 
-    ${GPU_UPDATE_DEVICE('mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity')}$
+    ${GPU_UPDATE_DEVICE('mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_glm_extended, mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity')}$
+#:if defined('EGLM') and GEOM != 'Cartesian'
+    call mpistop("mhd_glm_extended supports only Cartesian geometry.")
+#:endif
+#:if defined('EGLM') and defined('MHD_ENERGY_ONLY')
+    call mpistop("mhd_glm_extended is not compatible with mhd_energy_only.")
+#:endif
     if (mhd_eta_usr .and. mhd_eta <= 0.0d0) call mpistop(&
        "mhd_eta_usr needs mhd_eta > 0: the largest eta, used for the time step.")
     if (mhd_small_pressure < 0.0d0) call mpistop(&
@@ -561,6 +570,9 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
   real(dp)                 :: Jc(3), xn(1:ndim), eta_c, eta_p, eta_m
   real(dp)                 :: geta(3), getaxj(3)
 #:endif
+#:if defined('EGLM')
+  real(dp)                 :: gpsi(3), divb
+#:endif
 #:if defined('HYPERTC')
     real(dp) :: Te_c, rho_c, pth_c
     real(dp) :: gradT(3), Bmag2, Bmag, Bmag2_safe, bgradT
@@ -661,6 +673,20 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
 #:else
      wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*(Jdir1**2+Jdir2**2+Jdir3**2)
 #:endif
+#:endif
+
+#:if defined('EGLM')
+     ! Dedner et al. (2002)'s extended GLM sources.
+     gpsi(1) = (wCTprim1(psi_,3)-wCTprim1(psi_,1))/(2.0_dp*dx(1))
+     gpsi(2) = (wCTprim2(psi_,3)-wCTprim2(psi_,1))/(2.0_dp*dx(2))
+     gpsi(3) = (wCTprim3(psi_,3)-wCTprim3(psi_,1))/(2.0_dp*dx(3))
+     divb = (wCTprim1(iw_mag(1),3)-wCTprim1(iw_mag(1),1))/(2.0_dp*dx(1))&
+           +(wCTprim2(iw_mag(2),3)-wCTprim2(iw_mag(2),1))/(2.0_dp*dx(2))&
+           +(wCTprim3(iw_mag(3),3)-wCTprim3(iw_mag(3),1))/(2.0_dp*dx(3))
+     do idir = 1,3
+        wnew(iw_e) = wnew(iw_e)-qdt*wCTprim1(iw_mag(idir),2)*gpsi(idir)
+        wnew(iw_mom(idir)) = wnew(iw_mom(idir))-qdt*wCTprim1(iw_mag(idir),2)*divb
+     end do
 #:endif
 
 #:if defined('HYPERTC')

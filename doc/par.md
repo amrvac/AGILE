@@ -1074,6 +1074,7 @@ equations of state.
   mhd_gamma= 1.666666666666667d0 | DOUBLE  ! adiabatic index
   mhd_n_tracer= 0 | INTEGER              ! compile time: passive tracers
   mhd_glm_alpha= 0.5 | DOUBLE in [0,1]   ! GLM div B cleaning: diffusive/advective time scale
+  mhd_glm_extended= F | T                ! compile time: Dedner's extended GLM source terms
   mhd_resistivity= F | T                 ! compile time: resistive terms
   mhd_eta= 0 | DOUBLE                    ! uniform resistivity, with mhd_resistivity
   mhd_eta_usr= F | T                     ! compile time: eta_usr in mod_usr (mhd_eta = its maximum)
@@ -1096,14 +1097,12 @@ equations of state.
 ```
 
 ### Magnetic field divergence {: #par_divbfix }
-AGILE's MHD is cell-centred GLM-MHD (Dedner et al. 2002, _J. Comput. Phys._
-175, 645): an extra scalar `psi` carries divergence errors away at the
-fastest wave speed and damps them at the rate set by `mhd_glm_alpha`. That is
-the only option, so upstream's `typedivbfix`, `type_ct`, `divbdiff`,
-`typedivbdiff`, `divbwave`, `source_split_divb`, `boundary_divbfix`,
-`clean_initial_divb` and `mhd_glm_extended` are not read. There is no
-staggered grid / constrained transport.
-See [Divergence B source treatments](equations.html#eq_divB_fix).
+AGILE controls div **B** with GLM (Dedner et al. 2002): an extra variable
+`psi` carries divergence errors away and damps them, at a rate set by
+`mhd_glm_alpha`. `mhd_glm_extended=.true.` (compile time, Cartesian only)
+adds the extended source terms (EGLM), so that the cleaning does not change
+the thermal energy. There is no other div B treatment. See [Divergence B
+source treatments](equations.html#eq_divB_fix).
 
 ### Thermal conduction {: #par_mhd_htc }
 Thermal conduction is hyperbolic: the heat flux is evolved as an extra
