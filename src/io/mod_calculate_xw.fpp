@@ -499,6 +499,7 @@ contains
   !> computes cell corner (xC) and cell center (xCC) coordinates
   subroutine calc_x(igrid,xC,xCC)
     use mod_global_parameters
+    use mod_geometry, only: r_of_s
 
     integer, intent(in)               :: igrid
     double precision, intent(out)     :: xC(ixMlo1-1:ixMhi1,ixMlo2-1:ixMhi2,&
@@ -525,22 +526,32 @@ contains
             idims)+0.5d0*dx(idims,level)
        end do
     else
-       ! for any non-cartesian or stretched coordinate (allow multiple stretched directions)
+       ! Any non-Cartesian coordinate.  ps%x is the cell's volume barycentre,
+       ! not the midpoint of its faces, so x + dx/2 is not a corner: build the
+       ! coordinate faces analytically from the block corner instead, which is
+       ! both exact and the same expression fill_geometry_device uses.  Cell ix
+       ! spans the logical interval [xmin + (ix-nghostcells-1)*d,
+       ! xmin + (ix-nghostcells)*d], and xC(ix) is its upper face - so the
+       ! range starting at ixMlo-1 delivers the lower face of the first mesh
+       ! cell as its first entry, exactly as before.
        do ix=ixCmin1,ixCmax1
-         xC(ix,ixCmin2:ixCmax2,ixCmin3:ixCmax3,1)=ps(igrid)%x(ix,&
-            ixCmin2:ixCmax2,ixCmin3:ixCmax3,1)+0.5d0*ps(igrid)%dx(ix,&
-            ixCmin2:ixCmax2,ixCmin3:ixCmax3,1)
+         xC(ix,ixCmin2:ixCmax2,ixCmin3:ixCmax3,1)= &
+            rnode(rpxmin1_,igrid)+dble(ix-nghostcells)*rnode(rpdx1_,igrid)
        end do
        do ix=ixCmin2,ixCmax2
-         xC(ixCmin1:ixCmax1,ix,ixCmin3:ixCmax3,2)=ps(igrid)%x(ixCmin1:ixCmax1,&
-            ix,ixCmin3:ixCmax3,2)+0.5d0*ps(igrid)%dx(ixCmin1:ixCmax1,ix,&
-            ixCmin3:ixCmax3,2)
+         xC(ixCmin1:ixCmax1,ix,ixCmin3:ixCmax3,2)= &
+            rnode(rpxmin2_,igrid)+dble(ix-nghostcells)*rnode(rpdx2_,igrid)
        end do
        do ix=ixCmin3,ixCmax3
-         xC(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ix,3)=ps(igrid)%x(ixCmin1:ixCmax1,&
-            ixCmin2:ixCmax2,ix,3)+0.5d0*ps(igrid)%dx(ixCmin1:ixCmax1,&
-            ixCmin2:ixCmax2,ix,3)
+         xC(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ix,3)= &
+            rnode(rpxmin3_,igrid)+dble(ix-nghostcells)*rnode(rpdx3_,igrid)
        end do
+#:if defined('LOG_RADIUS')
+       ! the radial coordinate above is the logical one; r_of_s is the map
+       ! back to a physical radius, and is elemental
+       xC(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ixCmin3:ixCmax3,1)= &
+          r_of_s(xC(ixCmin1:ixCmax1,ixCmin2:ixCmax2,ixCmin3:ixCmax3,1))
+#:endif
     endif
 
   end subroutine calc_x

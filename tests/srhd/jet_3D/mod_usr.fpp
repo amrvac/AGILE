@@ -1,3 +1,7 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
 
   use mod_amrvac
@@ -9,8 +13,8 @@ module mod_usr
   double precision :: rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet
   double precision :: Qjet, Mdotjet, p0val, t0val, tcross, vhead
 
-!$acc declare create(rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet)
-!$acc declare create(Qjet,Mdotjet,p0val,t0val,tcross,vhead)
+  ${GPU_DECLARE_CREATE('rjet,zjet,rhob,etarho,rhojet,pb,zetap,pjet,lfacjet,vjet')}$
+  ${GPU_DECLARE_CREATE('Qjet,Mdotjet,p0val,t0val,tcross,vhead')}$
 
 contains
 
@@ -29,6 +33,7 @@ contains
     usr_init_one_grid  => initonegrid_usr
     usr_aux_output     => specialvar_output
     usr_add_aux_names  => specialvarnames_output
+    usr_process_adv_global => apply_floor
 
     call phys_activate()
 
@@ -46,13 +51,13 @@ contains
 111    close(unitpar)
     end do
 
-!$acc update device(rjet,zjet,rhob,etarho,pb,zetap,lfacjet)
+    ${GPU_UPDATE_DEVICE('rjet,zjet,rhob,etarho,pb,zetap,lfacjet')}$
 
     rhojet=etarho*rhob
     pjet=zetap*pb
     vjet=dsqrt(1.0d0-1.0d0/lfacjet**2)
 
-!$acc update device(rhojet,pjet,vjet)
+    ${GPU_UPDATE_DEVICE('rhojet,pjet,vjet')}$
 
   end subroutine usr_params_read
 
@@ -213,9 +218,9 @@ contains
        ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3,&
        ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3,&
        iB, w, x)
-    !$acc routine vector
     use mod_global_parameters
     use mod_physics_vars
+    ${GPU_ROUTINE_VECTOR()}$
     implicit none
     integer, intent(in) :: ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3
     integer, intent(in) :: ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3
@@ -231,7 +236,11 @@ contains
     select case(iB)
     case(5)
        ! select the first grid-internal layer above the boundary
-      !$acc loop collapse(3) vector
+#ifndef _OPENMP
+      ! Vector-level parallelization within a subroutine does not work with OpenMP.
+      ! TBD if this routine can be made seq (i.e. cell-based).
+      ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
       do ix3 = ixOmin3, ixOmax3
          do ix2 = ixOmin2, ixOmax2
             do ix1 = ixOmin1, ixOmax1
@@ -268,7 +277,9 @@ contains
 
       if(srhd_n_tracer>0)then
          do iw=1,srhd_n_tracer
-            !$acc loop collapse(3) vector
+#ifndef _OPENMP
+            ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
             do ix3 = ixOmin3, ixOmax3
                do ix2 = ixOmin2, ixOmax2
                   do ix1 = ixOmin1, ixOmax1
@@ -282,23 +293,6 @@ contains
             end do
          enddo
       endif
-
-! Curently broken, cannot call anything here.      
-      ! ! switch to conserved in ghost cells
-      ! !$acc loop collapse(3) vector
-      ! do ix3 = ixOmin3, ixOmax3
-      !    do ix2 = ixOmin2, ixOmax2
-      !       do ix1 = ixOmin1, ixOmax1
-      !          do iw = 1, nw_phys
-      !             u(iw) = w(ix1,ix2,ix3,iw)
-      !          end do
-      !          call to_conservative(u)
-      !          do iw = 1, nw_phys
-      !             w(ix1,ix2,ix3,iw) = u(iw)
-      !          end do
-      !       end do
-      !    end do
-      ! end do
 
    end select
 
@@ -341,42 +335,92 @@ contains
    end subroutine specialvarnames_output
 
 
-  subroutine usr_refine_grid(&
-    igrid, level,&
-    ixGmin1, ixGmin2, ixGmin3, ixGmax1, ixGmax2, ixGmax3,&
-    ixmin1,  ixmin2,  ixmin3,  ixmax1,  ixmax2,  ixmax3,&
-    qt, w, x, refine, coarsen)
-#ifdef _OPENACC
-! NOTE: The Cray compiler fails when trying to inline this routine, for now
-!   disable inlining for Cray.
-    !dir$ inlinenever usr_refine_grid
-#endif
-    !$acc routine seq
+  subroutine usr_refine_grid(level,qt,w,x,refineflag,coarsenflag,norefineflag,nocoarsenflag)
     use mod_global_parameters
-    implicit none
-    integer, intent(in) :: igrid, level
-    integer, intent(in) :: ixGmin1, ixGmin2, ixGmin3, ixGmax1, ixGmax2, ixGmax3
-    integer, intent(in) :: ixmin1,  ixmin2,  ixmin3,  ixmax1,  ixmax2,  ixmax3
-    double precision, intent(in) :: qt
-    double precision, intent(in),&
-      dimension(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, 1:nw) :: w
-    double precision, intent(in),&
-      dimension(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, 1:ndim) :: x
-    integer, intent(inout) :: refine, coarsen
+    ${GPU_ROUTINE_SEQ()}$
 
-    associate(&
-      w_ => w(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :),&
-      x_ => x(ixGmin1:ixGmax1, ixGmin2:ixGmax2, ixGmin3:ixGmax3, :))
+    ! Enforce additional refinement or coarsening
+    ! One can use the coordinate info in x and/or time qt=t_n and w(t_n) values w.
 
-        if (any(x_(:,:,:,3) < 1.1d0*zjet)  .and.&
-            any((x_(:,:,:,1)**2+x_(:,:,:,2)**2) < rjet**2)) then
-          coarsen = -1
-          refine = 1
-        end if
+    integer, intent(in)             :: level
+    double precision, intent(in)    :: qt
+    double precision, intent(in)    :: x(1:3)
+    double precision, intent(in)    :: w(1:nw_phys)
+    logical, intent(inout) :: refineflag, coarsenflag, norefineflag, nocoarsenflag
 
-    end associate
+    if (x(3) < 1.1d0*zjet .and. (x(1)**2+x(2)**2) < rjet**2) then
+      refineflag = .true.
+      nocoarsenflag = .true.
+    end if
+
+    ! Never force coarsen or block automatic refine
+    coarsenflag = .false.
+    norefineflag = .false.
 
   end subroutine usr_refine_grid
+
+
+  !> Density and pressure floor, called every timestep via
+  !> usr_process_adv_global, straight on the device: no host/device traffic,
+  !> and rho and p are floored through a full to_primitive/to_conservative
+  !> round trip - reusing mod_physics's own copies (public via the plain
+  !> `use mod_physics` above, since mod_physics instantiates the srhd macros
+  !> itself) rather than duplicating or re-instantiating them here - so xi_
+  !> and lfac_ stay consistent with the floored state rather than silently
+  !> disagreeing with it.
+  !>
+  !> The thresholds are srhd's own srhd_small_density and srhd_small_pressure
+  !> from &srhd_list, not case-local parameters, so that this hook, the
+  !> pressure bracket in con2prim and the floor fix_prim_state applies to
+  !> reconstructed face states all agree on what "too small" means. A no-op
+  !> unless at least one of them is set positive.
+  !>
+  !> Covers the whole block (ixG), ghost cells included, rather than just
+  !> the mesh. getbc only refreshes a *destination* state at the end of each
+  !> RK substage, never the source state a substage starts from, and nothing
+  !> in the main loop calls getbc between this hook and the next timestep's
+  !> first substage - so a mesh-only floor would leave stale, unfloored
+  !> ghost values feeding straight into the next flux computation at every
+  !> block boundary, defeating the point of flooring. Since the floor is a
+  !> pointwise max(value, floor), flooring a block's own ghost cell and
+  !> flooring the neighbour's interior cell it mirrors give bit-identical
+  !> results, so covering ixG keeps every ghost consistent with its owning
+  !> interior without any ghost exchange at all.
+  subroutine apply_floor(iit, qt)
+    use mod_global_parameters
+    implicit none
+    integer, intent(in)          :: iit
+    double precision, intent(in) :: qt
+
+    integer :: iigrid, igrid, ix1, ix2, ix3
+    double precision :: u(1:nw_phys)
+
+    if (srhd_small_density <= 0.0d0 .and. srhd_small_pressure <= 0.0d0) return
+
+    ${GPU_PARALLEL_LOOP_GANG("private(igrid)")}$
+    do iigrid = 1, igridstail_active
+       igrid = igrids_active(iigrid)
+
+       ${GPU_LOOP_VECTOR("collapse(3) private(u)")}$
+       do ix3 = ixGlo3, ixGhi3
+          do ix2 = ixGlo2, ixGhi2
+             do ix1 = ixGlo1, ixGhi1
+
+                u = bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid)
+                call to_primitive(u)
+
+                u(iw_rho) = max(u(iw_rho), srhd_small_density)
+                u(iw_e)   = max(u(iw_e),   srhd_small_pressure)
+
+                call to_conservative(u)
+                bg(1)%w(ix1, ix2, ix3, 1:nw_phys, igrid) = u
+
+             end do
+          end do
+       end do
+    end do
+
+  end subroutine apply_floor
 
 
 end module mod_usr

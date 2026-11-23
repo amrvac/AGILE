@@ -4,6 +4,7 @@
 compile_flags += -I$(build_dir)/f90
 
 $(build_dir)/f90/agile.h:
+	@mkdir -p $(@D)
 	@touch $@
 
 # The GNU Fortran compiler has a -J flag to place the .mod files,
@@ -12,6 +13,8 @@ $(build_dir)/f90/agile.h:
 
 $(build_dir)/obj/%.o: $(build_dir)/f90/%.f90 $(build_dir)/f90/agile.h
 	@mkdir -p $(@D)
+ifneq ($(strip $(SILENT)),1)
 	@echo -e "Compiling $(_magenta)$(notdir $<)$(_reset)"
+endif
 	@cd $(build_dir)/f90; $(compile) $(compile_flags) $< -o $@
 

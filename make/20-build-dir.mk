@@ -5,6 +5,9 @@ $(info Build dir: $(build_dir))
 
 all: $(build)/latest/arch.mk
 
+$(build_dir):
+	@mkdir -p $@
+
 $(build)/latest::
 	@echo -e "Symlink $(_cyan)build/latest$(_reset) -> $(_blue)$(build_dir)$(_reset)"
 	@mkdir -p $(build_dir)

@@ -50,6 +50,7 @@ contains
   subroutine put_slice(dir,xslice)
     use mod_forest, only: Morton_sub_start, Morton_sub_stop
     use mod_global_parameters
+    use mod_geometry, only: s_of_r
     ! Writes a D-1 slice
     ! For ONED simulations, output will be appended to one csv-file per slice
     ! slices are sensitive to the saveprim switch and
@@ -87,11 +88,21 @@ contains
        endif
     end if
 
-    ! Do a last consistency check:
+    ! Do a last consistency check. xslice is a physical coordinate, so under
+    ! LOG_RADIUS the radial one has to be compared in the logical coordinate
+    ! that xprobmin1/xprobmax1 are stored in.
     select case(dir)
        case(1)
+#:if defined('LOG_RADIUS')
+       if(xslice<zero .or. (log_r0<=zero .and. xslice<=zero)) call mpistop("a &
+          &radial slice position is a physical radius, and must be > 0 unless &
+          &log_r0 > 0 puts r = 0 on the grid")
+       if(s_of_r(xslice)<xprobmin1.or.s_of_r(xslice)>xprobmax1) call &
+          mpistop("slice out of bounds")
+#:else
        if(xslice<xprobmin1.or.xslice>xprobmax1) call &
           mpistop("slice out of bounds")
+#:endif
 
        case(2)
        if(xslice<xprobmin2.or.xslice>xprobmax2) call &
@@ -1182,18 +1193,42 @@ contains
 
   end subroutine fill_subnode_info
 
-  subroutine get_igslice(dir,x,igslice)
+  !> Block indices, per level, of the blocks a slice passes through.
+  !>
+  !> The position comes in as a *physical* coordinate, because that is what the
+  !> rest of the slice machinery uses - fill_subnode picks the cell within a
+  !> block by comparing against ps(igrid)%x. Everything below, though, is
+  !> block-index arithmetic in the *logical* coordinate, the one xprobmin, dg
+  !> and ng are expressed in. Under LOG_RADIUS those differ, so the conversion
+  !> is done here, once, and the body is unchanged.
+  !>
+  !> Getting this backwards is a silent trap: converting the slice position at
+  !> read time instead would fix this routine and break fill_subnode, whose
+  !> minloc would then match nothing, return 0, and emit a slice with all-zero
+  !> coordinates without any error.
+  subroutine get_igslice(dir,xphys,igslice)
     use mod_global_parameters
+    use mod_geometry, only: s_of_r
     integer, intent(in) :: dir
-    double precision, intent(in) :: x
+    !> slice position, a physical coordinate
+    double precision, intent(in) :: xphys
     integer, dimension(nlevelshi), intent(out) :: igslice
     ! .. local ..
     integer :: level
     double precision :: distance
+    !> the same position in the logical coordinate used below
+    double precision :: x
     !double precision :: xsgrid(ndim,nlevelshi),qs(ndim),xmgrid(ndim,3),xnew,xlgrid(ndim,3)
     !integer :: nbefore
 
-    if (x.ne.x) call mpistop("get_igslice: your slice position is NaN!")
+    if (xphys.ne.xphys) call mpistop("get_igslice: your slice position is NaN!")
+
+    x = xphys
+#:if defined('LOG_RADIUS')
+    ! s_of_r is the map's inverse; the guard only matters for log_r0 = 0,
+    ! where r = 0 is not on the grid and dlog(0) would trap.
+    if (dir == 1) x = s_of_r(max(xphys, smalldouble))
+#:endif
 
     select case (dir)
     case (1)

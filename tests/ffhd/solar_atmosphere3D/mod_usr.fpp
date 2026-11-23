@@ -1,3 +1,7 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
+
 module mod_usr
     use mod_amrvac
     use mod_physics
@@ -5,15 +9,15 @@ module mod_usr
     implicit none
 
     double precision, allocatable :: pbc(:),rbc(:)
-    !$acc declare create(pbc,rbc)
+    ${GPU_DECLARE_CREATE('pbc,rbc')}$
     double precision :: usr_grav,trelax
     double precision :: heatunit,gzone,SRadius,dya
     double precision, allocatable :: pa(:),ra(:)
     integer, parameter :: jmax=5000
     double precision :: dh, Bh, dv, Bv, xv, dp1
     double precision :: ch, cv, dh1, dv1
-    !$acc declare create(dh,Bh,dv,Bv,xv,dp1,ch,cv,dh1,dv1)
-    !$acc declare create(usr_grav,SRadius,pbc,rbc)
+    ${GPU_DECLARE_CREATE('dh,Bh,dv,Bv,xv,dp1,ch,cv,dh1,dv1')}$
+    ${GPU_DECLARE_CREATE('usr_grav,SRadius,pbc,rbc')}$
   
   contains
 
@@ -36,7 +40,7 @@ module mod_usr
 
       call set_coordinate_system("Cartesian_3D")
       call usr_params_read(par_files)
-      !$acc update device(dh,Bh,dv,Bv,xv,dp1)
+      ${GPU_UPDATE_DEVICE('dh,Bh,dv,Bv,xv,dp1')}$
   
       unit_length        = 1.d9 !< cm
       unit_temperature   = 1.d6 !< K
@@ -56,16 +60,16 @@ module mod_usr
       dya=(2.d0*gzone+xprobmax3-xprobmin3)/dble(jmax) !< cells size of high-resolution 1D solar atmosphere
 
       usr_grav=-2.74d4*unit_length/unit_velocity**2 !< solar gravity
-      !$acc update device(usr_grav)
+      ${GPU_UPDATE_DEVICE('usr_grav')}$
 
       SRadius=69.61d0 !< Solar radius
-      !$acc update device(SRadius)
+      ${GPU_UPDATE_DEVICE('SRadius')}$
 
       ch = (Bh*dh**3.d0)*0.5d0
       cv = (Bv*dv**3.d0)*0.5d0
       dh1 = dh + dp1
       dv1 = dv + dp1
-      !$acc update device(ch,cv,dh1,dv1)
+      ${GPU_UPDATE_DEVICE('ch,cv,dh1,dv1')}$
 
       call inithdstatic
 
@@ -142,7 +146,7 @@ module mod_usr
         pbc(ibc)=pa(na)+(one-cos(dpi*res/dya))/two*(pa(na+1)-pa(na))
       end do
       deallocate(ya,gg,Ta)
-      !$acc update device(rbc,pbc)
+      ${GPU_UPDATE_DEVICE('rbc,pbc')}$
     end subroutine inithdstatic
 
     subroutine initonegrid_usr(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
@@ -157,17 +161,6 @@ module mod_usr
         double precision :: res
         integer :: ix1, ix2, ix3 ,na
 
-        double precision :: xlocal(3)
-        double precision :: bx, by, bz
-        double precision :: xh, yh, zh, yv, zv
-
-        xh = 0.d0
-        yh = 0.d0
-        zh = -dh1
-        yv = 0.d0
-        zv = -dv1
-
-  
         do ix3=ixOmin3,ixOmax3
         do ix2=ixOmin2,ixOmax2
         do ix1=ixOmin1,ixOmax1
@@ -181,30 +174,8 @@ module mod_usr
         end do
         end do
 
-        do ix3=ixImin3,ixImax3
-        do ix2=ixImin2,ixImax2
-        do ix1=ixImin1,ixImax1
-
-          xlocal(1) = x(ix1,ix2,ix3,1)
-          xlocal(2) = x(ix1,ix2,ix3,2)
-          xlocal(3) = x(ix1,ix2,ix3,3)
-          bx = -3.d0*ch*((xlocal(3)-zh)**2+(xlocal(2)-yh)**2) / ((xlocal(1)-xh)**2+(xlocal(2)-yh)**2+(xlocal(3)-zh)**2)**(5./2.) + &
-            3.d0*cv*(xlocal(1)-xv)*(xlocal(3)-zv) / ((xlocal(1)-xv)**2+(xlocal(2)-yv)**2+(xlocal(3)-zv)**2)**(5./2.) + &
-            2*ch / ((xlocal(1)-xh)**2+(xlocal(2)-yh)**2+(xlocal(3)-zh)**2)**(3./2.)
-
-          by = 3.d0*ch*(xlocal(1)-xh)*(xlocal(2)-yh) / ((xlocal(1)-xh)**2+(xlocal(2)-yh)**2+(xlocal(3)-zh)**2)**(5./2.) + &
-            3.d0*cv*(xlocal(2)-yv)*(xlocal(3)-zv) / ((xlocal(1)-xv)**2+(xlocal(2)-yv)**2+(xlocal(3)-zv)**2)**(5./2.)
-
-          bz = 3.d0*ch*(xlocal(1)-xh)*(xlocal(3)-zh) / ((xlocal(1)-xh)**2+(xlocal(2)-yh)**2+(xlocal(3)-zh)**2)**(5./2.) + & 
-            (-3.d0)*cv*((xlocal(2)-yv)**2+(xlocal(1)-xv)**2) / ((xlocal(1)-xv)**2+(xlocal(2)-yv)**2+(xlocal(3)-zv)**2)**(5./2.) + & 
-            2.d0*cv/((xlocal(1)-xv)**2+(xlocal(2)-yv)**2+(xlocal(3)-zv)**2)**(3./2.)
-
-          w(ix1,ix2,ix3,iw_b1) = bx/(bx**2+by**2+bz**2)**(1./2.)
-          w(ix1,ix2,ix3,iw_b2) = by/(bx**2+by**2+bz**2)**(1./2.)
-          w(ix1,ix2,ix3,iw_b3) = bz/(bx**2+by**2+bz**2)**(1./2.)
-        end do
-        end do
-        end do
+        ! b1,b2,b3 are filled by fill_nwextra_device from
+        ! usr_set_nwextra, over the full block and after every regrid
 
         w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,mom(:))=zero
         #:if defined('HYPERTC')
@@ -214,9 +185,39 @@ module mod_usr
             ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,w,x)
     end subroutine initonegrid_usr
 
+    !> Frozen field b-hat (the ffhd nwextra variables): the horizontal +
+    !> vertical dipole solar field, in Cartesian components, normalised. Called
+    !> by name from fill_nwextra_device; see mod_usr_methods.
+    pure subroutine usr_set_nwextra(x, bhat)
+      ${GPU_ROUTINE_SEQ()}$
+      double precision, intent(in)  :: x(1:ndim)
+      double precision, intent(out) :: bhat(1:3)
+      double precision :: xh, yh, zh, yv, zv, dh_r5, dh_r3, dv_r5, dv_r3
+
+      xh = 0.d0; yh = 0.d0; zh = -dh1
+      yv = 0.d0; zv = -dv1
+
+      dh_r5 = ((x(1)-xh)**2+(x(2)-yh)**2+(x(3)-zh)**2)**(5.d0/2.d0)
+      dh_r3 = ((x(1)-xh)**2+(x(2)-yh)**2+(x(3)-zh)**2)**(3.d0/2.d0)
+      dv_r5 = ((x(1)-xv)**2+(x(2)-yv)**2+(x(3)-zv)**2)**(5.d0/2.d0)
+      dv_r3 = ((x(1)-xv)**2+(x(2)-yv)**2+(x(3)-zv)**2)**(3.d0/2.d0)
+
+      bhat(1) = -3.d0*ch*((x(3)-zh)**2+(x(2)-yh)**2)/dh_r5 &
+              +  3.d0*cv*(x(1)-xv)*(x(3)-zv)/dv_r5 &
+              +  2.d0*ch/dh_r3
+      bhat(2) =  3.d0*ch*(x(1)-xh)*(x(2)-yh)/dh_r5 &
+              +  3.d0*cv*(x(2)-yv)*(x(3)-zv)/dv_r5
+      bhat(3) =  3.d0*ch*(x(1)-xh)*(x(3)-zh)/dh_r5 &
+              -  3.d0*cv*((x(2)-yv)**2+(x(1)-xv)**2)/dv_r5 &
+              +  2.d0*cv/dv_r3
+
+      bhat(1:3) = bhat(1:3) / sqrt(sum(bhat(1:3)**2))
+
+    end subroutine usr_set_nwextra
+
     subroutine specialbound_usr(qt, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB, w, x)
-        !$acc routine vector
+        ${GPU_ROUTINE_VECTOR()}$
 
         integer, intent(in)             :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,&
         ixImax3, ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, iB
@@ -234,7 +235,11 @@ module mod_usr
         select case(iB)
         case(5)
 
-        !$acc loop collapse(3) vector
+#ifndef _OPENMP
+        ! Vector-level parallelization within a subroutine does not work with OpenMP.
+        ! TBD if this routine can be made seq (i.e. cell-based).
+        ${GPU_LOOP_VECTOR("collapse(3)")}$
+#endif
         do ix3=ixOmin3,ixOmax3
             do ix2=ixOmin2,ixOmax2
             do ix1=ixOmin1,ixOmax1
@@ -255,61 +260,12 @@ module mod_usr
             end do
             end do
         enddo
-
-        ! case(6)
-
-        ! ! to include ix3 into loop, perhaps precompute?
-        ! !$acc loop collapse(2) vector
-        ! do ix2=ixOmin2,ixOmax2
-        ! do ix1=ixOmin1,ixOmax1
-
-        !   !$acc routine seq
-        !   tmp = 0.d0
-        !   do ix3=ixOmin3,ixOmax3
-        !     gravity = 0.5d0*(gravity_field(w(ix1,ix2,ix3,:), x(ix1,ix2,ix3,:), 3) + &
-        !                 gravity_field(w(ix1,ix2,ix3-1,:), x(ix1,ix2,ix3-1,:), 3))
-        !     tmp = tmp + gravity*invT
-        !     tmp_array(ix3) = tmp
-        !   end do
-
-        ! end do 
-        ! end do
-        ! !$acc loop collapse(2) vector
-        !   do ix2=ixOmin2,ixOmax2
-        !     do ix1=ixOmin1,ixOmax1
-
-        !     ! inline get pthermal to improve performance
-        !     pth = (phys_gamma-1.0_dp)*(w(ix1,ix2,ixOmin3-1, e_)- &
-        !       0.5_dp*w(ix1,ix2,ixOmin3-1, mom(1))**2/w(ix1,ix2,ixOmin3-1, rho_))
-        !     invT     = w(ix1,ix2,ixOmin3-1,rho_)/pth
-
-        !     tmp = 0.d0
-        !     do ix3=ixOmin3,ixOmax3
-        !       gravity = 0.5d0*(gravity_field(w(ix1,ix2,ix3,:), x(ix1,ix2,ix3,:), 3) + &
-        !                 gravity_field(w(ix1,ix2,ix3-1,:), x(ix1,ix2,ix3-1,:), 3))
-        !       tmp = tmp + gravity*invT
-        !       ! repeated dxlevel(3) calculation to be optimized
-        !       w(ix1,ix2,ix3,p_)=pth*dexp(tmp*(x(ix1,ix2,ix3,3)-x(ix1,ix2,ix3-1,3)))
-        !       w(ix1,ix2,ix3,rho_) = w(ix1,ix2,ix3,p_)*invT
-        !       #:if defined('HYPERTC')
-        !       w(ix1,ix2,ix3,q_)=zero
-        !       #:endif
-        !       w(ix1,ix2,ix3,iw_mom(1)) = -w(ix1,ix2,2*ixOmin3-1-ix3,iw_mom(1)) / &
-        !                                   w(ix1,ix2,2*ixOmin3-1-ix3,rho_)  
-
-        !       ! inline to_conservative() for performance:
-        !       w(ix1,ix2,ix3, e_)=w(ix1,ix2,ix3, e_)*inv_gamma_m1 +0.5_dp*w(ix1,ix2,ix3, rho_)*&
-        !           w(ix1,ix2,ix3, iw_mom(1))**2
-        !       w(ix1,ix2,ix3, iw_mom(1)) = w(ix1,ix2,ix3, iw_rho)*w(ix1,ix2,ix3, iw_mom(1))
-        !       end do
-        !       end do
-        !   end do
       end select
 
    end subroutine specialbound_usr
 
    pure real(dp) function gravity_field(wCT, x, idim) result(field)
-     !$acc routine seq
+     ${GPU_ROUTINE_SEQ()}$
      real(dp), intent(in)    :: wCT(nw_phys)
      real(dp), intent(in)    :: x(1:ndim)
      integer, value, intent(in)     :: idim

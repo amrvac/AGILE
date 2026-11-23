@@ -1,0 +1,86 @@
+! Smoke test of the colliding-winds setup: a 4 x 4 x 2 box for two time units.
+
+
+ &usr_list
+   sep           = 1.0d0
+   q_mass        = 0.5d0
+   period        = 12.0d0
+   mdot          = 1.0d0, 0.25d0     ! wind momentum ratio eta = 0.25
+   vw            = 1.0d0, 1.0d0
+   mach          = 20.0d0, 20.0d0
+   r_in          = 0.1d0, 0.1d0
+   refine_radius = 3.0d0
+   lmax_far      = 3
+ /
+
+ &filelist
+   base_filename    = 'output/cwb_quick'
+   autoconvert      = F
+   convert_type     = 'vtuBCCmpi'
+   saveprim         = T
+   slice_type       = 'dat'          ! plot_cwb.py reads these
+ /
+
+ &savelist
+   itsave(1,1)      = 0
+   itsave(1,2)      = 0
+   itsave(1,3)      = 0              ! a slice at t = 0 as well
+   dtsave_log       = 0.1d0
+   dtsave_dat       = 1.0d0
+   dtsave_slice     = 0.25d0
+   nslices          = 1
+   slicedir(1)      = 3              ! the orbital plane z = 0
+   slicecoord(1)    = 0.0d0
+ /
+
+ &stoplist
+   time_max         = 2.0d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'hllc'
+   limiter         = 20*'vanleer'
+   phys            = 'hd'
+ /
+
+ &hd_list
+   hd_n_tracer       = 1
+   hd_small_density  = 1.0d-8
+   hd_small_pressure = 1.0d-12
+ /
+
+ &boundlist
+   typeboundary_min1 = 5*'cont'
+   typeboundary_max1 = 5*'cont'
+   typeboundary_min2 = 5*'cont'
+   typeboundary_max2 = 5*'cont'
+   typeboundary_min3 = 5*'cont'
+   typeboundary_max3 = 5*'cont'
+   internalboundary  = .true.        ! wind sources + temperature floor (usr_internal_bc)
+ /
+
+ &meshlist
+   max_blocks         =  4096
+   refine_max_level   =  4
+   refine_usr         =  .true.      ! usr_refine_grid: finest level at the stars
+   w_refine_weight    =  0.2d0, 0.0d0, 0.0d0, 0.0d0, 0.3d0, 0.5d0
+   refine_threshold   =  20*0.4d0
+   block_nx1          =  8
+   block_nx2          =  8
+   block_nx3          =  8
+   domain_nx1         =  32
+   domain_nx2         =  32
+   domain_nx3         =  16
+   xprobmin1          = -2.0d0
+   xprobmax1          =  2.0d0
+   xprobmin2          = -2.0d0
+   xprobmax2          =  2.0d0
+   xprobmin3          = -1.0d0
+   xprobmax3          =  1.0d0
+ /
+
+ &paramlist
+   slowsteps        = 10
+   courantpar       = 0.6d0
+ /

@@ -15,7 +15,6 @@ contains
 
     call init_comm_fix_conserve(1,ndim,3)
 
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail; igrid=igrids(iigrid);
        ! Make zero the magnetic fluxes
        ! Fake advance, storing electric fields at edges
@@ -23,17 +22,15 @@ contains
        call fake_advance(igrid,1,3,ps(igrid))
 
     end do
-    !$OMP END PARALLEL DO
 
     ! Do correction
     call recvflux(1,ndim)
     call sendflux(1,ndim)
-    call fix_conserve(ps,1,ndim,1,3)
+    call fix_conserve(1,1,ndim,1,3)
 
     call fix_edges(ps,1,3)
 
     ! Now we fill the centers for the staggered variables
-    !$OMP PARALLEL DO PRIVATE(igrid)
     do iigrid=1,igridstail_active; igrid=igrids_active(iigrid);
        call phys_to_primitive(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,&
           ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,ps(igrid)%x)
@@ -43,7 +40,6 @@ contains
        call phys_to_conserved(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,ixMlo1,&
           ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,ps(igrid)%x)
     end do
-    !$OMP END PARALLEL DO
 
     call getbc(global_time,0.d0,ps,iwstart,nwgc)
 
@@ -123,6 +119,7 @@ contains
       ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, ws, x, A)
     use mod_global_parameters
     use mod_usr_methods, only: usr_init_vector_potential
+    use mod_comm_lib, only: mpistop
 
     integer, intent(in)                :: ixIsmin1,ixIsmin2,ixIsmin3,ixIsmax1,&
        ixIsmax2,ixIsmax3, ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
@@ -141,6 +138,13 @@ contains
        ixIsmin2:ixIsmax2,ixIsmin3:ixIsmax3,1:ndim)
     double precision                   :: circ(ixIsmin1:ixIsmax1,&
        ixIsmin2:ixIsmax2,ixIsmin3:ixIsmax3,1:ndim)
+
+    ! The edge integral below weights the vector potential by block%dsC, the
+    ! cell-face lengths.  Those are no longer built: this routine is the only
+    ! reader, it has no callers, and it needs stagger_grid, which this fork
+    ! does not support.  Fail here rather than touch an unassociated pointer.
+    call mpistop("b_from_vector_potentialA needs block%dsC, which is no &
+       &longer built - see geo_t in mod_physicaldata")
 
     A=zero
     ! extend one layer of cell center locations in xCC

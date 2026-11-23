@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 ! This module is for imposing randomized heating in 3D setup
 ! Users can define the parameters "trelax,tramp,ntimes,vlim^D,periods,variation,nwaves" in the mod_usr.t file.
 
@@ -19,7 +22,7 @@ module mod_random_heating
 
   double precision, allocatable :: va1(:), va2(:), va3(:)
   double precision, allocatable :: dtimearr(:),timearray(:)
-  !$acc declare create(va1,va2,va3,dtimearr,timearray)
+  ${GPU_DECLARE_CREATE('va1,va2,va3,dtimearr,timearray')}$
 
   double precision :: periods=300.d0
   double precision :: variation=75.d0
@@ -32,8 +35,8 @@ module mod_random_heating
 
   double precision :: trelax=10.d0
   double precision :: tramp=5.d0
-  !$acc declare create(vlim1,vlim2,vlim3)
-  !$acc declare create(trelax,tramp,ntimes)
+  ${GPU_DECLARE_CREATE('vlim1,vlim2,vlim3')}$
+  ${GPU_DECLARE_CREATE('trelax,tramp,ntimes')}$
 
 
   contains
@@ -59,13 +62,13 @@ module mod_random_heating
     use mod_global_parameters
 
     call rh_read_params(par_files)
-    !$acc update device(trelax,tramp,ntimes,vlim1,vlim2,vlim3)
+    ${GPU_UPDATE_DEVICE('trelax,tramp,ntimes,vlim1,vlim2,vlim3')}$
 
   end subroutine rh_init
 
   subroutine rh_source(qt,lQgrid,x)
-    !$acc routine seq
     use mod_global_parameters
+    ${GPU_ROUTINE_SEQ()}$
 
     double precision, intent(in)    :: qt
     double precision, intent(inout) :: lQgrid
@@ -144,7 +147,7 @@ module mod_random_heating
       call MPI_BCAST(timearray,ntimes,MPI_DOUBLE_PRECISION,0,icomm,ierrmpi)
       call MPI_BCAST(dtimearr,ntimes,MPI_DOUBLE_PRECISION,0,icomm,ierrmpi)
     endif
-    !$acc update device(timearray,dtimearr)
+    ${GPU_UPDATE_DEVICE('timearray,dtimearr')}$
 
     ! spatial distribution
   
@@ -164,8 +167,8 @@ module mod_random_heating
       call MPI_BCAST(va1,vx1,MPI_DOUBLE_PRECISION,0,icomm,ierrmpi)
       call MPI_BCAST(va2,vx2,MPI_DOUBLE_PRECISION,0,icomm,ierrmpi)
       call MPI_BCAST(va3,vx3,MPI_DOUBLE_PRECISION,0,icomm,ierrmpi)
-    endif 
-    !$acc update device(va1,va2,va3)
+    endif
+    ${GPU_UPDATE_DEVICE('va1,va2,va3')}$
 
   contains
 

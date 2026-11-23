@@ -1,3 +1,6 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
 module mod_physicaldata
   implicit none
 
@@ -10,6 +13,33 @@ module mod_physicaldata
      double precision, dimension(:,:,:,:,:), allocatable :: ws
   end type block_grid_t
 
+  !> Cell metrics for all blocks at once, with the grid index last, exactly
+  !> like block_grid_t holds the solution.  One instance covers every block
+  !> a rank can own (1:max_blocks), so the arrays are allocated once at startup
+  !> instead of per block, and device kernels can index them directly by igrid
+  !> rather than chasing a per-block pointer.  The corresponding state
+  !> components (ps(igrid)%x, %dx, ...) are bounds-remapped views into these
+  !> arrays, so host code keeps working unchanged.
+  !>
+  !> All of it is device-resident, because the device is what produces it:
+  !> fill_geometry_device builds every member there.  That includes dx, which
+  !> no kernel reads - it has to live where it is written, and is pulled back
+  !> only on demand (see sync_geometry_host).
+  type geo_t
+     !> Cell-center positions
+     double precision, dimension(:,:,:,:,:), allocatable  :: x
+     !> Cell sizes in length unit
+     double precision, dimension(:,:,:,:,:), allocatable  :: ds
+     !> Volumes of a cell
+     double precision, dimension(:,:,:,:), allocatable    :: dvolume
+     !> Areas of cell-face surfaces
+     double precision, dimension(:,:,:,:,:), allocatable  :: surfaceC
+     !> Cell sizes in coordinate units.  Read on the host alone - by calc_x,
+     !> by the collapsed output and by set_B0_grid - never by a kernel.
+     double precision, dimension(:,:,:,:,:), allocatable  :: dx
+  end type geo_t
+
+  
   type state
      !> ID of a grid block
      integer :: igrid=-1
@@ -47,11 +77,16 @@ module mod_physicaldata
      double precision, dimension(:,:,:), pointer :: dt=>Null()
      !> Cell sizes at cell center in length unit
      double precision, dimension(:,:,:,:), pointer :: ds=>Null()
-     !> Cell sizes at cell face in length unit
+     !> Cell sizes at cell face in length unit.  Never associated: the
+     !> matching geo_t member was dropped because its only reader,
+     !> b_from_vector_potentialA, needs stagger_grid, which this fork does
+     !> not support.  That routine mpistops before touching this.
      double precision, dimension(:,:,:,:), pointer :: dsC=>Null()
      !> Volumes of a cell
      double precision, dimension(:,:,:), pointer :: dvolume=>Null()
-     !> Areas of cell-center surfaces
+     !> Areas of cell-center surfaces.  Never associated: the matching geo_t
+     !> member was dropped because its only reader is curlvector's
+     !> Stokesbased branch, which mpistops before touching this.
      double precision, dimension(:,:,:,:), pointer :: surface=>Null()
      !> Areas of cell-face surfaces
      double precision, dimension(:,:,:,:), pointer :: surfaceC=>Null()
@@ -98,8 +133,6 @@ module mod_physicaldata
      !> Variables old state
      double precision, dimension(:,:,:,:), allocatable :: wold
   end type grid_field
-  !> buffer for pole boundary
-  type(state) :: pole_buf
 
   !> array of physical states for all blocks on my processor
   type(state), dimension(:), allocatable, target :: ps
@@ -113,11 +146,16 @@ module mod_physicaldata
   type(state), dimension(:), allocatable, target :: ps4
   !> array of physical blocks, one level coarser representative
   type(state), dimension(:), allocatable, target :: psc
-  !$acc declare create(ps, ps1, ps2, ps3, ps4, psc)
+  ${GPU_DECLARE_CREATE('ps, ps1, ps2, ps3, ps4, psc')}$
 
   !> one block grid to rule them all
   type(block_grid_t), dimension(:), allocatable, target   :: bg, bgc
-  !$acc declare create(bg, bgc)
+  ${GPU_DECLARE_CREATE('bg, bgc')}$
+
+  !> one geometry to rule them all: bgeo for the blocks themselves, bgeoc for
+  !> their one-level-coarser representatives
+  type(geo_t), target                                     :: bgeo, bgeoc
+  ${GPU_DECLARE_CREATE('bgeo, bgeoc')}$
 
   !> array of physical blocks in reduced dimension
   type(state_sub), dimension(:), allocatable, target :: ps_sub
@@ -134,5 +172,30 @@ module mod_physicaldata
     double precision, dimension(:,:,:,:), allocatable :: vnorm,cbarmin,cbarmax
     double precision, dimension(:,:,:,:,:), allocatable :: vbarC,vbarLC,vbarRC
   end type ct_velocity
+
+contains
+
+  !> The state views onto time level k of bg: ps for k = 1, ps1..ps4 for
+  !> k = 2..5, null beyond.  Their %istep is k (set in initialize_vars), which
+  !> is how getbc finds the level from the views it is handed.
+  function ps_level(k) result(p)
+    integer, intent(in) :: k
+    type(state), dimension(:), pointer, contiguous :: p
+
+    select case (k)
+    case (1)
+       p => ps
+    case (2)
+       p => ps1
+    case (3)
+       p => ps2
+    case (4)
+       p => ps3
+    case (5)
+       p => ps4
+    case default
+       nullify(p)
+    end select
+  end function ps_level
 
 end module mod_physicaldata

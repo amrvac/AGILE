@@ -44,7 +44,9 @@ def regrid_amr_data(dataset, nbprocs):
                                 processes=nbprocs)
 
     # Execute multiprocessing pool
-    blocks_regridded = np.array(pool.starmap(_interpolate_block, block_iterable))
+    # a list, not np.array: a block on levmax comes back as its dict, the
+    # coarser ones as enlarged arrays, which numpy >= 1.24 refuses to stack
+    blocks_regridded = pool.starmap(_interpolate_block, block_iterable)
     pool.close()
     pool.join()
     _print_progress(100, 100)

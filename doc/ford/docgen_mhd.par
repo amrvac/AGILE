@@ -1,0 +1,22 @@
+&methodlist
+  phys = 'mhd'
+  flux_adaptive_diffusion = T
+/
+
+&boundlist
+  specialboundary = T
+/
+
+&meshlist
+  refine_usr = T
+/
+
+&mhd_list
+  mhd_gravity = T
+  mhd_n_tracer = 1
+  mhd_source_usr = T
+  mhd_resistivity = T
+  mhd_radiative_cooling = T
+  mhd_hyperbolic_thermal_conduction = T
+  mhd_hyperbolic_thermal_conduction_anisotropic = T
+/

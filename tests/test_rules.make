@@ -8,6 +8,7 @@ _reset := "\\e[m"
 ifndef AGILE_DIR
 $(error AGILE_DIR is not set)
 endif
+agile := $(AGILE_DIR)
 
 arch ?= gnu
 

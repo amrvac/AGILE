@@ -1,4 +1,4 @@
-# Slice output
+title: Slice output
 
 # Introduction
 
@@ -23,17 +23,19 @@ perpendicular to the third coordinate direction _slicedir(2)=3_ and
 intersects the third axis at a value of 0.8 _slicecoord(2)=0.8_ and analoge
 for the third slice.
 
-     &savelist;
-            itsave(1,3)=0
-            dtsave(3)=0.1d0
-            nslices=3
-            slicedir(1)=1
-            slicecoord(1)=0.6
-            slicedir(2)=3
-            slicecoord(2)=0.8
-            slicedir(3)=2
-            slicecoord(3)=0.7
-    /
+```fortran
+&savelist;
+       itsave(1,3)=0
+       dtsave(3)=0.1d0
+       nslices=3
+       slicedir(1)=1
+       slicecoord(1)=0.6
+       slicedir(2)=3
+       slicecoord(2)=0.8
+       slicedir(3)=2
+       slicecoord(3)=0.7
+/
+```
 
 The total number of slices is specified by _nslices_. 
 The data type of the slices is set by _slice_type_ in _filelist_, which by
@@ -67,30 +69,36 @@ is done in the following way: its best to create a new *.par file (e.g.
 slices.par) and clear the savelist from any output to filetypes other than
 _3_. We use itsave to demand a slice output for the zero-iteration.
 
-     &savelist;
-            itsave(1,3)=0
-            nslices=3
-            slicedir(1)=1
-            slicecoord(1)=0.6
-            slicedir(2)=3
-            slicecoord(2)=0.8
-            slicedir(3)=2
-            slicecoord(3)=0.7
-    /
+```fortran
+&savelist;
+        itsave(1,3)=0
+        nslices=3
+        slicedir(1)=1
+        slicecoord(1)=0.6
+        slicedir(2)=3
+        slicecoord(2)=0.8
+        slicedir(3)=2
+        slicecoord(3)=0.7
+/
+```
 
 The stoplist should look like the following,
 
-     &stoplist;
-            reset_it=.true.
-            it_max=0
-    /
+```fortran
+&stoplist;
+        reset_it=.true.
+        it_max=0
+/
+```
 
 where we reset the iteration counter (so that _itsave(1,3)=0_ will output
 slice data) and stop the code immediately after the IO by set _it_max=0_.
 
 The code can then be started with
 
-    amrvac -i slices.par -slice 10 -if datamr/data0010.dat
+```text
+./agile -i slices.par -slice 10 -if datamr/data0010.dat
+```
 
 which will take the output _datamr/data0010.dat_ 
 to create new slices with index 10 (-slice 10). The par-file is
@@ -98,4 +106,6 @@ the newly created slices.par (-i slices.par) so that the default used to run
 the code can be left untouched. It is a simple exercise in shell scripting to
 run along all output-files in one go. For example with the BASH:
 
-    for i in {0..10}; do printf -v j "%04d" $i; ./amrvac -i slices.par -slice $i -if datamr/data$j.dat; done
+```bash
+for i in {0..10}; do printf -v j "%04d" $i; ./agile -i slices.par -slice $i -if datamr/data$j.dat; done
+```

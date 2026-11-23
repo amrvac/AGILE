@@ -1,0 +1,51 @@
+name: docs
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one concurrent deployment, but don't cancel in-progress runs since we
+# want them to complete.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  AGILE_DIR: ${{ github.workspace }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: install Graphviz
+        run: sudo apt-get update && sudo apt-get install -y graphviz
+      - name: create Python environment
+        run: |
+          pip install uv
+          uv sync --extra docs
+      - name: build documentation
+        run: |
+          source .venv/bin/activate
+          doc/ford/build_docs.sh
+      - name: upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: doc/ford/html
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,3 +1,6 @@
+#:mute
+#:include "../mod_gpu_directives.fpp"
+#:endmute
 #:if PHYS == 'mhd'
 
 #:if defined('N_TRACER')
@@ -27,74 +30,79 @@
     + 0
 #:endif
 
+  !> Number of leading variables the MUSCL reconstruction limits (1:nw_recon).
+  !> Slots nw_recon+1:nw_phys are left to fix_prim_state, which must rebuild
+  !> them before the Riemann solver reads the face state.
+  integer, parameter, public              :: nw_recon=nw_flux
+
   !> Whether an energy equation is used
   logical, public                         :: mhd_energy = .true.
-  !$acc declare copyin(mhd_energy)
+  ${GPU_DECLARE_COPYIN('mhd_energy')}$
 
   !> Index of the density (in the w array)
   integer, public                         :: rho_
-  !$acc declare create(rho_)
+  ${GPU_DECLARE_CREATE('rho_')}$
 
   !> Indices of the momentum density
   integer, allocatable, public            :: mom(:)
-  !$acc declare create(mom)
+  ${GPU_DECLARE_CREATE('mom')}$
 
 #:if defined('N_TRACER')
   !> Indices of the tracers
   integer, public                         :: tracer(${N_TRACER_}$)
-  !$acc declare create(tracer)
+  ${GPU_DECLARE_CREATE('tracer')}$
 #:endif
 
   !> Index of the energy density (-1 if not present)
   integer, public                         :: e_
-  !$acc declare create(e_)
+  ${GPU_DECLARE_CREATE('e_')}$
 
   !> Indices of the magnetic field
   integer, allocatable, public            :: mag(:)
-  !$acc declare create(mag)
+  ${GPU_DECLARE_CREATE('mag')}$
 
   !> Index of the gas pressure (-1 if not present) should equal e_
   integer, public                         :: p_
-  !$acc declare create(p_)
+  ${GPU_DECLARE_CREATE('p_')}$
 
   !> Indices of the GLM psi
   integer, public :: psi_
-  !$acc declare create(psi_)
+  ${GPU_DECLARE_CREATE('psi_')}$
 
   !> Number of tracer species
   integer, public                         :: mhd_n_tracer = 0
-  !$acc declare copyin(mhd_n_tracer)
+  ${GPU_DECLARE_COPYIN('mhd_n_tracer')}$
 
   !> The adiabatic index
   double precision, public                :: mhd_gamma = 5.d0/3.0d0
   double precision, public                :: gamma_1, inv_gamma_1
-  !$acc declare copyin(mhd_gamma)
-  !$acc declare create(gamma_1, inv_gamma_1)
+  ${GPU_DECLARE_COPYIN('mhd_gamma')}$
+  ${GPU_DECLARE_CREATE('gamma_1, inv_gamma_1')}$
 
   !> Helium abundance over Hydrogen
   double precision, public  :: He_abundance=0.1d0
-  !$acc declare copyin(He_abundance)
+  ${GPU_DECLARE_COPYIN('He_abundance')}$
   !> Ionization fraction of H
   !> H_ion_fr = H+/(H+ + H)
   double precision, public  :: H_ion_fr=1d0
-  !$acc declare copyin(H_ion_fr)
+  ${GPU_DECLARE_COPYIN('H_ion_fr')}$
   !> Ionization fraction of He
   !> He_ion_fr = (He2+ + He+)/(He2+ + He+ + He)
   double precision, public  :: He_ion_fr=1d0
-  !$acc declare copyin(He_ion_fr)
+  ${GPU_DECLARE_COPYIN('He_ion_fr')}$
   !> Ratio of number He2+ / number He+ + He2+
   !> He_ion_fr2 = He2+/(He2+ + He+)
   double precision, public  :: He_ion_fr2=1d0
-  !$acc declare copyin(He_ion_fr2)
+  ${GPU_DECLARE_COPYIN('He_ion_fr2')}$
   ! used for eq of state when it is not defined by units,
   ! the units do not contain terms related to ionization fraction
   ! and it is p = RR * rho * T
   double precision, public  :: RR=1d0
-  !$acc declare copyin(RR)
+  ${GPU_DECLARE_COPYIN('RR')}$
 
   !> Switch for hyperbolic thermal conduction
   logical, public                         :: mhd_hyperbolic_thermal_conduction = .false.
-  !$acc declare copyin(mhd_hyperbolic_thermal_conduction)
+  ${GPU_DECLARE_COPYIN('mhd_hyperbolic_thermal_conduction')}$
 
   !> Compile-time selector for anisotropic HTC
   logical, public                         :: mhd_hyperbolic_thermal_conduction_anisotropic = .false.
@@ -104,65 +112,77 @@
 
   !> sig_par = tc_kappa_par (constant, no T^2.5); takes precedence over tc_kappa0_par when > 0
   double precision, public                :: tc_kappa_par = -1.0d0
-  !$acc declare copyin(tc_kappa_par)
+  ${GPU_DECLARE_COPYIN('tc_kappa_par')}$
 
   !> sig_perp = tc_kappa_perp (constant, no T^2.5); takes precedence over the Braginskii closure when > 0
   double precision, public                :: tc_kappa_perp = -1.0d0
-  !$acc declare copyin(tc_kappa_perp)
+  ${GPU_DECLARE_COPYIN('tc_kappa_perp')}$
 
   ! HYPERTC_ANISO implies HYPERTC (enforced in config_schema.toml)
 #:if defined('HYPERTC')
   !> sig_par = tc_kappa0_par * Te^2.5; if <= 0 and tc_kappa_par <= 0, set from Spitzer in phys_units()
   double precision, public                :: tc_kappa0_par = -1.0d0
-  !$acc declare copyin(tc_kappa0_par)
+  ${GPU_DECLARE_COPYIN('tc_kappa0_par')}$
 
 #:if defined('HYPERTC_ANISO')
   !> Indices of the heat-flux vector components q_(1:ndir); this is the full Cartesian heat-flux vector
   integer, allocatable, public            :: q_(:)
-  !$acc declare create(q_)
+  ${GPU_DECLARE_CREATE('q_')}$
 
   !> Magnetisation chi prefactor: chi = htc_Cchi * B * Te^1.5 / n
   double precision, public                :: htc_Cchi = 0.0d0
-  !$acc declare copyin(htc_Cchi)
+  ${GPU_DECLARE_COPYIN('htc_Cchi')}$
 #:else
   !> Index of the field-aligned heat flux scalar q_ (isotropic HTC only)
   integer, public                         :: q_ = -1
-  !$acc declare create(q_)
+  ${GPU_DECLARE_CREATE('q_')}$
 #:endif
 #:endif
 
   !> GLM-MHD parameter: ratio of the diffusive and advective time scales for div b
   !> taking values within [0, 1]
   double precision, public                :: mhd_glm_alpha = 0.5d0
-  !$acc declare copyin(mhd_glm_alpha)
+  ${GPU_DECLARE_COPYIN('mhd_glm_alpha')}$
 
   !> Whether to use gravity
   logical, public                         :: mhd_gravity = .false.
-  !$acc declare copyin(mhd_gravity)
+  ${GPU_DECLARE_COPYIN('mhd_gravity')}$
 
   !> The resistivity
   double precision, public                :: mhd_eta = 0.0d0
-  !$acc declare copyin(mhd_eta)
+  ${GPU_DECLARE_COPYIN('mhd_eta')}$
 
   !> switch for adding resistive terms
   logical, public                         :: mhd_resistivity = .false.
-  !$acc declare copyin(mhd_resistivity)
+  ${GPU_DECLARE_COPYIN('mhd_resistivity')}$
+
+  !> resistivity from the user function eta_usr in mod_usr instead of the
+  !> uniform mhd_eta (compile time, ETA_USR); mhd_eta is then the upper
+  !> bound of eta used for the time step
+  logical, public                         :: mhd_eta_usr = .false.
 
   !> Whether plasma is partially ionized
   logical, public                         :: mhd_partial_ionization = .false.
-  !$acc declare copyin(mhd_partial_ionization)
+  ${GPU_DECLARE_COPYIN('mhd_partial_ionization')}$
 
   !> switch for radiative cooling
   logical, public                         :: mhd_radiative_cooling = .false.
-  !$acc declare copyin(mhd_radiative_cooling)
+  ${GPU_DECLARE_COPYIN('mhd_radiative_cooling')}$
 
   !> Whether particles module is added
   logical, public                         :: mhd_particles = .false.
-  !$acc declare copyin(mhd_particles)
+  ${GPU_DECLARE_COPYIN('mhd_particles')}$
 
   !> switch for source user
   logical, public                         :: mhd_source_usr = .false.
-  !$acc declare copyin(mhd_source_usr)
+  ${GPU_DECLARE_COPYIN('mhd_source_usr')}$
+
+  !> Smallest gas pressure allowed in a reconstructed face state, applied by
+  !> fix_prim_state. Zero, the default, clips only negative values.
+  double precision, public                :: mhd_small_pressure = 0.0d0
+  !> Smallest density allowed in a reconstructed face state
+  double precision, public                :: mhd_small_density  = 0.0d0
+  ${GPU_DECLARE_COPYIN('mhd_small_pressure,mhd_small_density')}$
 
 #:enddef
 
@@ -175,10 +195,12 @@
 
     namelist /mhd_list/ mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity,&
       mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, &
-      mhd_resistivity, mhd_hyperbolic_thermal_conduction, &
+      mhd_resistivity, mhd_eta_usr, mhd_hyperbolic_thermal_conduction, &
       mhd_hyperbolic_thermal_conduction_anisotropic, &
       tc_kappa_par, tc_kappa_perp, &
-      mhd_energy_only
+      H_ion_fr, He_ion_fr, He_ion_fr2, &
+      mhd_energy_only, &
+      mhd_small_pressure, mhd_small_density
 
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -186,13 +208,16 @@
 111    close(unitpar)
     end do
 
-#ifdef _OPENACC
-    !$acc update device(mhd_energy, &
-    !$acc&     mhd_gamma, mhd_glm_alpha, &
-    !$acc&     mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, &
-    !$acc&     He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity)
-    !$acc update device(tc_kappa_par, tc_kappa_perp)
-#endif
+    ${GPU_UPDATE_DEVICE('mhd_energy, mhd_gamma, mhd_glm_alpha, mhd_gravity, mhd_n_tracer, mhd_radiative_cooling, He_abundance, mhd_eta, mhd_source_usr, mhd_resistivity')}$
+    if (mhd_eta_usr .and. mhd_eta <= 0.0d0) call mpistop(&
+       "mhd_eta_usr needs mhd_eta > 0: the largest eta, used for the time step.")
+    if (mhd_small_pressure < 0.0d0) call mpistop(&
+       "mhd_small_pressure should be positive.")
+    if (mhd_small_density < 0.0d0) call mpistop(&
+       "mhd_small_density should be positive.")
+
+    ${GPU_UPDATE_DEVICE('tc_kappa_par, tc_kappa_perp')}$
+    ${GPU_UPDATE_DEVICE('mhd_small_pressure, mhd_small_density')}$
 
   end subroutine read_params
 #:enddef
@@ -214,7 +239,7 @@
     kB = kB_cgs
     !> eq_state_units by default, to be implemented
     a = 1.d0+4.d0*He_abundance
-    b = 2.d0+3.d0*He_abundance
+    b = 1.d0+H_ion_fr+He_abundance*(He_ion_fr*(He_ion_fr2+1.d0)+1.d0)
 
     if(unit_density/=1.d0 .or. unit_numberdensity/=1.d0) then
       if(unit_density/=1.d0) then
@@ -281,21 +306,22 @@
       end if
     end if
     unit_mass=unit_density*unit_length**3
+    unit_magneticfield=dsqrt(4.d0*dpi*unit_pressure)
 
-    !$acc update device(unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass)
+    ${GPU_UPDATE_DEVICE('unit_density, unit_numberdensity, unit_temperature, unit_pressure, unit_velocity, unit_length, unit_time, unit_mass, unit_magneticfield')}$
 
 #:if defined('HYPERTC')
     if (tc_kappa0_par <= 0.0d0 .and. tc_kappa_par <= 0.0d0) &
       tc_kappa0_par = 8.0d-7 * unit_temperature**3.5d0 &
                     / (unit_length * unit_density * unit_velocity**3.0d0)
-    !$acc update device(tc_kappa0_par)
-    !$acc update device(tc_kappa_par)
+    ${GPU_UPDATE_DEVICE('tc_kappa0_par')}$
+    ${GPU_UPDATE_DEVICE('tc_kappa_par')}$
 #:endif
 #:if defined('HYPERTC_ANISO')
     htc_Cchi = 0.823d0 * (4.753567596681522d6 / 20.0d0) &
              * unit_magneticfield * unit_temperature**1.5d0 / unit_numberdensity
-    !$acc update device(htc_Cchi)
-    !$acc update device(tc_kappa_perp)
+    ${GPU_UPDATE_DEVICE('htc_Cchi')}$
+    ${GPU_UPDATE_DEVICE('tc_kappa_perp')}$
 #:endif
   end subroutine phys_units
 #:enddef
@@ -321,17 +347,19 @@
     need_global_cmax=.true.
     gamma_1=mhd_gamma-1.0_dp
     inv_gamma_1=1.0_dp/gamma_1
- !$acc update device(physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,gamma_1,inv_gamma_1)
+ ${GPU_UPDATE_DEVICE('physics_type, phys_energy, phys_total_energy, phys_internal_e, phys_gamma, phys_partial_ionization,need_global_cmax,gamma_1,inv_gamma_1')}$
+
+    phys_write_info => mhd_write_info
 
     use_particles = mhd_particles
 
     ! Determine flux variables
     rho_ = var_set_rho()
-    !$acc update device(rho_)
+    ${GPU_UPDATE_DEVICE('rho_')}$
 
     allocate(mom(ndir))
     mom(:) = var_set_momentum(ndir)
-    !$acc update device(mom)
+    ${GPU_UPDATE_DEVICE('mom')}$
 
     ! Set index of energy variable
     if (mhd_energy) then
@@ -341,28 +369,28 @@
        e_ = -1
        p_ = -1
     end if
-    !$acc update device(e_,p_)
+    ${GPU_UPDATE_DEVICE('e_,p_')}$
 
     ! Set index for heat flux variable(s)
 #:if defined('HYPERTC_ANISO')
     allocate(q_(ndir))
     q_ = var_set_qvec(ndir, need_bc=.false.)
-    !$acc update device(q_)
+    ${GPU_UPDATE_DEVICE('q_')}$
 #:elif defined('HYPERTC')
     q_ = var_set_q(need_bc=.false.)
-    !$acc update device(q_)
+    ${GPU_UPDATE_DEVICE('q_')}$
 #:endif
 
     allocate(mag(ndir))
     mag(:) = var_set_bfield(ndir)
-    !$acc update device(mag)
+    ${GPU_UPDATE_DEVICE('mag')}$
 
     psi_ = var_set_fluxvar('psi', 'psi', need_bc=.false.)
-    !$acc update device(psi_)
+    ${GPU_UPDATE_DEVICE('psi_')}$
 
     !> GLM MHD uses split source addition in psi:
     any_source_split = .true.
-    !$acc update device(any_source_split)
+    ${GPU_UPDATE_DEVICE('any_source_split')}$
 
     ! Whether diagonal ghost cells are required for the physics
     phys_req_diagonal = .true.
@@ -372,12 +400,12 @@
     #:for i in range(1, N_TRACER_+1)
         tracer(${i}$) = var_set_fluxvar("trc", "trp", ${i}$, need_bc=.false.)
     #:endfor
-    !$acc update device(tracer)
+    ${GPU_UPDATE_DEVICE('tracer')}$
 #:endif
 
     ! set number of variables which need update ghostcells
     nwgc=nwflux
-    !$acc update device(nwgc)
+    ${GPU_UPDATE_DEVICE('nwgc')}$
 
     ! Define custom flux types:
     if (.not. allocated(flux_type)) then
@@ -392,10 +420,16 @@
     do idir=1,ndir
        flux_type(idir,mag(idir))=flux_tvdlf
     end do
-    !$acc update device(flux_type)
+    ${GPU_UPDATE_DEVICE('flux_type')}$
 
-    
-! use cycle, needs to be dealt with:    
+    nvector      = 2 ! No. vector vars
+    allocate(iw_vector(nvector))
+    iw_vector(1) = mom(1) - 1
+    iw_vector(2) = mag(1) - 1
+    ${GPU_UPDATE_DEVICE('nvector, iw_vector')}$
+
+
+! use cycle, needs to be dealt with:
 !    ! Initialize particles module
 !    if (mhd_particles) then
 !       call particles_init()
@@ -405,8 +439,8 @@
 #:if defined('COOLING')
     call radiative_cooling_init_params(phys_gamma,He_abundance)
     call radiative_cooling_init(rc_fl)
-    !$acc update device(rc_fl)
-    !$acc enter data copyin(rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc)
+    ${GPU_UPDATE_DEVICE('rc_fl')}$
+    ${GPU_ENTER_DATA_COPYIN('rc_fl%tcool,rc_fl%Lcool, rc_fl%Yc')}$
 #:endif
 
   end subroutine phys_init
@@ -414,18 +448,18 @@
 
 #:def phys_get_dt()
   subroutine phys_get_dt(w, x, dx, dtnew)
-  !$acc routine seq
 #:if defined('GRAVITY')
   use mod_usr, only: gravity_field
 #:endif    
 #:if defined('RESISTIVE')
   use mod_global_parameters, only: dtdiffpar
 #:endif    
-    real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
-    real(dp), intent(out)  :: dtnew
-    ! .. local ..
-    integer                :: idim
-    real(dp)               :: field
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)   :: w(nw_phys), x(1:ndim), dx(1:ndim)
+  real(dp), intent(out)  :: dtnew
+  ! .. local ..
+  integer                :: idim
+  real(dp)               :: field
 
     dtnew = huge(1.0d0)
     
@@ -449,7 +483,6 @@
 #:def addsource_local()
 subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
     qsourcesplit)
-  !$acc routine seq
 #:if defined('SOURCE_USR')
   use mod_usr, only: addsource_usr
 #:endif
@@ -459,8 +492,8 @@ subroutine addsource_local(qdt, dtfactor, qtC, wCT, wCTprim, qt, wnew, x, dr, &
 #:if defined('COOLING')
   use mod_radiative_cooling, only: rc_fl, radiative_cooling_add_source
 #:endif
-
   use mod_global_parameters, only:cmax_global
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCT(nw_phys), wCTprim(nw_phys)
   real(dp), intent(in)     :: x(1:ndim), dr(ndim)
@@ -507,10 +540,13 @@ end subroutine addsource_local
 #:def addsource_compact()
 subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, qt, wnew, x, dx, &
      qsourcesplit)
-  !$acc routine seq
 #:if defined('HYPERTC')
   use mod_global_parameters, only: dt, ndir, smalldouble, courantpar
 #:endif
+#:if defined('ETA_USR')
+  use mod_usr, only: eta_usr
+#:endif
+  ${GPU_ROUTINE_SEQ()}$
 
   real(dp), intent(in)     :: qdt, dtfactor, qtC, qt
   real(dp), intent(in)     :: wCTprim1(nw_phys,3),wCTprim2(nw_phys,3),wCTprim3(nw_phys,3)
@@ -521,6 +557,10 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
   real(dp)                 :: laplb_cd2
   real(dp)                 :: Jdir1,Jdir2,Jdir3
   integer                  :: idir
+#:if defined('ETA_USR')
+  real(dp)                 :: Jc(3), xn(1:ndim), eta_c, eta_p, eta_m
+  real(dp)                 :: geta(3), getaxj(3)
+#:endif
 #:if defined('HYPERTC')
     real(dp) :: Te_c, rho_c, pth_c
     real(dp) :: gradT(3), Bmag2, Bmag, Bmag2_safe, bgradT
@@ -538,10 +578,51 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
      !---------------------------------
 
 #:if defined('RESISTIVE')
-     ! using the compact stencil formulation and adopting constant eta
+     ! using the compact stencil formulation: with a uniform eta (mhd_eta),
+     ! or with eta from the user function eta_usr (ETA_USR)
+
+     ! J = curl B by central differences
+     Jdir1 = (wCTprim2(iw_mag(3),3) - wCTprim2(iw_mag(3),1)) &
+          / 2.0_dp/dx(2) &
+          - (wCTprim3(iw_mag(2),3) - wCTprim3(iw_mag(2),1)) &
+          / 2.0_dp/dx(3)
+     Jdir2 = (wCTprim3(iw_mag(1),3) - wCTprim3(iw_mag(1),1)) &
+          /2.0_dp/dx(3) &
+          - (wCTprim1(iw_mag(3),3) - wCTprim1(iw_mag(3),1)) &
+          / 2.0_dp/dx(1)
+     Jdir3 = (wCTprim1(iw_mag(2),3) - wCTprim1(iw_mag(2),1)) &
+          /2.0_dp/dx(1) &
+          - (wCTprim2(iw_mag(1),3) - wCTprim2(iw_mag(1),1)) &
+          / 2.0_dp/dx(2)
+
+#:if defined('ETA_USR')
+     ! eta = eta_usr(wprim, J, x, t) at this cell and at its six face
+     ! neighbours, grad(eta) by central differences. J is only known at
+     ! this cell (J at a neighbour needs cells outside the compact stencil),
+     ! so the neighbours are evaluated with this cell's J: grad(eta) follows
+     ! the variation of eta with position, time and state, not with J.
+     Jc = [Jdir1, Jdir2, Jdir3]
+     eta_c = eta_usr(wCTprim1(:,2), Jc, x, qtC)
+
+     xn = x; xn(1) = x(1) + dx(1); eta_p = eta_usr(wCTprim1(:,3), Jc, xn, qtC)
+     xn = x; xn(1) = x(1) - dx(1); eta_m = eta_usr(wCTprim1(:,1), Jc, xn, qtC)
+     geta(1) = (eta_p - eta_m) / (2.0_dp*dx(1))
+     xn = x; xn(2) = x(2) + dx(2); eta_p = eta_usr(wCTprim2(:,3), Jc, xn, qtC)
+     xn = x; xn(2) = x(2) - dx(2); eta_m = eta_usr(wCTprim2(:,1), Jc, xn, qtC)
+     geta(2) = (eta_p - eta_m) / (2.0_dp*dx(2))
+     xn = x; xn(3) = x(3) + dx(3); eta_p = eta_usr(wCTprim3(:,3), Jc, xn, qtC)
+     xn = x; xn(3) = x(3) - dx(3); eta_m = eta_usr(wCTprim3(:,1), Jc, xn, qtC)
+     geta(3) = (eta_p - eta_m) / (2.0_dp*dx(3))
+
+     ! -curl(eta J) = eta lapl(B) - grad(eta) x J
+     getaxj(1) = geta(2)*Jdir3 - geta(3)*Jdir2
+     getaxj(2) = geta(3)*Jdir1 - geta(1)*Jdir3
+     getaxj(3) = geta(1)*Jdir2 - geta(2)*Jdir1
+#:endif
 
      ! > eta*(laplacian of B)_idir          added to B_idir
      ! > B_idir*[eta*(laplacian of B)_idir] added to e_
+     ! (with ETA_USR both minus (grad(eta) x J)_idir)
      do idir = 1,ndim
         laplb_cd2 =  &
              ( &
@@ -563,24 +644,23 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
              ) &
              / dx(3)**2 
 
+#:if defined('ETA_USR')
+        wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) &
+             + qdt*(eta_c*laplb_cd2 - getaxj(idir))
+        wnew(iw_e) = wnew(iw_e) &
+             + qdt*(eta_c*laplb_cd2 - getaxj(idir)) * wCTprim1(iw_mag(1)-1+idir,2)
+#:else
         wnew(iw_mag(1)-1+idir) = wnew(iw_mag(1)-1+idir) + qdt*mhd_eta*laplb_cd2
         wnew(iw_e) = wnew(iw_e) + qdt * mhd_eta * laplb_cd2 * wCTprim1(iw_mag(1)-1+idir,2)
+#:endif
      enddo
 
      ! > eta* J**2 added to e
-     Jdir1 = (wCTprim2(iw_mag(3),3) - wCTprim2(iw_mag(3),1)) &
-          / 2.0_dp/dx(2) &
-          - (wCTprim3(iw_mag(2),3) - wCTprim3(iw_mag(2),1)) &
-          / 2.0_dp/dx(3)
-     Jdir2 = (wCTprim3(iw_mag(1),3) - wCTprim3(iw_mag(1),1)) &
-          /2.0_dp/dx(3) &
-          - (wCTprim1(iw_mag(3),3) - wCTprim1(iw_mag(3),1)) &
-          / 2.0_dp/dx(1)
-     Jdir3 = (wCTprim1(iw_mag(2),3) - wCTprim1(iw_mag(2),1)) &
-          /2.0_dp/dx(1) &
-          - (wCTprim2(iw_mag(1),3) - wCTprim2(iw_mag(1),1)) &
-          / 2.0_dp/dx(2)
+#:if defined('ETA_USR')
+     wnew(iw_e) = wnew(iw_e) + qdt*eta_c*(Jdir1**2+Jdir2**2+Jdir3**2)
+#:else
      wnew(iw_e) = wnew(iw_e) + qdt*mhd_eta*(Jdir1**2+Jdir2**2+Jdir3**2)
+#:endif
 #:endif
 
 #:if defined('HYPERTC')
@@ -703,9 +783,134 @@ subroutine addsource_compact(qdt, dtfactor, qtC, wCTprim1, wCTprim2, wCTprim3, q
 end subroutine addsource_compact
 #:enddef
 
+#:if GEOM == 'spherical'
+!> Curvature source terms for spherical coordinates, ported from upstream
+!> MPI-AMRVAC's mhd_add_source_geom (3D, cell-centred GLM-MHD branch).
+!> *Every* geometric prefactor is the discrete dAdV = (A_upper - A_lower)/dV
+!> rather than the continuous 2/r and cot(theta)/r upstream uses directly, for
+!> consistency with this fork's HD addsource_geometry
+!> (src/hd/mod_hd_templates.fpp).  For the metrics fill_geometry_device builds,
+!> dAdV(1) = 2*<1/r> and dAdV(2) = <cot(theta)/r> exactly, so these terms are
+!> both well balanced and independent of where in the cell bgeo%x sits - which
+!> matters, since bgeo%x is the volume barycentre, not the midpoint of the
+!> faces.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  ${GPU_ROUTINE_SEQ()}$
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (rho, velocity, pressure, B, psi) at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, theta, phi); unused - every geometric factor
+  !> comes from dAdV, see the note above
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: rho, ptot, inv_r, cot_r, source
+
+  rho   = wprim(iw_rho)
+  ptot  = wprim(iw_e) + 0.5_dp * (wprim(iw_mag(1))**2 + wprim(iw_mag(2))**2 + &
+     wprim(iw_mag(3))**2)
+  inv_r = 0.5_dp * dAdV(1)   ! <1/r>
+  cot_r = dAdV(2)            ! <cot(theta)/r>
+
+  ! s[m_r] = (2 ptot + rho (v_theta^2 + v_phi^2) - (B_theta^2 + B_phi^2)) / r
+  source = (2.0_dp * ptot + rho * (wprim(iw_mom(2))**2 + &
+     wprim(iw_mom(3))**2) - (wprim(iw_mag(2))**2 + wprim(iw_mag(3))**2)) * inv_r
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source
+
+  ! s[m_theta] = (ptot cot(theta) + rho v_phi^2 cot(theta) - B_phi^2 cot(theta)
+  !               - rho v_r v_theta + B_r B_theta) / r
+  source = (ptot + rho * wprim(iw_mom(3))**2 - wprim(iw_mag(3))**2) * cot_r + &
+     (wprim(iw_mag(1)) * wprim(iw_mag(2)) - rho * wprim(iw_mom(1)) * &
+     wprim(iw_mom(2))) * inv_r
+  wnew(iw_mom(2)) = wnew(iw_mom(2)) + qdt * source
+
+  ! s[m_phi] = (-rho v_phi (v_r + v_theta cot(theta))
+  !             + B_phi (B_r + B_theta cot(theta))) / r
+  source = (wprim(iw_mag(3)) * wprim(iw_mag(1)) - rho * wprim(iw_mom(3)) * &
+     wprim(iw_mom(1))) * inv_r + (wprim(iw_mag(3)) * wprim(iw_mag(2)) - rho * &
+     wprim(iw_mom(3)) * wprim(iw_mom(2))) * cot_r
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source
+
+  ! s[B_r] = psi * 2/r (GLM divergence-cleaning coupling only)
+  source = 2.0_dp * wprim(psi_) * inv_r
+  wnew(iw_mag(1)) = wnew(iw_mag(1)) + qdt * source
+
+  ! s[B_theta] = (v_r B_theta - v_theta B_r + psi cot(theta)) / r
+  source = (wprim(iw_mom(1)) * wprim(iw_mag(2)) - wprim(iw_mom(2)) * &
+     wprim(iw_mag(1))) * inv_r + wprim(psi_) * cot_r
+  wnew(iw_mag(2)) = wnew(iw_mag(2)) + qdt * source
+
+  ! s[B_phi] = (v_r B_phi - v_phi B_r
+  !             + (v_theta B_phi - v_phi B_theta) cot(theta)) / r
+  source = (wprim(iw_mom(1)) * wprim(iw_mag(3)) - wprim(iw_mom(3)) * &
+     wprim(iw_mag(1))) * inv_r + (wprim(iw_mom(2)) * wprim(iw_mag(3)) - &
+     wprim(iw_mom(3)) * wprim(iw_mag(2))) * cot_r
+  wnew(iw_mag(3)) = wnew(iw_mag(3)) + qdt * source
+
+  ! No geometric source term for psi_ itself (matches upstream).
+
+end subroutine addsource_geometry
+#:enddef
+#:elif GEOM == 'cylindrical'
+!> Curvature source terms for cylindrical (r, z, phi) coordinates, ported
+!> from upstream MPI-AMRVAC's mhd_add_source_geom (cylindrical branch,
+!> cell-centred GLM-MHD). Only m_r, m_phi, B_phi and B_r (via the GLM psi
+!> coupling) pick up curvature terms; m_z and B_z do not. As in the spherical
+!> branch above, every geometric prefactor is the discrete dAdV rather than
+!> upstream's continuous 1/r, and here dAdV(1) is exactly <1/r> - and, because
+!> a cylindrical radial face area is linear in r, exactly 1/r_midpoint as well.
+!> It is *not* 1/x(1): bgeo%x holds the volume barycentre, which for a
+!> cylindrical annulus sits outside the midpoint.
+#:def addsource_geometry()
+subroutine addsource_geometry(qdt, wprim, wnew, x, dAdV)
+  ${GPU_ROUTINE_SEQ()}$
+
+  real(dp), intent(in)     :: qdt
+  !> primitive variables (rho, velocity, pressure, B, psi) at the current stage
+  real(dp), intent(in)     :: wprim(nw_phys)
+  !> cell-centre coordinates (r, z, phi); unused - every geometric factor
+  !> comes from dAdV, see the note above
+  real(dp), intent(in)     :: x(1:ndim)
+  !> (upper minus lower face area) / cell volume, per direction
+  real(dp), intent(in)     :: dAdV(1:ndim)
+  real(dp), intent(inout)  :: wnew(nw_phys)
+  ! .. local ..
+  real(dp)                 :: rho, ptot, inv_r, source
+
+  rho   = wprim(iw_rho)
+  ptot  = wprim(iw_e) + 0.5_dp * (wprim(iw_mag(1))**2 + wprim(iw_mag(2))**2 + &
+     wprim(iw_mag(3))**2)
+  inv_r = dAdV(1)   ! <1/r>
+
+  ! s[m_r] = (ptot - B_phi^2 + rho v_phi^2) / r
+  source = (ptot - wprim(iw_mag(3))**2 + rho * wprim(iw_mom(3))**2) * inv_r
+  wnew(iw_mom(1)) = wnew(iw_mom(1)) + qdt * source
+
+  ! s[m_phi] = (-rho v_phi v_r + B_phi B_r) / r
+  source = (wprim(iw_mag(3)) * wprim(iw_mag(1)) - rho * wprim(iw_mom(3)) * &
+     wprim(iw_mom(1))) * inv_r
+  wnew(iw_mom(3)) = wnew(iw_mom(3)) + qdt * source
+
+  ! s[B_r] = psi / r (GLM divergence-cleaning coupling only)
+  source = wprim(psi_) * inv_r
+  wnew(iw_mag(1)) = wnew(iw_mag(1)) + qdt * source
+
+  ! s[B_phi] = (B_phi v_r - B_r v_phi) / r
+  source = (wprim(iw_mag(3)) * wprim(iw_mom(1)) - wprim(iw_mag(1)) * &
+     wprim(iw_mom(3))) * inv_r
+  wnew(iw_mag(3)) = wnew(iw_mag(3)) + qdt * source
+
+end subroutine addsource_geometry
+#:enddef
+#:endif
+
 #:def to_primitive()
   pure subroutine to_primitive(u)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
 
     u(iw_mom(1))=u(iw_mom(1))/u(iw_rho)
@@ -720,7 +925,7 @@ end subroutine addsource_compact
 
 #:def to_conservative()  
   pure subroutine to_conservative(u)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(inout) :: u(nw_phys)
 
     ! Compute energy from pressure and kinetic energy
@@ -735,13 +940,32 @@ end subroutine addsource_compact
   end subroutine to_conservative
 #:enddef
 
+#:def fix_prim_state()
+  !> Make a reconstructed primitive face state admissible before it is handed
+  !> to the Riemann solver. The MUSCL reconstruction limits every slot of the
+  !> state independently, so a face state can come out with a negative
+  !> density or pressure even where both neighbouring cells are admissible.
+  !> Floor both, at mhd_small_density and mhd_small_pressure in &mhd_list.
+  !> Both default to zero, in which case the max() calls only clip values
+  !> that were already negative and leave every admissible state bit-for-bit
+  !> unchanged. Only the face states are floored, not the cell averages.
+  pure subroutine fix_prim_state(u)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(inout) :: u(nw_phys)
+
+    u(iw_rho) = max(u(iw_rho), mhd_small_density)
+    u(iw_e)   = max(u(iw_e),   mhd_small_pressure)
+
+  end subroutine fix_prim_state
+#:enddef
+
 #:def get_flux()
   subroutine get_flux(u, xC, flux_dim, flux)
     use mod_global_parameters, only: cmax_global
 #:if defined('HYPERTC')
     use mod_global_parameters, only: smalldouble
 #:endif
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: u(nw_phys)
     real(dp), intent(in)  :: xC(1:ndim)
     integer, intent(in)   :: flux_dim
@@ -821,7 +1045,7 @@ end subroutine addsource_compact
 !> Returns maximum local signal speed |v_n| + c_f (fast magnetosonic) from primitive state u in direction flux_dim;
 !> used in LLF/TVDLF flux estimation.
 pure real(dp) function get_cmax(u, x, flux_dim) result(wC)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: u(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
   integer, intent(in)   :: flux_dim
@@ -840,7 +1064,7 @@ end function get_cmax
 
 #:def get_rho()
   pure real(dp) function get_rho(w, x) result(rho)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)  :: w(nw_phys)
     real(dp), intent(in)  :: x(1:ndim)
 
@@ -850,7 +1074,7 @@ end function get_cmax
 
 #:def get_pthermal()
 pure real(dp) function get_pthermal(w, x) result(pth)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: w(nw_phys)
   real(dp), intent(in)  :: x(1:ndim)
 
@@ -861,7 +1085,7 @@ end function get_pthermal
 
 #:def get_Rfactor()
 pure real(dp) function get_Rfactor() result(Rfactor)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   Rfactor = 1.0d0
 end function get_Rfactor
 #:enddef
@@ -870,7 +1094,7 @@ end function get_Rfactor
 !> Davis (1988) min/max wave speed estimates wL = min(v_n - c_f), wR = max(v_n + c_f) (fast magnetosonic) over left/right states;
 !> used in HLL flux estimation.
 subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
-  !$acc routine seq
+  ${GPU_ROUTINE_SEQ()}$
   real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
   real(dp), intent(in)  :: xC(ndim)
   integer, intent(in)   :: flux_dim
@@ -900,6 +1124,400 @@ subroutine estimate_speeds_minmax(uL, uR, xC, flux_dim, wL, wR)
   wR = max(uL(iw_mom(flux_dim)) + cfL, uR(iw_mom(flux_dim)) + cfR)
 
 end subroutine estimate_speeds_minmax
+#:enddef
+
+#:def write_info()
+  !> Write this module's parameters to a snapshot
+  subroutine mhd_write_info(fh)
+    use mod_global_parameters
+    integer, intent(in)                 :: fh
+
+    integer                             :: er
+    integer, parameter                  :: n_par = 1
+    double precision                    :: values(n_par)
+    integer, dimension(MPI_STATUS_SIZE) :: st
+    character(len=name_len)             :: names(n_par)
+
+    call MPI_FILE_WRITE(fh, n_par, 1, MPI_INTEGER, st, er)
+
+    names(1) = "gamma"
+    values(1) = mhd_gamma
+    call MPI_FILE_WRITE(fh, values, n_par, MPI_DOUBLE_PRECISION, st, er)
+    call MPI_FILE_WRITE(fh, names, n_par * name_len, MPI_CHARACTER, st, er)
+  end subroutine mhd_write_info
+#:enddef
+
+#:def estimate_speeds_hllc()
+!> Outer signal speeds for HLLC: the same Davis (1988) fast-magnetosonic bounds
+!> HLL uses, as upstream MPI-AMRVAC does.
+subroutine estimate_speeds_hllc(uL, uR, xC, flux_dim, sL, sR)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)  :: xC(ndim)
+  integer,  intent(in)  :: flux_dim
+  real(dp), intent(out) :: sL, sR
+
+  call estimate_speeds_minmax(uL, uR, xC, flux_dim, sL, sR)
+
+end subroutine estimate_speeds_hllc
+#:enddef
+
+
+#:def hllc_flux()
+!> HLLC flux for ideal MHD after Li S., JCP 203 (2005) 344, ported from
+!> upstream MPI-AMRVAC's mhd_get_lCD/mhd_get_wCD.
+!> The contact speed is that of the HLL average state, s* = m_n/rho of U_hll,
+!> and the magnetic field in the star region is B_hll on both sides of the
+!> contact. Every slot without a star-state formula of its own (B, psi and the
+!> HYPERTC heat fluxes) takes U* = U_hll, which makes its flux exactly the HLL
+!> flux. B_n and psi are overwritten afterwards by the flux_type override in
+!> riemann_hllc_prim, so they get the same LLF flux as under 'hll' (upstream
+!> instead zeroes them in the star region).
+!> uL/uR are primitive on entry and conservative on exit. degenerate is set
+!> when sR - sL vanishes, and F is then left for the caller to replace with
+!> its LLF fallback.
+subroutine hllc_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)    :: flux_l(nw_flux), flux_r(nw_flux)
+  real(dp), intent(in)    :: sL, sR
+  integer,  intent(in)    :: flux_dim
+  real(dp), intent(out)   :: F(nw_flux)
+  logical,  intent(out)   :: degenerate
+
+  real(dp) :: whll(nw_flux)
+  real(dp) :: unL, unR, ds, s_star
+  real(dp), parameter :: eps = 1e-14_dp
+
+  degenerate = .false.
+
+  ! normal velocities, cached before uL/uR are overwritten to conservative
+  unL = uL(iw_mom(flux_dim))
+  unR = uR(iw_mom(flux_dim))
+
+  call to_conservative(uL)
+  call to_conservative(uR)
+
+  if (0._dp .le. sL) then
+    F = flux_l
+    return
+  elseif (0._dp .ge. sR) then
+    F = flux_r
+    return
+  end if
+
+  ds = sR - sL
+  if (ds <= eps*(abs(sL) + abs(sR))) then
+    degenerate = .true.
+    F = 0._dp
+    return
+  end if
+
+  ! intermediate HLL state, and the contact speed it implies
+  whll = (sR*uR(1:nw_flux) - sL*uL(1:nw_flux) + flux_l - flux_r) / ds
+  s_star = whll(iw_mom(flux_dim)) / whll(iw_rho)
+
+  if (s_star <= sL .or. s_star >= sR) then
+    ! contact speed outside the fan: fall back to the HLL flux
+    F = (sR*flux_l - sL*flux_r + sL*sR*(uR(1:nw_flux) - uL(1:nw_flux))) / ds
+    return
+  end if
+
+  ! On the contact itself take the side of the smaller sector of the fan, as
+  ! upstream does.
+  if (s_star > 0._dp .or. (s_star == 0._dp .and. -sL < sR)) then
+    call hllc_star_flux(uL, flux_l, sL, unL, s_star, whll, flux_dim, F)
+  else
+    call hllc_star_flux(uR, flux_r, sR, unR, s_star, whll, flux_dim, F)
+  end if
+
+end subroutine hllc_flux
+
+!> Flux F_*K = F_K + s_K (U_*K - U_K) of one star state, Li (2005) Eqs. 17-31.
+!> uK is conservative, unK its normal velocity.
+subroutine hllc_star_flux(uK, fK, sK, unK, s_star, whll, flux_dim, F)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: uK(nw_phys), fK(nw_flux)
+  real(dp), intent(in)  :: sK, unK, s_star
+  real(dp), intent(in)  :: whll(nw_flux)
+  integer,  intent(in)  :: flux_dim
+  real(dp), intent(out) :: F(nw_flux)
+
+  real(dp) :: ustar(nw_flux)
+  real(dp) :: inv_ds_star, rho_fac, bn_star, ptot_star, vdotb_hll
+  integer  :: idir
+
+  inv_ds_star = 1._dp / (sK - s_star)
+  rho_fac     = (sK - unK) * inv_ds_star
+  bn_star     = whll(iw_mag(flux_dim))
+
+  ! magnetic field (Eq. 31), psi and any heat flux slots: the HLL state
+  ustar = whll
+
+  ustar(iw_rho) = uK(iw_rho) * rho_fac
+#:if defined('N_TRACER')
+  #:for i in range(1, N_TRACER_+1)
+  ustar(tracer(${i}$)) = uK(tracer(${i}$)) * rho_fac
+  #:endfor
+#:endif
+
+  ! momentum (Eqs. 20-22)
+  do idir = 1, 3
+     if (idir == flux_dim) then
+        ustar(iw_mom(idir)) = ustar(iw_rho) * s_star
+     else
+        ustar(iw_mom(idir)) = (sK*uK(iw_mom(idir)) - fK(iw_mom(idir)) &
+             - bn_star*whll(iw_mag(idir))) * inv_ds_star
+     end if
+  end do
+
+  ! total pressure (Eq. 17) and energy (Eq. 31)
+  ptot_star = uK(iw_rho)*(sK - unK)*(s_star - unK) &
+       + fK(iw_mom(flux_dim)) - uK(iw_mom(flux_dim))*unK + bn_star**2
+  vdotb_hll = (whll(iw_mom(1))*whll(iw_mag(1)) + whll(iw_mom(2))*whll(iw_mag(2)) &
+       + whll(iw_mom(3))*whll(iw_mag(3))) / whll(iw_rho)
+  ustar(iw_e) = (sK*uK(iw_e) - fK(iw_e) + s_star*ptot_star - vdotb_hll*bn_star) &
+       * inv_ds_star
+
+  F = fK + sK*(ustar - uK(1:nw_flux))
+
+end subroutine hllc_star_flux
+#:enddef
+
+
+#:def estimate_speeds_hlld()
+!> Outer signal speeds for HLLD: the same Davis (1988) fast-magnetosonic bounds
+!> HLL uses, as upstream MPI-AMRVAC does.
+subroutine estimate_speeds_hlld(uL, uR, xC, flux_dim, sL, sR)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)  :: xC(ndim)
+  integer,  intent(in)  :: flux_dim
+  real(dp), intent(out) :: sL, sR
+
+  call estimate_speeds_minmax(uL, uR, xC, flux_dim, sL, sR)
+
+end subroutine estimate_speeds_hlld
+#:enddef
+
+
+#:def hlld_flux()
+!> HLLD flux for ideal MHD after Miyoshi T. & Kusano K., JCP 208 (2005) 315,
+!> the five-wave solver upstream MPI-AMRVAC has as get_Riemann_flux_hlld.
+!> The fan sL < sL* < sM < sR* < sR is resolved into the four states
+!> U*L, U**L, U**R, U*R; total pressure, normal velocity sM and normal field
+!> are constant across it.
+!> The normal field is that of the HLL average state, bx = B_n of U_hll
+!> (Li 2005 Eq. 33), as upstream and as hllc_flux. Every slot without a
+!> star-state formula of its own (psi, B_n, the HYPERTC heat fluxes) takes
+!> U* = U** = U_hll, which makes its flux exactly the HLL flux; B_n and psi are
+!> then overwritten by the flux_type override in riemann_hlld_prim, as under
+!> 'hll' and 'hllc'. Unlike upstream, the pole of Eqs. 44-47 (sK meeting the
+!> star Alfven speed) is regularised, see hlld_star_state.
+!> uL/uR are primitive on entry and conservative on exit. degenerate is set
+!> when sR - sL vanishes, and F is then left for the caller to replace with
+!> its LLF fallback.
+subroutine hlld_flux(uL, uR, flux_l, flux_r, sL, sR, flux_dim, F, degenerate)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(inout) :: uL(nw_phys), uR(nw_phys)
+  real(dp), intent(in)    :: flux_l(nw_flux), flux_r(nw_flux)
+  real(dp), intent(in)    :: sL, sR
+  integer,  intent(in)    :: flux_dim
+  real(dp), intent(out)   :: F(nw_flux)
+  logical,  intent(out)   :: degenerate
+
+  real(dp) :: whll(nw_flux), usL(nw_flux), usR(nw_flux), uss(nw_flux)
+  real(dp) :: unL, unR, ptL, ptR, ds, suL, suR, sM, pt_star, bx, sK2
+  real(dp), parameter :: eps = 1e-14_dp
+
+  degenerate = .false.
+
+  ! normal velocities and total pressures, cached before uL/uR are
+  ! overwritten to conservative
+  unL = uL(iw_mom(flux_dim))
+  unR = uR(iw_mom(flux_dim))
+  ptL = uL(iw_e) + 0.5_dp*(uL(iw_mag(1))**2 + uL(iw_mag(2))**2 + uL(iw_mag(3))**2)
+  ptR = uR(iw_e) + 0.5_dp*(uR(iw_mag(1))**2 + uR(iw_mag(2))**2 + uR(iw_mag(3))**2)
+
+  call to_conservative(uL)
+  call to_conservative(uR)
+
+  if (0._dp .le. sL) then
+    F = flux_l
+    return
+  elseif (0._dp .ge. sR) then
+    F = flux_r
+    return
+  end if
+
+  ds = sR - sL
+  if (ds <= eps*(abs(sL) + abs(sR))) then
+    degenerate = .true.
+    F = 0._dp
+    return
+  end if
+
+  whll = (sR*uR(1:nw_flux) - sL*uL(1:nw_flux) + flux_l - flux_r) / ds
+  bx   = whll(iw_mag(flux_dim))
+
+  ! contact speed (Eq. 38) and star total pressure (Eq. 41). suR > 0 > suL,
+  ! since sL < unL and sR > unR, so the denominator cannot vanish.
+  suL = uL(iw_rho)*(sL - unL)
+  suR = uR(iw_rho)*(sR - unR)
+  sM  = (suR*unR - suL*unL - ptR + ptL) / (suR - suL)
+
+  if (sM <= sL .or. sM >= sR) then
+    ! contact speed outside the fan: fall back to the HLL flux
+    F = (sR*flux_l - sL*flux_r + sL*sR*(uR(1:nw_flux) - uL(1:nw_flux))) / ds
+    return
+  end if
+
+  pt_star = (suR*ptL - suL*ptR + suL*suR*(unR - unL)) / (suR - suL)
+
+  ! both star states are needed for either double-star state
+  call hlld_star_state(uL, flux_l, sL, unL, sM, pt_star, bx, whll, flux_dim, usL)
+  call hlld_star_state(uR, flux_r, sR, unR, sM, pt_star, bx, whll, flux_dim, usR)
+
+  ! Alfven waves (Eq. 51); with bx = 0 they merge with the contact and the
+  ! double-star regions have no width
+  if (sM >= 0._dp) then
+    sK2 = sM - abs(bx)/sqrt(usL(iw_rho))
+    if (sK2 <= 0._dp) then
+      call hlld_double_star_state(usL, usR, -1._dp, bx, flux_dim, uss)
+      F = flux_l + sK2*uss - (sK2 - sL)*usL - sL*uL(1:nw_flux)
+    else
+      F = flux_l + sL*(usL - uL(1:nw_flux))
+    end if
+  else
+    sK2 = sM + abs(bx)/sqrt(usR(iw_rho))
+    if (sK2 >= 0._dp) then
+      call hlld_double_star_state(usL, usR, 1._dp, bx, flux_dim, uss)
+      F = flux_r + sK2*uss - (sK2 - sR)*usR - sR*uR(1:nw_flux)
+    else
+      F = flux_r + sR*(usR - uR(1:nw_flux))
+    end if
+  end if
+
+end subroutine hlld_flux
+
+!> Star state U*_K between the fast wave sK and the Alfven wave sK*,
+!> Miyoshi & Kusano (2005) Eqs. 43-48. uK is conservative, fK its flux, unK
+!> its normal velocity. The energy follows from the Rankine-Hugoniot condition
+!> across sK with the flux actually used, which is Eq. 48 for ideal MHD and
+!> stays consistent where the energy flux has further terms (HYPERTC).
+subroutine hlld_star_state(uK, fK, sK, unK, sM, pt_star, bx, whll, flux_dim, ustar)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: uK(nw_phys), fK(nw_flux)
+  real(dp), intent(in)  :: sK, unK, sM, pt_star, bx
+  real(dp), intent(in)  :: whll(nw_flux)
+  integer,  intent(in)  :: flux_dim
+  real(dp), intent(out) :: ustar(nw_flux)
+
+  real(dp) :: rho_fac, rho_star, den, inv_den, fac_v, fac_b, vt, bt, vdotb_star
+  real(dp), parameter :: eps_den = 1e-2_dp   ! see the star-state comment below
+  integer  :: idir
+
+  ! psi, B_n (= bx) and any heat flux slots: the HLL state
+  ustar = whll
+
+  rho_fac  = (sK - unK) / (sK - sM)
+  rho_star = uK(iw_rho) * rho_fac
+  ustar(iw_rho) = rho_star
+#:if defined('N_TRACER')
+  #:for i in range(1, N_TRACER_+1)
+  ustar(tracer(${i}$)) = uK(tracer(${i}$)) * rho_fac
+  #:endfor
+#:endif
+
+  ! tangential velocity and field (Eqs. 44-47):
+  !   v*_t = v_t - fac_v*B_t,   B*_t = fac_b*B_t,
+  !   fac_v = bx (sM - unK)/den,  fac_b = 1 + rho (sK - unK)(sM - unK)/den,
+  !   den   = rho (sK - unK)(sK - sM) - bx^2 = rho* [(sK - sM)^2 - (sK* - sM)^2],
+  ! so den has a pole where the outer speed estimate meets the star Alfven
+  ! speed sK*. That is not only Miyoshi & Kusano's degenerate case (B_t = 0,
+  ! where the limit fac_v = 0, fac_b = 1 is exact): with the Davis bounds it
+  ! also happens at B_t /= 0, e.g. in Orszag-Tang, where |fac_v*B_t| reached
+  ! 10-90 against |v| ~ 1 and mirrored faces amplified their round-off
+  ! differences by bx^2/|den| ~ 1e5, breaking the point symmetry. 1/den is
+  ! therefore regularised as den/(den^2 + eps^2), eps = eps_den*|pt*|: exact
+  ! to O(eps^2/den^2) away from the pole, and going continuously to the
+  ! degenerate limit at it. A hard switch at |den| = eps instead jumps by
+  ! O(fac_v*B_t) there, so mirrored faces can still land on opposite sides.
+  ! Of eps_den = 1e-4, 1e-3 and 1e-2, only 1e-2 held Orszag-Tang (256^2,
+  ! koren, to t = 1) point-symmetric to round-off; the other two still lost
+  ! it from t = 0.93, 1e-3 more weakly. Against 1e-4, 1e-2 moved the density
+  ! by 2e-5 in L1, where hlld and hllc differ by 6e-2.
+  den     = uK(iw_rho)*(sK - unK)*(sK - sM) - bx**2
+  inv_den = den / max(den**2 + (eps_den*pt_star)**2, tiny(1._dp))
+  fac_v   = bx*(sM - unK)*inv_den
+  fac_b   = 1._dp + uK(iw_rho)*(sK - unK)*(sM - unK)*inv_den
+
+  vdotb_star = sM*bx
+  do idir = 1, 3
+     if (idir == flux_dim) then
+        ustar(iw_mom(idir)) = rho_star*sM
+     else
+        vt = uK(iw_mom(idir))/uK(iw_rho) - fac_v*uK(iw_mag(idir))
+        bt = fac_b*uK(iw_mag(idir))
+        ustar(iw_mom(idir)) = rho_star*vt
+        ustar(iw_mag(idir)) = bt
+        vdotb_star = vdotb_star + vt*bt
+     end if
+  end do
+
+  ustar(iw_e) = (sK*uK(iw_e) - fK(iw_e) + pt_star*sM - bx*vdotb_star) / (sK - sM)
+
+end subroutine hlld_star_state
+
+!> Double-star state U**_K between the Alfven wave sK* and the contact,
+!> Miyoshi & Kusano (2005) Eqs. 59-63, from both star states. side is -1 for
+!> K = L and +1 for K = R. Density, normal velocity and everything without a
+!> formula of its own are those of U*_K.
+subroutine hlld_double_star_state(usL, usR, side, bx, flux_dim, uss)
+  ${GPU_ROUTINE_SEQ()}$
+  real(dp), intent(in)  :: usL(nw_flux), usR(nw_flux)
+  real(dp), intent(in)  :: side, bx
+  integer,  intent(in)  :: flux_dim
+  real(dp), intent(out) :: uss(nw_flux)
+
+  real(dp) :: sqL, sqR, inv_sq, sgn, sqK, vL, vR, vt, bt, vdotb_s, vdotb_ss
+  integer  :: idir
+
+  sqL    = sqrt(usL(iw_rho))
+  sqR    = sqrt(usR(iw_rho))
+  inv_sq = 1._dp / (sqL + sqR)
+  sgn    = sign(1._dp, bx)
+
+  if (side < 0._dp) then
+     uss = usL
+     sqK = sqL
+  else
+     uss = usR
+     sqK = sqR
+  end if
+
+  ! v*_K . B*_K and v** . B**; the normal components are common to both
+  vdotb_s  = 0._dp
+  vdotb_ss = 0._dp
+  do idir = 1, 3
+     vdotb_s = vdotb_s + uss(iw_mom(idir))*uss(iw_mag(idir))/uss(iw_rho)
+     if (idir == flux_dim) then
+        vdotb_ss = vdotb_ss + uss(iw_mom(idir))*uss(iw_mag(idir))/uss(iw_rho)
+     else
+        vL = usL(iw_mom(idir))/usL(iw_rho)
+        vR = usR(iw_mom(idir))/usR(iw_rho)
+        vt = (sqL*vL + sqR*vR + (usR(iw_mag(idir)) - usL(iw_mag(idir)))*sgn) * inv_sq
+        bt = (sqL*usR(iw_mag(idir)) + sqR*usL(iw_mag(idir)) &
+             + sqL*sqR*(vR - vL)*sgn) * inv_sq
+        uss(iw_mom(idir)) = uss(iw_rho)*vt
+        uss(iw_mag(idir)) = bt
+        vdotb_ss = vdotb_ss + vt*bt
+     end if
+  end do
+
+  uss(iw_e) = uss(iw_e) + side*sqK*(vdotb_s - vdotb_ss)*sgn
+
+end subroutine hlld_double_star_state
 #:enddef
 
 

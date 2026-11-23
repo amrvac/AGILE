@@ -1,0 +1,7 @@
+ &filelist
+   base_filename    = 'tvdlf'
+ /
+
+ &methodlist
+   flux_scheme     = 20*'tvdlf'
+ /

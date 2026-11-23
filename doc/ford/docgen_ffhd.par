@@ -1,0 +1,20 @@
+&methodlist
+  phys = 'ffhd'
+  flux_adaptive_diffusion = T
+/
+
+&boundlist
+  specialboundary = T
+/
+
+&meshlist
+  refine_usr = T
+/
+
+&ffhd_list
+  ffhd_pdivb = T
+  ffhd_hyperbolic_thermal_conduction = T
+  ffhd_gravity = T
+  ffhd_radiative_cooling = T
+  ffhd_source_usr = T
+/

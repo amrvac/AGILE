@@ -1,10 +1,9 @@
-# AMRVAC datasets and YT
+title: AGILE datasets and YT
 
-[TOC]
+# AGILE snaphot files and YT
 
-# Introduction {#yt_introduction}
-
-The datfile format is such that its is compatible with [`yt`](https://yt-project.org),
+# Introduction {: #yt_introduction }
+The datfile format (still identical to MPI-AMRVAC) is compatible with [`yt`](https://yt-project.org),
 an open-source Python package for analysing and visualising volumetric data.
 `yt` supports AMR meshes and can handle discrete or sampled data such as particles.
 It's query-based so that it can handle larger-than-RAM datasets and makes uses of [Cython](https://cython.org) for speed-up and C-interoperability.
@@ -21,8 +20,7 @@ The most efficient ways to get in touch with us are either
 - [reporting issues on github](https://github.com/yt-project/yt/issues)
 - [joining yt's Slackspace](https://yt-project.org/doc/help/index.html#go-on-slack-or-irc-to-ask-a-question) (join channels **help** and **amrvac**)
 
-## Installing yt {#yt_installation}
-
+## Installing yt {: #yt_installation }
 The [yt website](https://yt-project.org) has detailed instructions on how to install the `yt` package.
 As of right now the only way to use the AMRVAC frontend is building [from source](https://yt-project.org/docs/dev/installing.html#installing-yt-from-source).
 It's recommended to use `-e .` as well, so you can immediately pull updates from the repository (note the dot after `-e`, this is important).
@@ -34,21 +32,21 @@ Required dependencies are `Numpy` and `Cython`.
     git checkout master
     pip install -e .
 
-## Features currently in development/planned {#features_todo}
+## Features currently in development/planned {: #features_todo }
 - Support for staggered grids (_planned_)
 - Support for stretched grids (_in development_)
 - Support for particle data (_planned_)
 
-## Current limitations & unsupported features {#limitations}
+## Current limitations & unsupported features {: #limitations }
 - `yt` supports particle data, but this has not (yet) been implemented in the AMRVAC frontend. This might come later.
 - Staggered grids (version 2.2 and later): `yt` will log a warning if staggered grids are loaded, but the flag is currently ignored.
   You can still use all of `yt`'s features on those datasets though.
 - Stretched grids are currently unsupported. However, since various users have already told us that they would love to use yt with their
   stretched-grid datasets, we have put this quite high on our to-do list. We are working on this.
 
-# Examples {#examples}
+# Examples {: #examples }
 Since adding lots of examples and figures on this webpage would be quite difficult to maintain, we prepared a Jupyter notebook
-which contains various examples of using yt with actual MPI-AMRVAC datasets:
+which contains various examples of using yt with actual AMRVAC datasets:
 
 [MPI-AMRVAC example notebook on Jupyter nbviewer](https://nbviewer.jupyter.org/github/n-claes/amrvac_yt_docs/blob/master/amrvac_yt_docs.ipynb)
 

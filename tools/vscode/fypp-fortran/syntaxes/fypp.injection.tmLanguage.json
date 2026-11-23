@@ -1,0 +1,151 @@
+{
+  "name": "fypp",
+  "scopeName": "source.fypp.injection",
+  "injectionSelector": "L:source.fortran.free -comment -string",
+  "patterns": [
+    { "include": "#comment-line" },
+    { "include": "#directive-line" },
+    { "include": "#eval-line" },
+    { "include": "#call-line" },
+    { "include": "#eval-inline" },
+    { "include": "#directive-inline" },
+    { "include": "#call-inline" }
+  ],
+  "repository": {
+    "comment-line": {
+      "comment": "fypp comment: #! ... to end of line",
+      "name": "comment.line.number-sign.fypp",
+      "match": "^[ \\t]*#!.*$"
+    },
+    "directive-line": {
+      "comment": "Control directive in line form: #:keyword ..., continued while the line ends in &",
+      "name": "meta.preprocessor.fypp",
+      "begin": "^[ \\t]*(#:)[ \\t]*(?:(if|elif|else|endif|for|endfor|def|enddef|block|contains|endblock|call|nextarg|endcall|include|set|global|del|assert|mute|endmute|stop)\\b|([A-Za-z_]\\w*))?",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.directive.fypp" },
+        "2": { "name": "keyword.control.directive.fypp" },
+        "3": { "name": "keyword.other.directive.fypp" }
+      },
+      "end": "(?<!&)$",
+      "patterns": [ { "include": "#expression" } ]
+    },
+    "eval-line": {
+      "comment": "Eval directive in line form: $:expression",
+      "name": "meta.preprocessor.fypp",
+      "begin": "^[ \\t]*(\\$:)",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.directive.fypp" }
+      },
+      "end": "(?<!&)$",
+      "patterns": [ { "include": "#expression" } ]
+    },
+    "call-line": {
+      "comment": "Direct macro call in line form: @:MACRO(args)",
+      "name": "meta.preprocessor.fypp",
+      "begin": "^[ \\t]*(@:)[ \\t]*([A-Za-z_]\\w*)?",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.directive.fypp" },
+        "2": { "name": "entity.name.function.macro.fypp" }
+      },
+      "end": "(?<!&)$",
+      "patterns": [ { "include": "#expression" } ]
+    },
+    "eval-inline": {
+      "comment": "Inline eval directive: ${ expression }$",
+      "name": "meta.embedded.expression.fypp",
+      "begin": "(\\$\\{)",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.directive.fypp" }
+      },
+      "end": "(\\}\\$)|(?<!&)$",
+      "endCaptures": {
+        "1": { "name": "keyword.control.directive.fypp" }
+      },
+      "patterns": [ { "include": "#expression" } ]
+    },
+    "directive-inline": {
+      "comment": "Inline control directive: #{ keyword ... }#",
+      "name": "meta.preprocessor.fypp",
+      "begin": "(#\\{)[ \\t]*(?:(if|elif|else|endif|for|endfor|def|enddef|block|contains|endblock|call|nextarg|endcall|include|set|global|del|assert|mute|endmute|stop)\\b|([A-Za-z_]\\w*))?",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.directive.fypp" },
+        "2": { "name": "keyword.control.directive.fypp" },
+        "3": { "name": "keyword.other.directive.fypp" }
+      },
+      "end": "(\\}#)|(?<!&)$",
+      "endCaptures": {
+        "1": { "name": "keyword.control.directive.fypp" }
+      },
+      "patterns": [ { "include": "#expression" } ]
+    },
+    "call-inline": {
+      "comment": "Inline direct macro call: @{ MACRO(args) }@",
+      "name": "meta.preprocessor.fypp",
+      "begin": "(@\\{)[ \\t]*([A-Za-z_]\\w*)?",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.directive.fypp" },
+        "2": { "name": "entity.name.function.macro.fypp" }
+      },
+      "end": "(\\}@)|(?<!&)$",
+      "endCaptures": {
+        "1": { "name": "keyword.control.directive.fypp" }
+      },
+      "patterns": [ { "include": "#expression" } ]
+    },
+    "expression": {
+      "comment": "The Python expression carried by any fypp directive. Every rule here is single-line by construction, so a stray quote cannot bleed into the rest of the file.",
+      "patterns": [
+        { "include": "#string" },
+        { "include": "#continuation" },
+        { "include": "#number" },
+        { "include": "#language-constant" },
+        { "include": "#keyword" },
+        { "include": "#builtin" },
+        { "include": "#function-call" },
+        { "include": "#define-name" },
+        { "include": "#operator" }
+      ]
+    },
+    "string": {
+      "patterns": [
+        { "name": "string.quoted.single.fypp", "match": "'[^'\\n]*'" },
+        { "name": "string.quoted.double.fypp", "match": "\"[^\"\\n]*\"" }
+      ]
+    },
+    "continuation": {
+      "name": "keyword.operator.line-continuation.fypp",
+      "match": "&[ \\t]*$"
+    },
+    "number": {
+      "name": "constant.numeric.fypp",
+      "match": "\\b\\d+(?:\\.\\d*)?(?:[eE][+-]?\\d+)?\\b"
+    },
+    "language-constant": {
+      "name": "constant.language.fypp",
+      "match": "\\b(?:True|False|None|_FILE_|_LINE_|_THIS_FILE_|_THIS_LINE_|_DATE_|_TIME_|_SYSTEM_)\\b"
+    },
+    "keyword": {
+      "name": "keyword.control.fypp",
+      "match": "\\b(?:if|else|elif|for|while|in|lambda|return)\\b"
+    },
+    "builtin": {
+      "name": "support.function.builtin.fypp",
+      "match": "\\b(?:defined|getvar|setvar|globalvar|delvar|len|range|enumerate|zip|map|filter|sorted|reversed|sum|min|max|abs|any|all|int|float|str|repr|list|dict|tuple|set|format|join|split|type|isinstance)\\b(?=[ \\t]*\\()"
+    },
+    "function-call": {
+      "match": "\\b([A-Za-z_]\\w*)[ \\t]*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.macro.fypp" }
+      }
+    },
+    "define-name": {
+      "comment": "PHYS, GEOM, LOG_RADIUS and the other build-time defines",
+      "name": "variable.other.constant.fypp",
+      "match": "\\b[A-Z][A-Z0-9_]{2,}\\b"
+    },
+    "operator": {
+      "name": "keyword.operator.fypp",
+      "match": "(?:[-+*/%<>=!&|^~]+)|\\b(?:not|and|or|is)\\b"
+    }
+  }
+}

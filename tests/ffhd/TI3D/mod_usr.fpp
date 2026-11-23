@@ -1,3 +1,7 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
+
 !> thermal instability test problem copied from amrvac/tests/demo/thermal_instability_HD/
 module mod_usr
   use mod_amrvac
@@ -6,7 +10,7 @@ module mod_usr
   implicit none
 
   double precision :: scale, radius
-  !$acc declare create(scale, radius)
+  ${GPU_DECLARE_CREATE('scale, radius')}$
 
 contains
 
@@ -87,9 +91,7 @@ contains
     w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3, q_) = zero
     #:endif
 
-    w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,iw_b1) = zero
-    w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,iw_b2) = zero
-    w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,iw_b3) = -1.0_dp
+    ! b1,b2,b3 are filled by fill_nwextra_device from usr_set_nwextra
 
     call phys_to_conserved(ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
        ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,w,x)
@@ -102,8 +104,22 @@ contains
   end subroutine initonegrid_usr
 
 
+  !> Uniform vertical frozen field, b-hat = -z-hat everywhere (Cartesian).
+  !> Called by name from fill_nwextra_device; see mod_usr_methods.
+  pure subroutine usr_set_nwextra(x, bhat)
+    ${GPU_ROUTINE_SEQ()}$
+    double precision, intent(in)  :: x(1:ndim)
+    double precision, intent(out) :: bhat(1:3)
+
+    bhat(1) =  0.0_dp
+    bhat(2) =  0.0_dp
+    bhat(3) = -1.0_dp
+
+  end subroutine usr_set_nwextra
+
+
   pure real(dp) function gravity_field(wCT, x, idim) result(field)
-    !$acc routine seq
+    ${GPU_ROUTINE_SEQ()}$
     real(dp), intent(in)    :: wCT(nw_phys)
     real(dp), intent(in)    :: x(1:ndim)
     integer, value, intent(in)     :: idim
@@ -115,10 +131,10 @@ contains
   end function gravity_field
 
   subroutine addsource_usr(qdt, qt, wCT, wCTprim, wnew, x, qsourcesplit)
-    !$acc routine seq
     #:if defined('COOLING')
     use mod_radiative_cooling, only: rc_fl, getvar_cooling_exact
     #:endif
+    ${GPU_ROUTINE_SEQ()}$
 
     double precision, intent(in) :: qdt, qt
     double precision, intent(in) :: wCT(nw_phys), wCTprim(nw_phys) 
