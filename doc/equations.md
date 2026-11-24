@@ -391,35 +391,35 @@ derived from the units and are not parameters.
 
 ### Divergence B source treatments {: #eq_divB_fix }
 
-To control magnetic monopole buildup numerically, AGILE uses the
-generalized Lagrangian multiplier (GLM) approach of Dedner et al. (2002),
-where ψ is an added evolved variable obeying
+AGILE controls ∇·**B** with the generalized Lagrangian multiplier (GLM)
+method of Dedner et al. (2002). An extra variable ψ, coupled to the
+induction equation through the flux ψ**I**, obeys
 
 \begin{equation}
-    \partial_t \psi+c_{h}^{2} \nabla \cdot \mathbf{B} = -\frac{c_h^2}{c_p^2}\psi \,.
+    \partial_t \psi + c_h^2 \nabla\cdot\mathbf{B} = -\frac{c_h^2}{c_p^2}\psi \,,
 \end{equation}
 
-This equation has a hyperbolic advection speed c_h and a parabolic
-factor c_p. In practice, the left-hand side is dealt with using the flux
-prescription c²_max**B**, while the right-hand side (the damping term) is
-solved exactly over the time step Δt_n through
+so divergence errors propagate away at c_h and are damped. AGILE takes
+c_h = c_max, the fastest wave speed of the time step, and integrates the
+damping exactly, split from the update:
 
 \begin{equation}
-    \psi^{n+1}=\psi^n\exp\left(-\Delta t_n c_{\mathrm{max}}\alpha_{\mathrm{GLM}}/\min_{i=1,3}(\Delta x_i)\right)
+    \psi \leftarrow \psi \exp\left(-\Delta t\, c_{\mathrm{max}}\, \alpha_{\mathrm{GLM}} / \min_i \Delta x_i\right) \,,
 \end{equation}
 
-using second-order operator splitting. This implies availability of the
-maximal, global physical propagation speed c_max that also sets the time
-step, while
+with Δx_i the cell's physical size and α_GLM = **mhd_glm_alpha** (default
+0.5, usually within [0, 1]; Mignone, Tzeferacos & Bodo 2010).
+
+With **mhd_glm_extended** (compile time, Cartesian only) the extended GLM
+(EGLM) source terms are added,
 
 \begin{equation}
-    \alpha_{\mathrm{GLM}}=\min_{i=1,3}(\Delta x_i)\,c_h/c_p^2
+    \partial_t (\rho\mathbf{v}) = \ldots - (\nabla\cdot\mathbf{B})\,\mathbf{B} \,,\qquad
+    \partial_t e = \ldots - \mathbf{B}\cdot\nabla\psi \,.
 \end{equation}
 
-becomes a fixed parameter, **mhd_glm_alpha** in `&mhd_list`, set to 0.5 by
-default but generally taken within [0,1] (Mignone, Tzeferacos & Bodo 2010).
-Δx_i is the physical extent of the cell, which on a curvilinear grid varies
-from cell to cell.
+Without them the cleaning changes the magnetic energy at fixed total energy,
+so the thermal energy absorbs every correction.
 
 ## Frozen-field hydrodynamics: ffhd {: #eq_ffhd }
 
