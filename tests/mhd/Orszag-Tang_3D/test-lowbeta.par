@@ -55,6 +55,7 @@
 
  &mhd_list
    mhd_gravity = .false.
+   mhd_glm_extended = .true.
  /
 
  &usr_list
