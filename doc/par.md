@@ -79,11 +79,12 @@ or extra words in strings.
  datfilenext= -1 | INTEGER                               ! -1: continue the numbering
  slicenext= -1 | INTEGER
  collapsenext= -1 | INTEGER
- snapnext= -1 | INTEGER                                  ! analysis snapshots, see below
+ snapnext= -1 | INTEGER                                  ! see below
  snap_nghost= 0 | INTEGER                                ! ghost layers per block face
- snap_size_real= 4 | 8                                   ! bytes per real of the block data
+ snap_size_real= 8 | 4                                   ! bytes per real of the block data
  snap_compress_zfp= F | T                                ! compile time: ZFP compression
- snap_zfp_precision= INTEGER from 1 to 64                ! ZFP bit planes, no default
+ snap_zfp_rel_tol= no default | DOUBLE in (0,1)          ! ZFP error tolerance, no default
+ snap_zfp_rel_eps= 1d-2 | DOUBLE in [0,1)                ! sets rel to abs error crossover
  firstprocess= F | T
  reset_grid= F | T
  typefilelog= 'default' | 'regression_test' | 'special'
@@ -137,14 +138,18 @@ through `read_data_get_3d` in `mod_init_datafromfile`.
 ### Analysis snapshots {: #par_snapshots }
 Besides the `.dat` files to restart from, AGILE can write analysis snapshots,
 `base_filename_snapNNNN.dat` (file index 6 of [savelist](#par_savelist)), in
-the version 6 layout of the [file format](fileformat.html): single precision
-by default (`snap_size_real = 8` for double), with `snap_nghost` ghost layers
-per block face (at most `nghostcells`), optionally compressed with ZFP
-(`snap_compress_zfp`, needs `ZFP_DIR` at build time) at `snap_zfp_precision`
-bit planes. A run cannot restart from them. `snapnext` gives the next index.
-Unset, it follows the file name when `restart_from_file` is a snapshot, and is
-0 otherwise: set it when restarting from a `.dat` file, or earlier snapshots
-are overwritten.
+the version 6 layout of the [file format](fileformat.html).
+Double precision by default, use `snap_size_real = 4` for single.
+Stores `snap_nghost` ghost layers per block face (at most `nghostcells`).
+With `snap_compress_zfp`, individually compress each field q as Q in each
+block, satisfying
+|Q-q| ≤ `snap_zfp_rel_tol`·(|q|+`snap_zfp_rel_eps`·max|q|) in each cell,
+max|q| taken over the block. Enabling this requires environment variable
+`ZFP_DIR` to point to a LLNL ZFP install location.
+
+Since regular resume snapshots are currently v5 and don't have a `snapnext`
+field, set `snapnext` in `&filelist` when resuming a run, so as not to
+overwrite your analysis snapshots. Set it to the last index plus one.
 
 ### The log file {: #par_filelog }
 `typefilelog = 'default'` writes one line per log output with `it`,

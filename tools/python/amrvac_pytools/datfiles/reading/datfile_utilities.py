@@ -35,6 +35,11 @@ def get_header(istream):
     if h['datfile_version'] < 3:
         raise IOError("Unsupported AMRVAC .datfiles file version: %d", h['datfile_version'])
 
+    if h['datfile_version'] >= 6:
+        fmt = ALIGN + 'i'
+        # File origin.
+        [h['origin']] = struct.unpack(fmt, istream.read(struct.calcsize(fmt)))
+
     h['compression'] = 'none'
 
     # Read scalar data at beginning of file
@@ -88,8 +93,9 @@ def get_header(istream):
             hdr = struct.unpack(fmt, istream.read(struct.calcsize(fmt)))
             h['compression'] = b''.join(hdr).strip().decode()
             if h['compression'] == 'zfp':
-                fmt = ALIGN + 'i'
-                [h['zfp_precision']] = struct.unpack(fmt, istream.read(struct.calcsize(fmt)))
+                # ZFP compression error criterion params.
+                fmt = ALIGN + 'dd'
+                h['zfp_rel_tol'], h['zfp_rel_eps'] = struct.unpack(fmt, istream.read(struct.calcsize(fmt)))
 
     # Read w_names
     w_names = []

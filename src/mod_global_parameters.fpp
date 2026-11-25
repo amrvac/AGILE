@@ -262,7 +262,7 @@ module mod_global_parameters
   !> IO: slice output numbers/labels
   integer :: slicenext
 
-  !> IO: single precision snapshot output number/label
+  !> IO: analysis snapshot output number/label
   integer :: snapnext
 
   !> IO: number of ghost-cell layers to include on every block face in v6
@@ -270,15 +270,22 @@ module mod_global_parameters
   integer :: snap_nghost
 
   !> IO: bytes per real in snapshot block data,
-  !>     4 (single precision, default) or 8 (double precision)
+  !>     8 (double precision, default) or 4 (single precision)
   integer :: snap_size_real
 
   !> IO: compress v6 snapshot block data with ZFP in fixed-precision mode
   logical :: snap_compress_zfp
 
-  !> IO: ZFP precision in bit planes (1..64, 0 unset), no default
-  !>     https://doi.org/10.1137/18M1168832
-  integer :: snap_zfp_precision
+  !> IO: ZFP relative error tolerance (per cell, see mod_zfp), no default.
+  !>     The precision in bit planes (https://doi.org/10.1137/18M1168832) is
+  !>     chosen per block and per field as the smallest one satisfying it.
+  double precision :: snap_zfp_rel_tol
+
+  !> IO: dimensionless floor of the relative-error denominator: cells are
+  !>     protected relative to max(|q|, rel_eps * maxval(|q|)) of their
+  !>     block-field, so ~zero cells demand only absolute accuracy at the
+  !>     block's scale
+  double precision :: snap_zfp_rel_eps
 
   !> Constant indicating log output
   integer, parameter :: filelog_      = 1
@@ -295,8 +302,8 @@ module mod_global_parameters
   !> Constant indicating analysis output (see @ref analysis.md)
   integer, parameter :: fileanalysis_ = 5
 
-  !> Constant indicating single precision snapshot output (v6 format,
-  !> for analysis; use the normal output for restarts)
+  !> Constant indicating analysis snapshot output (v6 format; use the
+  !> normal output for restarts)
   integer, parameter :: filesnap_ = 6
 
   !> Unit for standard input

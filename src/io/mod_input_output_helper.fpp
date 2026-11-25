@@ -13,6 +13,8 @@ module mod_input_output_helper
   logical :: save_now
   !> Version number of the .dat file output
   integer, parameter :: version_number = 5
+  !> The code that wrote a file, from version 6 on: 1 for AGILE
+  integer, parameter :: origin_agile = 1
   contains
 
    function get_names_from_string(aux_variable_names,nwc) result(names) 
@@ -151,8 +153,7 @@ module mod_input_output_helper
     integer, intent(in) :: nw_vars
     !> File format version to write (defaults to the v5 format)
     integer, intent(in), optional :: version
-    !> Single precision snapshots do not advance the datfile counter, so
-    !> their header must store datfilenext as is
+    !> An analysis snapshot: its first counter is the next snapshot index
     logical, intent(in), optional :: is_snap
     integer, dimension(MPI_STATUS_SIZE)       :: st
     integer                                   :: iw, er
@@ -167,6 +168,8 @@ module mod_input_output_helper
     if (present(is_snap)) snap_mode = is_snap
 
     call MPI_FILE_WRITE(fh, file_version, 1, MPI_INTEGER, st, er)
+    if (file_version > 5)&
+      call MPI_FILE_WRITE(fh, origin_agile, 1, MPI_INTEGER, st, er)
     call MPI_FILE_WRITE(fh, int(offset_tree), 1, MPI_INTEGER, st, er)
     call MPI_FILE_WRITE(fh, int(offset_block), 1, MPI_INTEGER, st, er)
     call MPI_FILE_WRITE(fh, nw_vars, 1, MPI_INTEGER, st, er)
@@ -176,8 +179,6 @@ module mod_input_output_helper
     call MPI_FILE_WRITE(fh, nleafs, 1, MPI_INTEGER, st, er)
     call MPI_FILE_WRITE(fh, nparents, 1, MPI_INTEGER, st, er)
     call MPI_FILE_WRITE(fh, it, 1, MPI_INTEGER, st, er)
-    ! Note: It is nice when this double has an even number of 4 byte
-    ! integers before it (for alignment)
     call MPI_FILE_WRITE(fh, global_time, 1, MPI_DOUBLE_PRECISION, st, er)
 
     call MPI_FILE_WRITE(fh, [ xprobmin1,xprobmin2,xprobmin3 ], ndim,&
@@ -213,7 +214,10 @@ module mod_input_output_helper
       end if
       call MPI_FILE_WRITE(fh, dname, name_len, MPI_CHARACTER, st, er)
       if (snap_compress_zfp) then
-        call MPI_FILE_WRITE(fh, snap_zfp_precision, 1, MPI_INTEGER, st, er)
+        call MPI_FILE_WRITE(fh, snap_zfp_rel_tol, 1, MPI_DOUBLE_PRECISION,&
+            st, er)
+        call MPI_FILE_WRITE(fh, snap_zfp_rel_eps, 1, MPI_DOUBLE_PRECISION,&
+            st, er)
       end if
     end if
 
@@ -233,17 +237,25 @@ module mod_input_output_helper
     ! character(n_par * name_len) :: names
     call phys_write_info(fh)
 
-    ! Write datfilenext etc., which is useful for restarting.
-    ! Note we add one, since datfilenext is updated *after* this procedure.
-    ! Single precision snapshots do not advance the datfile counter, so
-    ! they store datfilenext unchanged.
-    if(pass_wall_time.or.save_now.or.snap_mode) then
+    ! The output counters, useful for restarting.
+    ! datfilenext is the next file index in the series, which can either be the
+    ! series of resume snapshots or analysis snapshots.
+    ! Counters for snapshots are advanced *after* this procedure, hence the +1.
+    if (snap_mode) then
+      call MPI_FILE_WRITE(fh, snapnext+1, 1, MPI_INTEGER, st, er)
+    else if (pass_wall_time.or.save_now) then
       call MPI_FILE_WRITE(fh, datfilenext, 1, MPI_INTEGER, st, er)
     else
       call MPI_FILE_WRITE(fh, datfilenext+1, 1, MPI_INTEGER, st, er)
     end if
     call MPI_FILE_WRITE(fh, slicenext, 1, MPI_INTEGER, st, er)
     call MPI_FILE_WRITE(fh, collapsenext, 1, MPI_INTEGER, st, er)
+    ! The analysis snapshot counter, to point a resume snapshot to the next
+    ! analysis snapshot. Has no meaning for analysis snapshots themselves.
+    if (file_version > 5) then
+      call MPI_FILE_WRITE(fh, merge(-1, snapnext, snap_mode), 1, MPI_INTEGER,&
+          st, er)
+    end if
 
   end subroutine datfile_write_header1
 

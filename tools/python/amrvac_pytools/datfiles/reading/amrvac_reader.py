@@ -103,7 +103,8 @@ class load_datfile():
             print(f"[INFO] Compression       : {self.header["compression"]}")
             match self.header["compression"]:
                 case "zfp":
-                    print(f"[INFO] ZFP precision     : {self.header["zfp_precision"]}")
+                    print(f"[INFO] ZFP rel. tolerance: {self.header["zfp_rel_tol"]}")
+                    print(f"[INFO] ZFP rel. epsilon  : {self.header["zfp_rel_eps"]}")
         print("-" * 40)
         print(f"Known variables: {self.known_fields}")
 
