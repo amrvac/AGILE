@@ -32,9 +32,7 @@ the parameters are described in the corresponding modules:
 
 * `rc_list` (radiative cooling, read when `*_radiative_cooling` is on; see
   [Radiative cooling](radiative_cooling.html) and `mod_radiative_cooling`)
-* `bd_list` (boundary data read from file, see `mod_bc_data`). It is still
-  read, but the `'bc_data'` boundary type it serves does not work, see
-  [typeboundary](#par_typeboundary)
+* `bd_list` (VTK input for [data-driven boundaries](#par_bc_data))
 * `rh_list` (random heating, for a case that calls it from its `mod_usr`;
   see `mod_random_heating`)
 
@@ -601,14 +599,32 @@ The types act on the **conserved** variables:
   [specialboundary](#par_specialboundary).
 - `'pole'` marks a polar axis, see [The polar axis](#par_pole).
 
-`'bc_data'`, `'bc_icarus'` and `'character'` are still parsed, but **nothing
-fills their ghost cells**: the routine that would (`bc_data_set` in
-`mod_bc_data`) is never called. Do not use them.
+- `'bc_data'` fills ghost cells from [VTK data](#par_bc_data).
+- `'bc_icarus'` fills ghost cells from the same data and then calls
+  `specialbound_usr`. Set `specialboundary = T` in the case's `agile.par`.
+
+`'character'` is parsed but does not fill ghost cells.
 
 Since the types act on conserved variables, `'cont'` does not keep a flux
 continuous, and a zero-gradient total energy is not a zero-gradient pressure;
 a setup that needs a steady inflow or outflow is usually better served by
 `'special'`.
+
+### Data-driven boundaries {: #par_bc_data }
+
+Set `boundary_data_file_name` in `&bd_list` to a legacy ASCII VTK
+`STRUCTURED_POINTS` file. Its axes are the two tangential coordinates
+followed by simulation time. The first coordinate varies fastest in the
+file. Use at least two samples in each tangential direction and one time
+sample for static data. Supply one `SCALARS` array per data-driven variable
+on each face, in face order (`min1`, `max1`, `min2`, `max2`, `min3`, `max3`)
+and in solver variable order within a face.
+
+The input values are conserved by default. Set `boundary_data_primitive = T`
+for primitive input. On OpenACC and OpenMP builds, supply all physical
+variables on a data-driven face and set both `interp_phy_first_row = F`
+and `bc_phy_first_row = F` for direct ghost-cell filling. See
+`tests/rho/vtk_boundary` for a time-dependent Cartesian example.
 
 ### specialboundary {: #par_specialboundary }
 `'special'` on any entry needs `specialboundary = T`, otherwise the run stops

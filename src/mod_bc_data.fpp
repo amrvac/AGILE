@@ -1,3 +1,7 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
+
 !> Module to set boundary conditions from user data
 module mod_bc_data
   use mod_lookup_table
@@ -7,6 +11,9 @@ module mod_bc_data
   private
 
   integer, parameter :: max_boundary_conds = 10
+#:if defined('OPENACC') or defined('OPENMP')
+  integer, parameter :: dp = kind(1.0d0)
+#:endif
 
   type bc_data_t
      integer                        :: n_variables
@@ -28,10 +35,20 @@ module mod_bc_data
   integer, public, protected, allocatable :: bc_data_ix(:, :)
 
   !> data file name
-  character(len=std_len), public, protected :: boundary_data_file_name
+  character(len=std_len), public, protected :: boundary_data_file_name = ''
   logical, public, protected :: interp_phy_first_row=.true.
   logical, public, protected :: bc_phy_first_row=.false.
   logical, public, protected :: boundary_data_primitive=.false.
+
+#:if defined('OPENACC') or defined('OPENMP')
+  ! Store the VTK scalars in one array for device interpolation.
+  real(dp), allocatable :: device_values(:,:,:,:)
+  real(dp) :: data_origin(3), data_spacing(3)
+  integer :: data_points(3)
+  ${GPU_DECLARE_CREATE('device_values, data_origin, data_spacing, data_points')}$
+  ${GPU_DECLARE_CREATE('bc_data_ix, boundary_data_primitive')}$
+  public :: bc_data_set_device
+#:endif
 
   public :: bc_data_init
   public :: bc_data_set
@@ -43,8 +60,11 @@ contains
   subroutine bc_data_init()
     use mod_global_parameters
     use mod_comm_lib, only: mpistop
+#:if defined('OPENACC') or defined('OPENMP')
+    use mod_physics, only: nw_phys
+#:endif
 
-    integer                :: i, iw, ib, n_files, n_bc
+    integer                :: iw, ib, n_bc
     double precision       :: xmax(3)
     type(bc_data_t)        :: bc
 
@@ -55,25 +75,47 @@ contains
     bc_data_ix(:, :) = -1
     n_bc             = 0
 
-    if(any(typeboundary(1:nwfluxbc,1:2*ndim)==bc_data ) .or. &
-       any(typeboundary(1:nwfluxbc,1:2*ndim)==bc_icarus)) then
-      call read_vtk_structured_points(trim(boundary_data_file_name), bc)
-      xmax = bc%origin + (bc%n_points-1) * bc%dx
-      bc_data_time_varying = (bc%n_points(ndim) > 1)
-
-    endif
+    if (.not. any(typeboundary(1:nwfluxbc,:)==bc_data .or. &
+                  typeboundary(1:nwfluxbc,:)==bc_icarus)) return
+#:if not defined('SPECIALBOUNDARY')
+    if (any(typeboundary(1:nwfluxbc,:)==bc_icarus)) &
+         call mpistop("bc_icarus requires a build with specialboundary=.true. and specialbound_usr")
+#:endif
+    if (len_trim(boundary_data_file_name) == 0) call mpistop("bc_data requires boundary_data_file_name")
+    call read_vtk_structured_points(trim(boundary_data_file_name), bc)
+    if (any(bc%n_points(1:2) < 2) .or. bc%n_points(3) < 1 .or. any(bc%dx <= 0.d0)) &
+         call mpistop("bc_data: invalid VTK dimensions or spacing")
+    if (count(typeboundary(1:nwfluxbc,:)==bc_data .or. &
+              typeboundary(1:nwfluxbc,:)==bc_icarus) /= bc%n_variables) &
+         call mpistop("bc_data: scalar arrays must follow boundary then variable order")
+#:if defined('OPENACC') or defined('OPENMP')
+    if (interp_phy_first_row .or. bc_phy_first_row) &
+         call mpistop("GPU bc_data requires interp_phy_first_row=F and bc_phy_first_row=F")
+    do ib = 1, 2 * ndim
+       if (.not. any(typeboundary(1:nwfluxbc,ib)==bc_data .or. &
+                     typeboundary(1:nwfluxbc,ib)==bc_icarus)) cycle
+       if (nwfluxbc /= nw_phys .or. &
+           .not. all(typeboundary(1:nwfluxbc,ib)==bc_data .or. &
+                     typeboundary(1:nwfluxbc,ib)==bc_icarus)) &
+            call mpistop("GPU bc_data requires all physical variables on each data face")
+    end do
+    data_origin = bc%origin
+    data_spacing = bc%dx
+    data_points = bc%n_points
+    allocate(device_values(bc%n_points(1), bc%n_points(2), bc%n_points(3), bc%n_variables))
+    device_values = bc%values
+    ${GPU_UPDATE_DEVICE('device_values, data_origin, data_spacing, data_points, boundary_data_primitive')}$
+#:endif
+    xmax = bc%origin + (bc%n_points-1) * bc%dx
+    bc_data_time_varying = (bc%n_points(ndim) > 1)
 
     do ib = 1, 2 * ndim
        do iw = 1, nwfluxbc
           if (typeboundary(iw, ib)==bc_data .or. typeboundary(iw,&
               ib)==bc_icarus) then
              n_bc               = n_bc + 1
+             if (n_bc > max_boundary_conds) call mpistop("bc_data: too many boundary scalars")
              bc_data_ix(iw, ib) = n_bc
-
-
-             
-             
-             
              if (bc_data_time_varying) then
                 lt_3d(n_bc) = LT3_create_from_data(bc%origin(1:ndim),&
                     xmax(1:ndim), bc%values(:, :, :, n_bc:n_bc))
@@ -82,11 +124,13 @@ contains
                 lt_2d(n_bc) = LT2_create_from_data(bc%origin(1:ndim-1),&
                     xmax(1:ndim-1), bc%values(:, :, 1:1, n_bc))
              end if
-            
           end if
        end do
     end do
 
+#:if defined('OPENACC') or defined('OPENMP')
+    ${GPU_UPDATE_DEVICE('bc_data_ix')}$
+#:endif
   end subroutine bc_data_init
 
   !> Read this module"s parameters from a file
@@ -130,6 +174,63 @@ contains
     end if
   end function bc_data_get_2d
 
+#:if defined('OPENACC') or defined('OPENMP')
+  !> Direct VTK boundary fill on device; input axes are tangent1, tangent2, time.
+  subroutine bc_data_set_device(qt,ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3, &
+       ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,iB,w,x)
+    use mod_global_parameters
+    use mod_physics, only: to_conservative, nw_phys
+    ${GPU_ROUTINE_VECTOR()}$
+    integer, intent(in) :: ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3
+    integer, intent(in) :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,iB
+    real(dp), intent(in) :: qt, x(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,ndim)
+    real(dp), intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,nw)
+    real(dp) :: u(nw_phys), position(3), weight(0:1,3), offset
+    integer :: ix1, ix2, ix3, iw, axis, tangent1, tangent2, sample(0:1,3), a, b, c
+
+    select case (iB)
+    case (1, 2)
+       tangent1 = 2
+       tangent2 = 3
+    case (3, 4)
+       tangent1 = 1
+       tangent2 = 3
+    case (5, 6)
+       tangent1 = 1
+       tangent2 = 2
+    end select
+    ${GPU_LOOP_VECTOR('collapse(3) private(u,position,weight,offset,sample,a,b,c,axis,iw)')}$
+    do ix3=ixOmin3,ixOmax3
+       do ix2=ixOmin2,ixOmax2
+          do ix1=ixOmin1,ixOmax1
+             position = [x(ix1,ix2,ix3,tangent1), x(ix1,ix2,ix3,tangent2), qt]
+             do axis = 1, 3
+                offset = max(0.0_dp, min(real(data_points(axis)-1,dp), &
+                     (position(axis)-data_origin(axis))/data_spacing(axis)))
+                sample(0,axis) = min(int(offset)+1, max(1, data_points(axis)-1))
+                sample(1,axis) = min(sample(0,axis)+1, data_points(axis))
+                weight(1,axis) = offset - real(sample(0,axis)-1,dp)
+                weight(0,axis) = 1.0_dp - weight(1,axis)
+             end do
+             do iw=1,nw_phys
+                u(iw) = 0.0_dp
+                do c=0,1
+                   do b=0,1
+                      do a=0,1
+                         u(iw) = u(iw) + weight(a,1)*weight(b,2)*weight(c,3)* &
+                              device_values(sample(a,1),sample(b,2),sample(c,3),bc_data_ix(iw,iB))
+                      end do
+                   end do
+                end do
+             end do
+             if (boundary_data_primitive) call to_conservative(u)
+             w(ix1,ix2,ix3,1:nw_phys) = u
+          end do
+       end do
+    end do
+  end subroutine bc_data_set_device
+#:endif
+
   !> Set boundary conditions according to user data
   subroutine bc_data_set(qt,ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
      ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,iB,w,x)
@@ -152,9 +253,6 @@ contains
     ixOOmin1=ixOmin1;ixOOmin2=ixOmin2;ixOOmin3=ixOmin3;ixOOmax1=ixOmax1
     ixOOmax2=ixOmax2;ixOOmax3=ixOmax3;
 
-    
-
-    
     select case (iB)
     case (1, 2)
        if(interp_phy_first_row) then

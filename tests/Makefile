@@ -20,7 +20,7 @@
 
 SUITE ?= basic
 
-RHO_BASIC := rho/ball_3D rho/cylindrical_pole
+RHO_BASIC := rho/ball_3D rho/cylindrical_pole rho/vtk_boundary
 RHO_EXTENDED := rho/spherical rho/spherical_pole
 HD_BASIC := hd/KH3D-SMR hd/spherical hd/cylindrical_pole hd/log_spherical \
             hd/internal_bc \

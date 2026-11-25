@@ -1,0 +1,60 @@
+&filelist
+ base_filename='data'
+ typefilelog='regression_test'
+/
+&savelist
+ itsave(1,1)=0
+ dtsave_log=0.125d0
+ dtsave_dat=1.0d10
+/
+&stoplist
+ time_max=0.875d0
+/
+&methodlist
+ phys='rho'
+ time_stepper='threestep'
+ flux_scheme=20*'tvdlf'
+ limiter=20*'vanleer'
+/
+&boundlist
+ specialboundary=T
+ typeboundary_min1='bc_data'
+ typeboundary_max1='cont'
+ typeboundary_min2='cont'
+ typeboundary_max2='cont'
+ typeboundary_min3='cont'
+ typeboundary_max3='cont'
+/
+&bd_list
+ boundary_data_file_name='inlet.vtk'
+ interp_phy_first_row=F
+ bc_phy_first_row=F
+/
+&meshlist
+ geometry='Cartesian'
+ max_blocks=512
+ refine_max_level=2
+ refine_criterion=3
+ refine_threshold=20*0.05d0
+ derefine_ratio=20*0.8d0
+ ditregrid=4
+ block_nx1=8
+ block_nx2=8
+ block_nx3=8
+ domain_nx1=32
+ domain_nx2=32
+ domain_nx3=32
+ xprobmin1=0.d0
+ xprobmax1=1.d0
+ xprobmin2=0.d0
+ xprobmax2=1.d0
+ xprobmin3=0.d0
+ xprobmax3=1.d0
+/
+&paramlist
+ courantpar=0.5d0
+ slowsteps=0
+/
+&rho_list
+ rho_v=1.d0,0.d0,0.d0
+/
