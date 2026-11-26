@@ -1,3 +1,7 @@
+#:mute
+#:include "mod_gpu_directives.fpp"
+#:endmute
+
 !> A Fortran 90 module for creating 1D and 2D lookup tables. These tables can be
 !> used to efficiently interpolate one or more values.
 !>
@@ -587,31 +591,44 @@ contains
     my_lt%rows_cols = spaced_data
   end function LT3_create_from_data
 
-  !> Get a location in the lookup table
-  elemental function LT3_get_loc(my_lt, x1, x2, x3) result(my_loc)
+  !> Get a location in the lookup table. Coordinates outside the table are
+  !> clamped to its edge. Callable on the device, as are LT3_get_col and
+  !> LT3_get_col_at_loc, so a table copied there (see mod_bc_data) is read by
+  !> the same code on host and device.
+  pure function LT3_get_loc(my_lt, x1, x2, x3) result(my_loc)
+    ${GPU_ROUTINE_SEQ()}$
     type(LT3_t), intent(in) :: my_lt
     real(dp), intent(in)    :: x1, x2, x3
     type(LT3_loc_t)         :: my_loc
-    real(dp)                :: frac(3)
+    real(dp)                :: frac
+    integer                 :: i
 
-    frac            = ([x1, x2, x3] - my_lt%x_min) * my_lt%inv_dx
-    my_loc%low_ix   = ceiling(frac)
-    my_loc%low_frac = my_loc%low_ix - frac
+    do i = 1, 3
+       select case (i)
+       case (1)
+          frac = (x1 - my_lt%x_min(1)) * my_lt%inv_dx(1)
+       case (2)
+          frac = (x2 - my_lt%x_min(2)) * my_lt%inv_dx(2)
+       case default
+          frac = (x3 - my_lt%x_min(3)) * my_lt%inv_dx(3)
+       end select
+       my_loc%low_ix(i)   = ceiling(frac)
+       my_loc%low_frac(i) = my_loc%low_ix(i) - frac
 
-    ! Check bounds
-    where (my_loc%low_ix < 1)
-       my_loc%low_ix   = 1
-       my_loc%low_frac = 1
-    end where
-
-    where (my_loc%low_ix >= my_lt%n_points)
-       my_loc%low_ix   = my_lt%n_points - 1
-       my_loc%low_frac = 0
-    end where
+       ! Check bounds
+       if (my_loc%low_ix(i) < 1) then
+          my_loc%low_ix(i)   = 1
+          my_loc%low_frac(i) = 1
+       else if (my_loc%low_ix(i) >= my_lt%n_points(i)) then
+          my_loc%low_ix(i)   = my_lt%n_points(i) - 1
+          my_loc%low_frac(i) = 0
+       end if
+    end do
   end function LT3_get_loc
 
   !> Get the value of a single column at x
-  elemental function LT3_get_col(my_lt, col_ix, x1, x2, x3) result(col_value)
+  pure function LT3_get_col(my_lt, col_ix, x1, x2, x3) result(col_value)
+    ${GPU_ROUTINE_SEQ()}$
     type(LT3_t), intent(in) :: my_lt
     integer, intent(in)     :: col_ix
     real(dp), intent(in)    :: x1, x2, x3
@@ -622,26 +639,30 @@ contains
     col_value = LT3_get_col_at_loc(my_lt, col_ix, loc)
   end function LT3_get_col
 
-  !> Get the value of a single column at a location
-  elemental function LT3_get_col_at_loc(my_lt, col_ix, loc) result(col_value)
+  !> Get the value of a single column at a location (trilinear interpolation)
+  pure function LT3_get_col_at_loc(my_lt, col_ix, loc) result(col_value)
+    ${GPU_ROUTINE_SEQ()}$
     type(LT3_t), intent(in)     :: my_lt
     integer, intent(in)         :: col_ix
     type(LT3_loc_t), intent(in) :: loc
-    integer                     :: ix(3)
-    real(dp)                    :: w(2, 2, 2)
-    real(dp)                    :: col_value
+    real(dp)                    :: w1, w2, w3, col_value
+    integer                     :: i, j, k
 
-    ! Bilinear interpolation
-    w(1, 1, 1) = loc%low_frac(1) * loc%low_frac(2)
-    w(2, 1, 1) = (1 - loc%low_frac(1)) * loc%low_frac(2)
-    w(1, 2, 1) = loc%low_frac(1) * (1 - loc%low_frac(2))
-    w(2, 2, 1) = (1 - loc%low_frac(1)) * (1 - loc%low_frac(2))
-    w(:, :, 2) = w(:, :, 1) * (1 - loc%low_frac(3))
-    w(:, :, 1) = w(:, :, 1) * loc%low_frac(3)
-    ix = loc%low_ix
-
-    col_value = sum(w * my_lt%rows_cols(ix(1):ix(1)+1, ix(2):ix(2)+1,&
-        ix(3):ix(3)+1, col_ix))
+    col_value = 0.0_dp
+    do k = 0, 1
+       w3 = loc%low_frac(3)
+       if (k == 1) w3 = 1 - w3
+       do j = 0, 1
+          w2 = loc%low_frac(2)
+          if (j == 1) w2 = 1 - w2
+          do i = 0, 1
+             w1 = loc%low_frac(1)
+             if (i == 1) w1 = 1 - w1
+             col_value = col_value + w1 * w2 * w3 * my_lt%rows_cols( &
+                  loc%low_ix(1)+i, loc%low_ix(2)+j, loc%low_ix(3)+k, col_ix)
+          end do
+       end do
+    end do
   end function LT3_get_col_at_loc
 
 end module mod_lookup_table

@@ -280,6 +280,22 @@ closed form cell by cell; `tests/hd/log_cylindrical_pole` (`log_r0 = 0.2`)
 adds `check_pole_mesh`. **A new log-geometry test needs that check, not just a
 reference log** — a subtly wrong mesh barely moves the volume averages.
 
+## Data-driven boundaries (`bc_data`, `bc_icarus`)
+
+`src/mod_bc_data.fpp` reads one legacy VTK file (axes: the face's two
+tangential coordinates, then time) into a single `LT3_t` lookup table with
+one column per (variable, face), numbered by `bc_data_ix`. The table is put
+on the device once, like `bgeo` (shallow `GPU_UPDATE_DEVICE`, then
+`GPU_ENTER_DATA_COPYIN` of its allocatable component), and `bc_data_set` is
+one per-cell `GPU_ROUTINE_VECTOR` routine called from `bc_phys` on host and
+device alike; the `LT3_*` lookups in `src/mod_lookup_table.fpp` are
+`GPU_ROUTINE_SEQ` for that. Keep it one code path: there used to be a
+device-only copy of the data and interpolation. `bc_icarus` is `bc_data`
+followed by `specialbound_usr`. Options are in `doc/par.md`
+(`#par_bc_data`); tests are `tests/rho/vtk_boundary` (basic) and
+`tests/hd/vtk_boundary` (extended, mixed faces and primitive data), both
+asserting the ghost cells against the table.
+
 ## Time integration
 
 Set `time_stepper` and `time_integrator` in `&methodlist`. `advect` in

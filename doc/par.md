@@ -620,11 +620,30 @@ sample for static data. Supply one `SCALARS` array per data-driven variable
 on each face, in face order (`min1`, `max1`, `min2`, `max2`, `min3`, `max3`)
 and in solver variable order within a face.
 
-The input values are conserved by default. Set `boundary_data_primitive = T`
-for primitive input. On OpenACC and OpenMP builds, supply all physical
-variables on a data-driven face and set both `interp_phy_first_row = F`
-and `bc_phy_first_row = F` for direct ghost-cell filling. See
-`tests/rho/vtk_boundary` for a time-dependent Cartesian example.
+All data sit in one lookup table, which is copied to the device once; host
+and device fill the ghost cells through the same routine (`bc_data_set`),
+so every option below works on CPU, OpenACC and OpenMP builds alike.
+Outside the table's range the data are clamped to its edge, in space and
+in time.
+
+Within a face, the data are looked up at the tangential position of the
+outermost (min side) or innermost (max side) ghost row, so all ghost rows
+of a face get the same data.
+
+| `&bd_list` | default | meaning |
+|---|---|---|
+| `interp_phy_first_row` | `T` | the data are the value *at the face*: each ghost cell gets `2*data - w(first interior cell)` |
+| `bc_phy_first_row` | `F` | write the data into the ghost cells and into the first interior row as well |
+| `boundary_data_primitive` | `F` | the data are primitive variables, converted to conserved per cell |
+
+With both row options `F` the data are written into the ghost cells as
+they are. The two row options exclude each other. Data-driven and ordinary
+types can be mixed on one face (e.g. `typeboundary_min1 = 'bc_data',
+4*'cont'`), except with `boundary_data_primitive = T`, which needs every
+physical variable of a data face, since the conversion takes the whole
+state. See `tests/rho/vtk_boundary` (time-dependent data, AMR, `bc_icarus`,
+`bc_phy_first_row`) and `tests/hd/vtk_boundary` (a mixed face with the
+default `interp_phy_first_row`; static primitive data).
 
 ### specialboundary {: #par_specialboundary }
 `'special'` on any entry needs `specialboundary = T`, otherwise the run stops

@@ -19,11 +19,7 @@ contains
 #:if defined('SPECIALBOUNDARY')    
     use mod_usr, only: specialbound_usr
 #:endif
-#:if defined('OPENACC') or defined('OPENMP')
-    use mod_bc_data, only: bc_data_set_device
-#:else
     use mod_bc_data, only: bc_data_set
-#:endif
     use mod_global_parameters
     ${GPU_ROUTINE_VECTOR()}$
 
@@ -386,11 +382,7 @@ contains
     ! Fill external data after the ordinary boundary conditions.
     if (any(typeboundary(1:nwflux+nwaux,iB)==bc_data .or. &
             typeboundary(1:nwflux+nwaux,iB)==bc_icarus)) then
-#:if defined('OPENACC') or defined('OPENMP')
-       call bc_data_set_device(time,ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2, &
-#:else
        call bc_data_set(time,ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2, &
-#:endif
             ixGmax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,iB,w,x)
     end if
 

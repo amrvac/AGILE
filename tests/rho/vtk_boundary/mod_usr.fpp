@@ -87,46 +87,77 @@ contains
     mask = max(0.0_dp, min(1.0_dp, 8.0_dp * (1.0_dp - (y / radius_y)**2 - (z / radius_z)**2)))
   end function ellipse
 
-  !> Check the sun lookup and the UFO addition on the driven face.
+  !> Check the ghost cells of the data face against the table, for either
+  !> row option (interp_phy_first_row, bc_phy_first_row), with the UFO on top
+  !> for bc_icarus.
   subroutine check_inlet(igrid,level,ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3, &
        ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,qt,w,x)
     use mod_comm_lib, only: mpistop
-    use mod_bc_data, only: bc_data_ix, bc_data_get_3d
+    use mod_global_parameters, only: bc_icarus, xprobmin1, xprobmin2, xprobmin3, &
+         xprobmax1, xprobmax2, xprobmax3
+    use mod_bc_data, only: bc_data_ix, bc_data_get_3d, interp_phy_first_row, &
+         bc_phy_first_row
     integer, intent(in) :: igrid, level, ixImin1, ixImin2, ixImin3, ixImax1, ixImax2, ixImax3
     integer, intent(in) :: ixOmin1, ixOmin2, ixOmin3, ixOmax1, ixOmax2, ixOmax3
     real(dp), intent(in) :: qt, x(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,ndim)
     real(dp), intent(inout) :: w(ixImin1:ixImax1,ixImin2:ixImax2,ixImin3:ixImax3,nw)
-    integer :: face, table, first, last, j, k
-    real(dp) :: amplitude, expected, y, z
+    integer :: face, idim, t1, t2, table, a, b, n, nfirst, nlast, pos, inner
+    integer :: lo(3), hi(3), ilo(3), ihi(3), c(3), cp(3), ci(3)
+    real(dp) :: amplitude, expected, data, xmin(3), xmax(3)
+    logical :: icarus
 
-    ! The bc_icarus run enters from the high side to exercise its face index.
-    face = 1
-    if (typeboundary(rho_,1) /= bc_data) face = 2
+    face = 0
+    do n = 1, 2*ndim
+       if (bc_data_ix(rho_,n) > 0) face = n
+    end do
+    if (face == 0) call mpistop('No VTK data face installed')
     table = bc_data_ix(rho_,face)
-    if (table < 1) call mpistop('VTK inlet installed on the wrong face')
+    icarus = typeboundary(rho_,face) == bc_icarus
     if (qt >= 0.125_dp .and. qt <= 0.25_dp .and. levmax < 2) &
          call mpistop('The VTK density pulse did not trigger AMR')
 
-    if (face == 2) then
-       first = ixOmax1 + 1
-       last = ixImax1
-       if (x(first,ixOmin2,ixOmin3,1) < 1.0_dp) return
+    idim = (face + 1) / 2
+    t1 = merge(2, 1, idim == 1)
+    t2 = merge(2, 3, idim == 3)
+    lo = [ixOmin1, ixOmin2, ixOmin3]; hi = [ixOmax1, ixOmax2, ixOmax3]
+    ilo = [ixImin1, ixImin2, ixImin3]; ihi = [ixImax1, ixImax2, ixImax3]
+    xmin = [xprobmin1, xprobmin2, xprobmin3]; xmax = [xprobmax1, xprobmax2, xprobmax3]
+    c = lo
+    if (mod(face, 2) == 1) then
+       c(idim) = ilo(idim)
+       if (x(c(1),c(2),c(3),idim) > xmin(idim)) return
+       nfirst = ilo(idim); nlast = lo(idim) - 1; pos = ilo(idim); inner = lo(idim)
+       if (bc_phy_first_row) nlast = lo(idim)
     else
-       first = ixImin1
-       last = ixOmin1 - 1
-       if (x(last,ixOmin2,ixOmin3,1) > 0.0_dp) return
+       c(idim) = ihi(idim)
+       if (x(c(1),c(2),c(3),idim) < xmax(idim)) return
+       nfirst = hi(idim) + 1; nlast = ihi(idim); pos = hi(idim) + 1; inner = hi(idim)
+       if (bc_phy_first_row) nfirst = hi(idim)
     end if
 
     amplitude = max(0.0_dp, min(1.0_dp, 16.0_dp * qt, 16.0_dp * (0.25_dp - qt)))
     ${GPU_UPDATE_HOST('ps(igrid)%w')}$
-    do k = ixOmin3, ixOmax3
-       do j = ixOmin2, ixOmax2
-          y = x(first,j,k,2)
-          z = x(first,j,k,3)
-          expected = bc_data_get_3d(table, y, z, qt)
-          if (face == 2) expected = expected + amplitude * ufo_density(y, z)
-          if (.not. all(abs(w(first:last,j,k,rho_) - expected) <= 1.0e-12_dp)) &
-               call mpistop('VTK inlet density differs from the expected sun or sun-plus-UFO pulse')
+    do b = lo(t2), hi(t2)
+       do a = lo(t1), hi(t1)
+          cp(t1) = a; cp(t2) = b; cp(idim) = pos
+          ci = cp; ci(idim) = inner
+          data = bc_data_get_3d(table, x(cp(1),cp(2),cp(3),t1), x(cp(1),cp(2),cp(3),t2), qt)
+          do n = nfirst, nlast
+             c = cp; c(idim) = n
+             if (n == inner) then
+                expected = data   ! bc_phy_first_row
+             else if (interp_phy_first_row) then
+                expected = 2 * data - w(ci(1),ci(2),ci(3),rho_)
+             else
+                expected = data
+             end if
+             if (icarus .and. n /= inner) expected = expected + amplitude * &
+                  ufo_density(x(c(1),c(2),c(3),2), x(c(1),c(2),c(3),3))
+             if (abs(w(c(1),c(2),c(3),rho_) - expected) > 1.0e-12_dp) then
+                write(*,*) 'face', face, 'cell', c, 'w', w(c(1),c(2),c(3),rho_), 'expected', expected
+                call mpistop('VTK inlet density differs from the expected sun or sun-plus-UFO pulse')
+             end if
+          end do
        end do
     end do
   end subroutine check_inlet
