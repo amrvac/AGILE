@@ -255,9 +255,17 @@ end subroutine estimate_speeds_minmax
 
 #:def write_info()
   !> Write this module's parameters to a snapshot
+  !> No parameters, but the count must be there: readers (the restart in
+  !> mod_input_output, the Python tools) expect it after the physics name.
   subroutine rho_write_info(fh)
+    use mod_global_parameters
     integer, intent(in)                 :: fh
 
+    integer                             :: er
+    integer, parameter                  :: n_par = 0
+    integer, dimension(MPI_STATUS_SIZE) :: st
+
+    call MPI_FILE_WRITE(fh, n_par, 1, MPI_INTEGER, st, er)
   end subroutine rho_write_info
 #:enddef
 
