@@ -34,7 +34,7 @@
 !> unchanged, which is what src/io/mod_input_output.fpp's read_par_files relies
 !> on when it builds the sign table from iw_mom alone.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

@@ -4,7 +4,7 @@
 !> rarefaction, a slow compound wave, the contact, a slow shock and a fast
 !> rarefaction, which puts every wave family of the flux scheme under test.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

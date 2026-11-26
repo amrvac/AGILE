@@ -2,34 +2,44 @@
 Main class to load in MPI-AMRVAC native .dat files.
 
 @author: Niels Claes    (niels.claes@kuleuven.be)
-@author: Clément Robert (clement.robert@oca.eu)
-
-         Last edit: 13 October 2019
+         Clément Robert (clement.robert@oca.eu)
+         Adrian Kelly
+         Olaf Willocx
+Last edit: 1 August 2026
 """
+
 import sys, os
 import numpy as np
 import copy
-import matplotlib.pyplot as plt
+
+# Allow this file to run directly, for convenience. See main function at the
+# bottom.
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 from amrvac_pytools.datfiles.reading import datfile_utilities
-from amrvac_pytools.datfiles.processing import regridding, process_data
+from amrvac_pytools.datfiles.processing import process_data
 from amrvac_pytools.datfiles.physics import physical_constants
-from amrvac_pytools.datfiles.plotting import amrvac_plotter
-from amrvac_pytools.datfiles.views import synthetic
 
 
 class load_datfile():
     # Following methods provide easy access to functionalities in other scripts
     def amrplot(self, var, **kwargs):
+        from amrvac_pytools.datfiles.plotting import amrvac_plotter
         return amrvac_plotter.amrplot(self, var, **kwargs)
     def rgplot(self, data, **kwargs):
+        from amrvac_pytools.datfiles.plotting import amrvac_plotter
         return amrvac_plotter.rgplot(self, data, **kwargs)
     def halpha(self, **kwargs):
+        from amrvac_pytools.datfiles.views import synthetic
         return synthetic.h_alpha(self, **kwargs)
     def faraday(self, **kwargs):
+        from amrvac_pytools.datfiles.views import synthetic
         return synthetic.faraday(self, **kwargs)
     @staticmethod
     def show():
+        import matplotlib.pyplot as plt
         plt.show()
 
     def __init__(self, filename):
@@ -61,7 +71,8 @@ class load_datfile():
         self.adiab_constant = 1
 
         # load blocktree information
-        self.block_lvls, self.block_ixs, self.block_offsets = datfile_utilities.get_tree_info(file)
+        self.block_lvls, self.block_ixs, self.block_offsets, self.block_nghost, self.block_field_bytes \
+          = datfile_utilities.get_tree_info(file)
         self.block_shape = np.append(self.header["block_nx"], self.header["nw"])
         self.domain_width = self.header["xmax"] - self.header["xmin"]
 
@@ -70,25 +81,32 @@ class load_datfile():
 
     def get_info(self):
         """
-        Prints the current snapshot info (obtained from the header) to the console.
+        Prints the current data file's info (obtained from the header) to the console.
         """
         if self.isothermal:
             info_isothermal = ' (isothermal) '
         else:
             info_isothermal = ''
         print("")
-        print("[INFO] Current file      : {}".format(self._filename))
-        print("[INFO] Datfile version   : {}".format(self.header["datfile_version"]))
-        print("[INFO] Current time      : {}".format(self.header["time"]))
-        print("[INFO] Physics type      : {}".format(self.header["physics_type"] + info_isothermal))
-        print("[INFO] Boundaries        : {} -> {}".format(self.header["xmin"],
-                                                           self.header["xmax"]))
-        print("[INFO] Max AMR level     : {}".format(self.header["levmax"]))
-        print("[INFO] Uniform mesh      : {}".format(self._uniform))
-        print("[INFO] Block size        : {}".format(self.header["block_nx"]))
-        print("[INFO] Number of blocks  : {}".format(len(self.block_offsets)))
+        print(f"[INFO] Current file      : {self._filename}")
+        print(f"[INFO] Datfile version   : {self.header["datfile_version"]}")
+        print(f"[INFO] Current time      : {format(self.header["time"])}")
+        print(f"[INFO] Current iteration : {self.header["it"]}")
+        print(f"[INFO] Physics type      : {self.header["physics_type"] + info_isothermal}")
+        print(f"[INFO] Boundaries        : {self.header['xmin']} -> {self.header['xmax']}")
+        print(f"[INFO] Max AMR level     : {self.header["levmax"]}")
+        print(f"[INFO] Uniform mesh      : {self._uniform}")
+        print(f"[INFO] Block size        : {self.header["block_nx"]}")
+        print(f"[INFO] Number of blocks  : {len(self.block_offsets)}")
+        print(f"[INFO] Real kind         : {self.header.get("size_real", 8)}")
+        if self.header.get("compression", "none") != "none":
+            print(f"[INFO] Compression       : {self.header["compression"]}")
+            match self.header["compression"]:
+                case "zfp":
+                    print(f"[INFO] ZFP rel. tolerance: {self.header["zfp_rel_tol"]}")
+                    print(f"[INFO] ZFP rel. epsilon  : {self.header["zfp_rel_eps"]}")
         print("-" * 40)
-        print("Known variables: {}".format(self.known_fields))
+        print(f"Known variables: {self.known_fields}")
 
     def get_bounds(self):
         """
@@ -143,7 +161,7 @@ class load_datfile():
 
     def get_time(self):
         """
-        Gets the current snapshot time.
+        Gets the current data file's time.
         :return: Current time in the simulation (in AMRVAC units).
         """
         return self.header["time"]
@@ -159,8 +177,12 @@ class load_datfile():
             raise KeyError("variable not known: {}".format(var))
         varmax = -1e99
         varmin = 1e99
-        for offset in self.block_offsets:
-            block = datfile_utilities.get_single_block_data(self.file, offset, self.block_shape)
+        size_real = self.header.get("size_real", 8)
+        for ileaf, offset in enumerate(self.block_offsets):
+            nghost = self.block_nghost[ileaf]
+            shape = datfile_utilities.block_shape_with_ghost(self.header, nghost)
+            block = datfile_utilities.get_single_block_data(self.file, offset, shape, size_real)
+            block = datfile_utilities.strip_ghost(block, self.header, nghost)
             block = process_data.create_data_dict(block, self.header)
             varmax = np.maximum(varmax, np.max(block[var]))
             varmin = np.minimum(varmin, np.min(block[var]))
@@ -225,6 +247,7 @@ class load_datfile():
         :param regriddir: The directory to which the regridded file is saved. This directory is searched in order to
                           try and load the file if already present.
         """
+        from amrvac_pytools.datfiles.processing import regridding
         self._check_regrid_directory(regriddir)
         try:
             data = self._load_regridded_data()
@@ -286,3 +309,34 @@ class load_datfile():
             if 'e' in fields:
                 fields += ['T']
         return fields
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Read .dat file info: the header, and summary of given blocks.")
+    parser.add_argument("datfile",
+        help=".dat file path.")
+    parser.add_argument("-l", "--leaves", type=int, nargs="+", default=[],
+        help="Leaf indices to summarize, e.g. -l 0 1")
+    parser.add_argument("-g", "--keep-ghost", action="store_true",
+        help="Keep ghost cells in the leaf summaries")
+    args = parser.parse_args()
+
+    ds = load_datfile(args.datfile)
+    ds.get_info()
+
+    ndim = ds.header["ndim"]
+    for ileaf in args.leaves:
+        if not 0 <= ileaf < ds.header["nleafs"]:
+            print("[ERROR] leaf index {} out of range 0..{}".format(ileaf, ds.header["nleafs"]-1))
+            continue
+        nghost = ds.block_nghost[ileaf]
+        block = datfile_utilities.read_block(ds, ileaf, keep_ghost=args.keep_ghost)
+        print("-" * 40)
+        print(f"leaf {ileaf} | level {ds.block_lvls[ileaf]} | spatial index {ds.block_ixs[ileaf]}")
+        print(f"  byte offset {ds.block_offsets[ileaf]} | nghost lo {nghost[:ndim]} hi {nghost[ndim:]} | shape {block.shape}")
+        for iw, name in enumerate(ds.header["w_names"]):
+            w = block[..., iw]
+            print("  {:<16s} min {: .4e}   med {: .4e}   max {: .4e}".format(
+                name, np.min(w), np.median(w), np.max(w)))

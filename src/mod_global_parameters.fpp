@@ -2,7 +2,7 @@
 #:include "mod_gpu_directives.fpp"
 #:endmute
 !> This module contains definitions of global parameters and variables and some
-!> generic functions/subroutines used in AMRVAC.
+!> generic functions/subroutines used in AGILE.
 !>
 module mod_global_parameters
   use mod_physicaldata
@@ -203,14 +203,14 @@ module mod_global_parameters
   integer, parameter :: nsavehi=100
 
   !> Number of output methods
-  integer, parameter :: nfile = 5
+  integer, parameter :: nfile = 6
 
   !> index number of the latest existing data file
   integer :: index_latest_data
 
   !> Names of the output methods
   character(len=40), parameter  :: output_names(nfile) = ['log      ',&
-      'normal   ', 'slice    ', 'collapsed', 'analysis ']
+      'datfile  ', 'slice    ', 'collapsed', 'analysis ', 'snapshot ']
 
   !> User parameter file
   character(len=std_len)   :: usr_filename
@@ -256,11 +256,36 @@ module mod_global_parameters
   !> accumulated wall-clock time spent on boundary conditions
   double precision :: time_bc
 
-  !> IO: snapshot and collapsed views output numbers/labels
-  integer :: snapshotnext, collapsenext
+  !> IO: restart-file and collapsed-view output numbers/labels
+  integer :: datfilenext, collapsenext
 
   !> IO: slice output numbers/labels
   integer :: slicenext
+
+  !> IO: analysis snapshot output number/label
+  integer :: snapnext
+
+  !> IO: number of ghost-cell layers to include on every block face in v6
+  !> snapshot files (0 = none, default; capped at nghostcells)
+  integer :: snap_nghost
+
+  !> IO: bytes per real in snapshot block data,
+  !>     8 (double precision, default) or 4 (single precision)
+  integer :: snap_size_real
+
+  !> IO: compress v6 snapshot block data with ZFP in fixed-precision mode
+  logical :: snap_compress_zfp
+
+  !> IO: ZFP relative error tolerance (per cell, see mod_zfp), no default.
+  !>     The precision in bit planes (https://doi.org/10.1137/18M1168832) is
+  !>     chosen per block and per field as the smallest one satisfying it.
+  double precision :: snap_zfp_rel_tol
+
+  !> IO: dimensionless floor of the relative-error denominator: cells are
+  !>     protected relative to max(|q|, rel_eps * maxval(|q|)) of their
+  !>     block-field, so ~zero cells demand only absolute accuracy at the
+  !>     block's scale
+  double precision :: snap_zfp_rel_eps
 
   !> Constant indicating log output
   integer, parameter :: filelog_      = 1
@@ -277,6 +302,10 @@ module mod_global_parameters
   !> Constant indicating analysis output (see @ref analysis.md)
   integer, parameter :: fileanalysis_ = 5
 
+  !> Constant indicating analysis snapshot output (v6 format; use the
+  !> normal output for restarts)
+  integer, parameter :: filesnap_ = 6
+
   !> Unit for standard input
   integer, parameter :: unitstdin=5
 
@@ -290,7 +319,7 @@ module mod_global_parameters
   integer, parameter :: unitpar=9
   integer, parameter :: unitconvert=10
   integer, parameter :: unitslice=11
-  integer, parameter :: unitsnapshot=12
+  integer, parameter :: unitdatfile=12
   integer, parameter :: unitcollapse=13
   integer, parameter :: unitanalysis=14
 
@@ -310,19 +339,19 @@ module mod_global_parameters
   !> Base file name for simulation output, which will be followed by a number
   character(len=std_len) :: base_filename
 
-  !> If not 'unavailable', resume from snapshot with this base file name
+  !> If not 'unavailable', resume from the restart file with this base file name
   character(len=std_len) :: restart_from_file
 
   !> Which type of log to write: 'normal', 'special', 'regression_test'
   character(len=std_len) :: typefilelog
 
-  !> Resume from the snapshot with this index
-  integer :: snapshotini
+  !> Resume from the restart file with this index
+  integer :: datfileini
 
-  !> If true, restart a previous run from the latest snapshot
+  !> If true, restart a previous run from the latest restart file
   logical :: resume_previous_run
 
-  !> If true and restart_from_file is given, convert snapshots to
+  !> If true and restart_from_file is given, convert restart files to
   !> other file formats
   logical                :: convert
 
@@ -352,7 +381,7 @@ module mod_global_parameters
   !> Stores the memory and load imbalance, used in printlog
   double precision       :: Xload, Xmemory
 
-  !> Save a snapshot before crash a run met unphysical values
+  !> Save a restart file before crash a run met unphysical values
   logical :: crash=.false.
   ${GPU_DECLARE_COPYIN('crash')}$
   
@@ -572,7 +601,7 @@ module mod_global_parameters
   logical :: final_dt_exit
 
   !> If true, reset iteration count and global_time to original values, and
-  !> start writing snapshots at index 0
+  !> start writing restart files at index 0
   logical :: reset_time
 
   !> If true, reset iteration count to 0
@@ -584,7 +613,7 @@ module mod_global_parameters
   !> If true, call initonegrid_usr upon restarting
   logical :: firstprocess
 
-  !> If true, wall time is up, modify snapshotnext for later overwrite
+  !> If true, wall time is up, modify datfilenext for later overwrite
   logical :: pass_wall_time
 
   !> If true, do H-correction to fix the carbuncle problem at grid-aligned shocks

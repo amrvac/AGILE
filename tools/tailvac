@@ -2,7 +2,7 @@
 # usage: tailvac
 # aim: to monitor .log file
 if($#argv == 0) then
-  set ful=`ls -l amrvac.par`
+  set ful=`ls -l agile.par`
 endif
 if($#argv == 1) then
   set ful=`ls -l $argv[1]`

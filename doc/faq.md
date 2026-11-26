@@ -4,7 +4,7 @@ title: Frequently Asked Questions
 Below you can find a list of frequently asked questions and answers.
 
 # Is there a mailinglist? {: #faq-mailinglist }
-There is a mailing list for the related AMRVAC code that you can send questions to: <mailto:amrvacsers@ls.kuleuven.be>
+There is a mailing list for the related AMRVAC code that you can send questions to: <mailto:amrvacusers@ls.kuleuven.be>
 
 You can join the mailing-list by [subscribing](https://ls.kuleuven.be/cgi-bin/wa?SUBED1=AMRVACUSERS&A=1), so that you will be informed about important changes or (bug)fixes. You can also search the [mailing list archive](https://ls.kuleuven.be/cgi-bin/wa?A0=AMRVACUSERS).
 

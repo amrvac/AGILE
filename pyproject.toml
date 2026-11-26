@@ -9,6 +9,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# For reading ZFP-compressed snapshot files with amrvac_pytools.
+# Use `uv sync --extra zfp`.
+zfp = ["zfpy>=1.0.0", "numpy"]
 docs = [
     "ford>=7.0",
 ]

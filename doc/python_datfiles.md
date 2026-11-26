@@ -109,7 +109,7 @@ default `matplotlib` values. The colormap can be chosen by supplying the `cmap` 
 ![](figmovdir/example_py_datreader.png)
 
 Both `rgplot` and `amrplot` create new `matplotlib` figure and axis instances that are used for plotting. However, both methods accept a figure and axis instance as extra argument,
-which will then be used instead. This is useful in for example plotting multiple snapshots on a single figure using subplots, like the example below shows.
+which will then be used instead. This is useful in for example plotting multiple .dat files on a single figure using subplots, like the example below shows.
 
 ```python
 import matplotlib.pyplot as plt

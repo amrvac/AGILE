@@ -54,7 +54,7 @@ through the settings you provided in the combined _&amp;savelist;_ and
 _&amp;stoplist;_ namelists from the [par-file](par.html). For the example,
 they normally default to asking a full data dump at time zero, as well as
 every time the time has increased by 0.05, and this till _tmax=1.0d0_, such
-that we actually have 21 snapshots in total. You should thus have files like
+that we actually have 21 restart files in total. You should thus have files like
 _KH3D0000.dat_ up to _KH3D0020.dat_. You can now
 individually convert such _*.dat_ file to a _*.vtu_ file by doing the
 following. Edit the agile.par file, to select a visualization data format like
@@ -101,13 +101,13 @@ start and stopindex (0 and 20 here). With paraview, you will then be able to
 immediately import all 21 _*.vtu_ files with the same base filename, and
 directly make movies or still images from them.
 
-For example, to convert snapshots from number 10 to number 20:
+For example, to convert restart files from number 10 to number 20:
 
 ```text
 aiconvert 10 20
 ```
 
-or to convert the snapshot number 12
+or to convert the restart file number 12
 
 ```text
 aiconvert 12
@@ -119,13 +119,13 @@ or just type
 aiconvert
 ```
 
-to convert all the snapshots! You can also specify a parfile other than agile.par as:
+to convert all the restart files! You can also specify a parfile other than agile.par as:
 
 ```text
 aiconvert newname.par 0 20
 ```
 
-or to convert the snapshot number 12
+or to convert the restart file number 12
 
 ```text
 aiconvert newname.par 12

@@ -1,4 +1,4 @@
-!> Module with all the methods that users can customize in AMRVAC
+!> Module with all the methods that users can customize in AGILE
 !>
 !> Each procedure pointer can be initialized in a user's mod_usr.t
 module mod_usr_methods
@@ -6,7 +6,7 @@ module mod_usr_methods
   implicit none
   public
 
-  !> Initialize the user's settings (after initializing amrvac)
+  !> Initialize the user's settings (after initializing AGILE)
   procedure(p_no_args), pointer       :: usr_set_parameters   => null()
   !> Initialize earch grid block data
   procedure(init_one_grid), pointer   :: usr_init_one_grid    => null()
@@ -287,7 +287,7 @@ module mod_usr_methods
     end subroutine source
 
     !> Limit "dt" further if necessary, e.g. due to the special source terms.
-    !> The getdt_courant (CFL condition) and the getdt subroutine in the AMRVACPHYS
+    !> The getdt_courant (CFL condition) and the getdt subroutine of the physics
     !> module have already been called.
     subroutine get_dt(w,ixImin1,ixImin2,ixImin3,ixImax1,ixImax2,ixImax3,&
        ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,dtnew,dx1,dx2,dx3,x)

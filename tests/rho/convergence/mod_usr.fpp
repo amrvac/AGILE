@@ -17,7 +17,7 @@
 !>            t = 1
 !> The runs are driven by run_convergence.sh; convergence.py makes the table.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

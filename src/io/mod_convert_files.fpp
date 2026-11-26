@@ -249,8 +249,8 @@ contains
      inquire(qunit,opened=fileopen)
      if (.not.fileopen) then
        ! generate filename
-        filenr=snapshotini
-        if (autoconvert) filenr=snapshotnext
+        filenr=datfileini
+        if (autoconvert) filenr=datfilenext
        write(filename,'(a,i4.4,a)') TRIM(base_filename),filenr,".blk"
        select case(convert_type)
         case("oneblock")
@@ -352,8 +352,8 @@ contains
       inquire(qunit,opened=fileopen)
       if (.not.fileopen) then
         ! generate filename
-         filenr=snapshotini
-         if (autoconvert) filenr=snapshotnext
+         filenr=datfileini
+         if (autoconvert) filenr=datfilenext
         write(filename,'(a,i4.4,a)') TRIM(base_filename),filenr,".blk"
         open(qunit,file=filename,status='unknown')
       end if
@@ -485,8 +485,8 @@ contains
     inquire(qunit,opened=fileopen)
     if(.not.fileopen) then
       ! generate filename
-      filenr=snapshotini
-      if (autoconvert) filenr=snapshotnext
+      filenr=datfileini
+      if (autoconvert) filenr=datfilenext
       write(filename,'(a,i4.4,a)') TRIM(base_filename),filenr,".plt"
       open(qunit,file=filename,status='unknown')
     end if
@@ -729,8 +729,8 @@ contains
     inquire(qunit,opened=fileopen)
     if(.not.fileopen)then
       ! generate filename
-      filenr=snapshotini
-      if (autoconvert) filenr=snapshotnext
+      filenr=datfileini
+      if (autoconvert) filenr=datfilenext
       write(filename,'(a,i4.4,a)') TRIM(base_filename),filenr,".vtu"
       ! Open the file for the header part
       open(qunit,file=filename,status='unknown')
@@ -986,8 +986,8 @@ contains
       inquire(qunit,opened=fileopen)
       if(.not.fileopen)then
         ! generate filename
-        filenr=snapshotini
-        if (autoconvert) filenr=snapshotnext
+        filenr=datfileini
+        if (autoconvert) filenr=datfilenext
         write(filename,'(a,i4.4,a)') TRIM(base_filename),filenr,".vtu"
         ! Open the file for the header part
         open(qunit,file=filename,status='replace')
@@ -1424,8 +1424,8 @@ contains
       inquire(qunit,opened=fileopen)
       if(.not.fileopen)then
         ! generate filename
-        filenr=snapshotini
-        if (autoconvert) filenr=snapshotnext
+        filenr=datfileini
+        if (autoconvert) filenr=datfilenext
         write(filename,'(a,i4.4,a)') TRIM(base_filename),filenr,".vtu"
         ! Open the file for the header part
         open(qunit,file=filename,status='replace')
@@ -1886,8 +1886,8 @@ contains
       inquire(qunit,opened=fileopen)
       if(.not.fileopen)then
         ! generate filename
-        filenr=snapshotini
-        if (autoconvert) filenr=snapshotnext
+        filenr=datfileini
+        if (autoconvert) filenr=datfilenext
         write(filename,'(a,i4.4,a)') TRIM(base_filename),filenr,".vti"
         ! Open the file for the header part
         open(qunit,file=filename,status='unknown',form='formatted')
@@ -2027,8 +2027,8 @@ contains
     inquire(qunit,opened=fileopen)
     if(.not.fileopen)then
       ! generate filename
-      filenr=snapshotini
-      if (autoconvert) filenr=snapshotnext
+      filenr=datfileini
+      if (autoconvert) filenr=datfilenext
       ! Open the file for the header part
       write(pfilename,'(a,i4.4,a,i4.4,a)') TRIM(base_filename),filenr,"p",mype,&
          ".vtu"
@@ -2144,8 +2144,8 @@ contains
       inquire(qunit,opened=fileopen)
       if(.not.fileopen)then
         ! generate filename
-        filenr=snapshotini
-        if (autoconvert) filenr=snapshotnext
+        filenr=datfileini
+        if (autoconvert) filenr=datfilenext
         write(filename,'(a,i4.4,a)') TRIM(base_filename),filenr,".vtu"
         ! Open the file for the header part
         open(qunit,file=filename,status='unknown',form='formatted')
@@ -2508,8 +2508,8 @@ contains
     inquire(qunit,opened=fileopen)
     if(.not.fileopen)then
        ! generate filename
-       filenr=snapshotini
-       if (autoconvert) filenr=snapshotnext
+       filenr=datfileini
+       if (autoconvert) filenr=datfilenext
        write(filename,'(a,i4.4,a)') TRIM(base_filename),filenr,".pvtu"
        ! Open the file
        open(qunit,file=filename,status='unknown',form='formatted')
@@ -2620,8 +2620,8 @@ contains
       inquire(qunit,opened=fileopen)
       if (.not.fileopen) then
         ! generate filename
-         filenr=snapshotini
-         if (autoconvert) filenr=snapshotnext
+         filenr=datfileini
+         if (autoconvert) filenr=datfilenext
         write(filename,'(a,i4.4,a)') TRIM(base_filename),filenr,".plt"
         open(qunit,file=filename,status='unknown')
       end if
@@ -3073,8 +3073,8 @@ contains
     inquire(qunit,opened=fileopen)
     if(.not.fileopen)then
       ! generate filename
-      filenr=snapshotnext-1
-      if (autoconvert) filenr=snapshotnext
+      filenr=datfilenext-1
+      if (autoconvert) filenr=datfilenext
       ! Open the file for the header part
       write(pfilename,'(a,i4.4,a,i4.4,a)') TRIM(base_filename),filenr,"p",mype,&
          ".vtu"

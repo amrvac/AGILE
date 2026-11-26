@@ -31,7 +31,7 @@
 ! after building for the GPU:
 !   make -j4 arch=nvidia OPENACC=1 NOGPUDIRECT=1
 !
-! The .vtu snapshots are the 3D volumes and the slice files are the movie
+! The .vtu files are the 3D volumes and the slice files are the movie
 ! frames. Both carry Cartesian cell corners and Cartesian vector components
 ! (nocartesian is .false. by default), which is what ParaView and VisIt want
 ! for a full sphere.
@@ -53,7 +53,7 @@
    itsave(1,2)      = 0        ! ... the initial condition
    itsave(1,3)      = 0        ! ... and the initial slices
    ditsave_log      = 1        ! every step: this is the conservation trace
-   dtsave_dat       = 0.015d0  ! 40 snapshots
+   dtsave_dat       = 0.015d0  ! 40 restart files
    dtsave_slice     = 0.006d0  ! 100 movie frames
 
    ! Four slices. The two meridional half-planes at phi_c and phi_c + pi

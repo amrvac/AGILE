@@ -18,7 +18,7 @@
 !> clips what is left - so the real test here is check_pole_ghosts below, which
 !> compares the ghost cells themselves against the exact solution.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

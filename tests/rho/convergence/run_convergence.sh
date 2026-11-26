@@ -81,7 +81,7 @@ run_one () {   # setup lim stepper flux N
   else
     printf 'FAILED, see %s.out\n' "$base"
   fi
-  rm -f "$base"*.dat     # the end-state snapshot is not needed
+  rm -f "$base"*.dat     # the end-state restart file is not needed
 }
 
 for setup in $SETUPS; do

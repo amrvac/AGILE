@@ -35,7 +35,7 @@
 !> against the uniform Cartesian b0 they must reduce to (fill_nwextra_device
 !> at the axis).
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

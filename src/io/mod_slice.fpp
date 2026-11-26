@@ -728,10 +728,10 @@ contains
          call phys_write_info(slice_fh)
 
          if(pass_wall_time.or.save_now) then
-            call MPI_FILE_WRITE(slice_fh, snapshotnext, 1, MPI_INTEGER, status,&
+            call MPI_FILE_WRITE(slice_fh, datfilenext, 1, MPI_INTEGER, status,&
                ierrmpi)
          else
-            call MPI_FILE_WRITE(slice_fh, snapshotnext+1, 1, MPI_INTEGER,&
+            call MPI_FILE_WRITE(slice_fh, datfilenext+1, 1, MPI_INTEGER,&
                status, ierrmpi)
          end if
          call MPI_FILE_WRITE(slice_fh, slicenext, 1, MPI_INTEGER, status,&

@@ -1,7 +1,7 @@
 #!/bin/csh -f
 # usage: tailvac
 # aim: to monitor .log file
-set ful=`ls -l amrvac.par`
+set ful=`ls -l agile.par`
 set fname=$ful[$#ful]
 if (-e $fname ) then
    goto step1

@@ -63,7 +63,7 @@ class amrplot(_plotsetup):
 
         for ileaf, offset in enumerate(self.dataset.block_offsets):
             l_edge, r_edge = process_data.get_block_edges(ileaf, self.dataset)
-            block = datfile_utilities.get_single_block_data(self.dataset.file, offset, self.dataset.block_shape)
+            block = datfile_utilities.read_block(self.dataset, ileaf)
             block = process_data.create_data_dict(block, self.dataset.header)
             x = np.linspace(l_edge, r_edge, self.dataset.header['block_nx'][0])
             self.ax.plot(x, block[self.var], '-k')
@@ -82,7 +82,7 @@ class amrplot(_plotsetup):
             # retrieve x and y coordinates for each block
             l_edge, r_edge = process_data.get_block_edges(ileaf, self.dataset)
             # read in block data (contains all variables)
-            block = datfile_utilities.get_single_block_data(self.dataset.file, offset, self.dataset.block_shape)
+            block = datfile_utilities.read_block(self.dataset, ileaf)
             block = process_data.create_data_dict(block, self.dataset.header)
             x = np.linspace(l_edge[0], r_edge[0], self.dataset.header['block_nx'][0])
             y = np.linspace(l_edge[1], r_edge[1], self.dataset.header['block_nx'][1])

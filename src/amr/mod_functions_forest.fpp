@@ -498,7 +498,7 @@ contains
 
     ! Hand back the read-ahead: leave rank 0's file pointer exactly where the
     ! last consumed node ends, which is where it sat when this routine read one
-    ! node at a time.  read_snapshot_old relies on the sequential position.
+    ! node at a time.  read_datfile_old relies on the sequential position.
     if (mype==0 .and. nread>ibuf) then
        call MPI_FILE_SEEK(file_handle, -int(nread-ibuf,kind=MPI_OFFSET_KIND)* &
           int(size_logical,kind=MPI_OFFSET_KIND), MPI_SEEK_CUR, ierrmpi)

@@ -362,7 +362,7 @@ module mod_radiative_cooling
         call mpistop("This coolingcurve is unknown")
       end select
 
-      ! create cooling table(s) for use in amrvac
+      ! create cooling table(s) for use in AGILE
       fl%tcoolmax = t_table(ntable)
       fl%tcoolmin = t_table(1)
       ratt = (fl%tcoolmax-fl%tcoolmin)/(dble(fl%ncool-1) + smalldouble)

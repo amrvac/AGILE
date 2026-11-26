@@ -36,7 +36,7 @@ the data structures for the block-tree AMR.
 * [File format](fileformat.html) Description of the format of AGILE data file (.dat).
 * [Dump variables to dat files](dat_convert.html) Adding extra variables to the .dat output.
 * [Setting up the python tools](python_setup.html) Installing the Python analysis tools.
-* [Reading the dat files](python_datfiles.html) Loading .dat snapshots in Python.
+* [Reading the dat files](python_datfiles.html) Loading .dat files (restart files and snapshots) in Python.
 * [Reading the vtk files](python_vtkfiles.html) Loading .vtu output in Python.
 * [Visualisation and analysis in Python with yt](yt_usage.html) without data conversion.
 * [Converting data files for visualization](convert.html) Brief notes on how to

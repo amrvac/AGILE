@@ -437,6 +437,11 @@ Every case directory has a `mod_usr.fpp` defining `module mod_usr` with a
    `usr_process_grid`, `usr_refine_threshold`, ...),
 2. calls `phys_activate()` last.
 
+`use mod_agile` brings in the modules a case usually needs (global
+parameters, user methods, geometry, `mpistop`). `mod_amrvac` is kept only as
+an alias for it, so that cases ported from upstream compile unchanged; new
+cases use `mod_agile`.
+
 Hooks that run on the GPU are not procedure pointers but routines the core
 calls by name from `mod_usr`, compiled in by a switch in `agile.par`:
 `gravity_field` (`*_gravity`), `addsource_usr` (`*_source_usr`; the
@@ -515,9 +520,9 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   `mod_radiative_cooling.fpp`). Only one `PHYS` value's branch is active per
   build, so e.g. `mod_physics.fpp` compiles to a different `mod_physics`
   module depending on which physics module was selected.
-- `src/io/` — parameter/config file reading (`mod_config.fpp`), snapshot and
-  log I/O, `.dat`/VTU conversion (`mod_convert*.fpp`), slices, collapsed
-  views.
+- `src/io/` — parameter/config file reading (`mod_config.fpp`), restart-file,
+  snapshot and log I/O, `.dat`/VTU conversion (`mod_convert*.fpp`), slices,
+  collapsed views.
 - `src/particle/` — optional Lagrangian particle module (advection, Lorentz,
   guiding-center, sampling).
 - `src/limiter/`, `src/modules/` — flux limiters and small shared utilities

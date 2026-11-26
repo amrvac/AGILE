@@ -17,7 +17,7 @@
 !> The physical boundaries hold the exact solution (special), so only the
 !> interior discretisation is under test.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

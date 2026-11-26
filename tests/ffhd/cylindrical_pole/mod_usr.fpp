@@ -31,7 +31,7 @@
 !> The volume averages in the log are almost blind to the pole copy, so the
 !> real test is check_pole_ghosts below.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none
