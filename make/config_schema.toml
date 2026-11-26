@@ -263,3 +263,10 @@ emit.logSpherical = "spherical"
 emit.logCylindrical = "cylindrical"
 implies.logSpherical = ["components.log_radius"]
 implies.logCylindrical = ["components.log_radius"]
+
+[filelist]
+[filelist.snap_compress_zfp]
+type = "flag"
+name = "COMPRESS_ZFP"
+flags = ["fypp", "hash"]
+default = false

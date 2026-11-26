@@ -111,7 +111,7 @@ contains
              ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,ps(igrid)%w,&
              ps(igrid)%x)
        end if
-       ! 1:nwgc only - analytic extras past nwgc stay as read_snapshot and
+       ! 1:nwgc only - analytic extras past nwgc stay as read_datfile and
        ! alloc_node left them (see initial_condition)
        ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
     end do

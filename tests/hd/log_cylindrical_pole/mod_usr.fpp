@@ -65,7 +65,7 @@
 !> check_pole_ghosts' 1e-10 comparison against the analytic state would catch
 !> and the volume averages in the log would not.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

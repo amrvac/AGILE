@@ -52,7 +52,7 @@ module mod_particle_base
   logical                 :: write_individual
   !> Whether to write ensemble output
   logical                 :: write_ensemble
-  !> Whether to write particle snapshots
+  !> Whether to write the particle restart file with each restart file
   logical                 :: write_snapshot
   !> Particle downsampling factor in CSV output
   integer                 :: downsample_particles
@@ -1195,7 +1195,7 @@ contains
 
   end subroutine time_spent_on_particles
 
-  subroutine read_particles_snapshot(file_exists)
+  subroutine read_particles_restart(file_exists)
     use mod_global_parameters
 
     logical,intent(out)             :: file_exists
@@ -1208,14 +1208,14 @@ contains
     nparticles         = 0
     it_particles       = 0
 
-    ! open the snapshot file on the headnode
+    ! open the particle restart file on the headnode
     file_exists=.false.
     if (mype == 0) then
-!      write(filename,"(a,a,i4.4,a)") trim(base_filename),'_particles',snapshotini,'.dat'
+!      write(filename,"(a,a,i4.4,a)") trim(base_filename),'_particles',datfileini,'.dat'
       ! Strip restart_from_filename of the ending
       pos = scan(restart_from_file, '.dat', back=.true.)
       write(filename,"(a,a,i4.4,a)") trim(restart_from_file(1:pos-8)),&
-         '_particles',snapshotini,'.dat'
+         '_particles',datfileini,'.dat'
       INQUIRE(FILE=filename, EXIST=file_exists)
       if (.not. file_exists) then
         write(*,*) 'WARNING: File '//trim(&
@@ -1241,7 +1241,7 @@ contains
       if (mype == 0) then
         do while (nparticles_on_mype .lt. nparticles_per_cpu_hi .and. &
            mynparticles .lt. nparticles)
-          call read_from_snapshot
+          call read_particles_from_restart
           mynparticles = mynparticles + 1
         end do
       end if ! mype==0
@@ -1251,9 +1251,9 @@ contains
 
     if (mype == 0) close(unit=unitparticles)
 
-  end subroutine read_particles_snapshot
+  end subroutine read_particles_restart
 
-  subroutine read_from_snapshot()
+  subroutine read_particles_from_restart()
 
     integer :: index,igrid_particle,ipe_particle
 
@@ -1279,9 +1279,9 @@ contains
 
     call push_particle_into_particles_on_mype(index)
 
-  end subroutine read_from_snapshot
+  end subroutine read_particles_from_restart
 
-  subroutine write_particles_snapshot()
+  subroutine write_particles_restart()
     use mod_global_parameters
 
     character(len=std_len)          :: filename
@@ -1303,10 +1303,10 @@ contains
 
     receive_n_particles_for_output_from_ipe(:) = 0
 
-    ! open the snapshot file on the headnode
+    ! open the particle restart file on the headnode
     if (mype .eq. 0) then
       write(filename,"(a,a,i4.4,a)") trim(base_filename),'_particles',&
-         snapshotnext,'.dat'
+         datfilenext,'.dat'
       INQUIRE(FILE=filename, EXIST=file_exists)
       if (.not. file_exists) then
         open(unit=unitparticles,file=filename,form='unformatted',status='new',&
@@ -1319,7 +1319,7 @@ contains
     end if
     if (npe==1) then
       do iipart=1,nparticles_on_mype;ipart=particles_on_mype(iipart);
-        call append_to_snapshot(particle(ipart)%self,particle(ipart)%payload)
+        call append_to_restart(particle(ipart)%self,particle(ipart)%payload)
       end do
       return
     end if
@@ -1354,7 +1354,7 @@ contains
     if (mype==0) then
       ! first output own particles (already in receive buffer)
       do iipart=1,nparticles_on_mype;ipart=particles_on_mype(iipart);
-        call append_to_snapshot(particle(ipart)%self,particle(ipart)%payload)
+        call append_to_restart(particle(ipart)%self,particle(ipart)%payload)
       end do
       ! now output the particles sent from the other ipes
       do ipe=1,npe-1
@@ -1369,7 +1369,7 @@ contains
            ,npayload*receive_n_particles_for_output_from_ipe(ipe),&
            MPI_DOUBLE_PRECISION,ipe,ipe,icomm,status,ierrmpi)
         do ipart=1,receive_n_particles_for_output_from_ipe(ipe)
-          call append_to_snapshot(receive_particles(ipart),&
+          call append_to_restart(receive_particles(ipart),&
              receive_payload(1:npayload,ipart))
         end do ! ipart
         deallocate(receive_particles)
@@ -1378,9 +1378,9 @@ contains
       close(unit=unitparticles)
     end if ! mype == 0
 
-  end subroutine write_particles_snapshot
+  end subroutine write_particles_restart
 
-  subroutine append_to_snapshot(myparticle,mypayload)
+  subroutine append_to_restart(myparticle,mypayload)
 
     type(particle_t),intent(in) :: myparticle
     double precision :: mypayload(1:npayload)
@@ -1395,7 +1395,7 @@ contains
     write(unitparticles) myparticle%u
     write(unitparticles) mypayload(1:npayload)
 
-  end subroutine append_to_snapshot
+  end subroutine append_to_restart
 
   subroutine init_particles_output()
     use mod_global_parameters

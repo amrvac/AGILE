@@ -3551,8 +3551,8 @@ module mod_thermal_emission
         inquire(qunit,opened=fileopen)
         if(.not.fileopen)then
           ! generate filename 
-          filenr=snapshotini
-          if (autoconvert) filenr=snapshotnext
+          filenr=datfileini
+          if (autoconvert) filenr=datfilenext
           if (convert_type=='EIvtiCCmpi') then
             write(filename,'(a,i4.4,a)') trim(filename_euv),filenr,".vti"
           else if (convert_type=='SIvtiCCmpi') then
@@ -3707,8 +3707,8 @@ module mod_thermal_emission
         inquire(qunit,opened=fileopen)
         if(.not.fileopen)then
           ! generate filename 
-          filenr=snapshotini
-          if (autoconvert) filenr=snapshotnext
+          filenr=datfileini
+          if (autoconvert) filenr=datfilenext
           if (datatype=='image_euv') then
             write(filename,'(a,i4.4,a)') trim(filename_euv),filenr,".vtu"
           else if (datatype=='image_sxr') then

@@ -44,7 +44,7 @@
 !> subtly wrong barely moves a volume average, so the metrics are compared
 !> against their closed forms cell by cell instead.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

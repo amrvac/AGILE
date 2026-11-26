@@ -118,7 +118,7 @@ contains
     ! the user_init routine should load a physics module
     call usr_init()
 
-    call initialize_amrvac()
+    call initialize_agile()
 
     if (restart_from_file /= undefined) then
     !AGILE: not yet implemented, data movement needs to happen here
@@ -126,20 +126,20 @@ contains
 !        call mpistop("restart or convert on GPU not yet implemented")
 ! #endif
        ! restart from previous file or dat file conversion
-       ! get input data from previous AMRVAC run
+       ! get input data from previous AGILE run
 
        ! read in dat file
-       call read_snapshot()
+       call read_datfile()
 
-       ! rewrite it=0 snapshot when restart from it=0 state
-       if(it==0.and.itsave(1,2)==0) snapshotnext=snapshotnext-1
+       ! rewrite it=0 datfile when restart from it=0 state
+       if(it==0.and.itsave(1,2)==0) datfilenext=datfilenext-1
 
        if (reset_time) then
          ! reset it and global time to original value
          it           = it_init
          global_time  = time_init
-         ! reset snapshot number
-         snapshotnext=0
+         ! reset datfile number
+         datfilenext=0
        end if
 
        if (reset_it) then
@@ -179,7 +179,7 @@ contains
        if (use_multigrid) call mg_setup_multigrid()
 
        if(use_particles) then
-         call read_particles_snapshot(part_file_exists)
+         call read_particles_restart(part_file_exists)
          call init_gridvars()
          if (.not. part_file_exists) call particles_create()
          if(convert) then
@@ -204,8 +204,8 @@ contains
             then
             call process(it,global_time)
          end if
-         !here requires -1 snapshot
-         if (autoconvert .or. snapshotnext>0) snapshotnext = snapshotnext - 1
+         !here requires -1 datfile
+         if (autoconvert .or. datfilenext>0) datfilenext = datfilenext - 1
 
          if(associated(phys_special_advance)) then
            ! e.g. calculate MF velocity from magnetic field
@@ -265,7 +265,7 @@ contains
 
     if (mype==0) then
        print*,'-------------------------------------------------------------------------------'
-       write(*,'(a,f17.3,a)')' Finished AMRVAC in : ',MPI_WTIME()-time0,' sec'
+       write(*,'(a,f17.3,a)')' Finished AGILE in : ',MPI_WTIME()-time0,' sec'
        print*,'-------------------------------------------------------------------------------'
     end if
 
@@ -301,7 +301,7 @@ contains
     time_last_print = -bigdouble
     fixcount=1
 
-    n_saves(filelog_:fileout_) = snapshotini
+    n_saves(filelog_:fileout_) = datfileini
 
     do ifile=nfile,1,-1
        if(resume_previous_run) then
@@ -392,14 +392,14 @@ contains
        end if
 
 
-       ! output a snapshot when user write a file named 'savenow' in the same
-       ! folder as the executable amrvac
+       ! output a datfile when user write a file named 'savenow' in the same
+       ! folder as the executable agile
        if (mype==0) inquire(file='savenow',exist=save_now)
        if (npe>1) call MPI_BCAST(save_now,1,MPI_LOGICAL,0,icomm,ierrmpi)
 
        if (save_now) then
-          if(mype==0) write(*,'(a,i7,a,i7,a,es12.4)') ' save a snapshot No.',&
-             snapshotnext,' at it=',it,' global_time=',global_time
+          if(mype==0) write(*,'(a,i7,a,i7,a,es12.4)') ' save a datfile No.',&
+             datfilenext,' at it=',it,' global_time=',global_time
           call saveamrfile(1)
           call saveamrfile(2)
           call MPI_FILE_DELETE('savenow',MPI_INFO_NULL,ierrmpi)

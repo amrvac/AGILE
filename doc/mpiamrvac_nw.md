@@ -44,7 +44,9 @@ that they are thus computed from local (ghostcell) values from conservative
 variables (themselves computed according to their boundary type), so that we
 do not need to specify a boundary type for the _nwflux+1:nwflux+nwaux_
 variables.  The local auxiliaries can in fact also be used to trigger 
-refinement or coarsening. The current (Newtonian) physics modules of AMRVAC have no real use for these auxiliary variables.
+refinement or coarsening. In AGILE only the relativistic modules use them:
+srhd keeps `xi` and `lfac`, srmhd keeps `mu` and `lfac`; the Newtonian
+modules have none.
 
 ## nwextra {: #nwextra }
 An extra set of _nwextra_ variables can be defined in addition to the
@@ -62,7 +64,7 @@ they need to be computed/updated in the pointed _usr_process_grid_ subroutine.
 They work to facilitate the understanding of simulation processes.
 
 ## nwauxio {: #nwauxio }
-Only for post-processing purposes on saved snapshots from the code, one may
+Only for post-processing purposes on saved restart files from the code, one may
 want to compute additional auxiliary variables for visualization. Hence, only
 at the [convert-stage](convert.html) (from .dat data file to any of the available 
 formats in the _generate_plotfile_ subroutine in src/io/mod_convert_files.fpp) do we 

@@ -192,7 +192,7 @@ cooling drives runaway condensation via thermal instability -- the same
 mechanism as the FFHD case above -- producing thin, connected,
 low-temperature sheets with density condensations in their folds. The
 paper's Figure 19 was rendered directly from the native `.dat` AMR
-snapshot using the Intel Embree ray-tracing library.
+restart file using the Intel Embree ray-tracing library.
 
 ![The cooled Orszag-Tang state at t=0.4 (left) and t=1.8 (right), showing magnetic field lines and strength, a temperature slice, and volumetric regions of high density (paper Figure 19)](figmovdir/agile_paper_orszag_tang_cooling.png)
 

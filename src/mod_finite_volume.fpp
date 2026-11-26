@@ -843,7 +843,7 @@ $:STAR_SOLVER(solver)
     real(dp), parameter  :: epsi = 1.0e-14_dp, iepsi = 1.0e14_dp
     real(dp)             :: s, ab, t, pA, pB, eta, psi
 
-    ! Avoid this small b regularization AMRVAC does. Instead factor b out, get
+    ! Avoid this small b regularization upstream MPI-AMRVAC does. Instead factor b out, get
     ! b/|b| = sgn(b). Then it remains 3rd order on smooth waves.
     s   = sign(1.0_dp, b)
     ab  = abs(b)
@@ -909,7 +909,7 @@ $:STAR_SOLVER(solver)
     
   end function koren
   
-  !> Monotonised central-difference limiter with tunable beta (AMRVAC's
+  !> Monotonised central-difference limiter with tunable beta (MPI-AMRVAC's
   !> mcbeta; beta=2 recovers the classic MC limiter, van Leer 1979)
   pure real(dp) function mcbeta(a, b) result(phi)
   ${GPU_ROUTINE_SEQ()}$

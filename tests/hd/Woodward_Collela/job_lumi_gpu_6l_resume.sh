@@ -28,7 +28,7 @@ export MPICH_GPU_SUPPORT_ENABLED=1
 export MPICH_OFI_NIC_POLICY=GPU
 
 # Ensure proper GPU to CPU binding, only works when reserving full nodes.
-# If not, remove this part and run "srun ./amrvac"
+# If not, remove this part and run "srun ./agile"
 cat << EOF > select_gpu
 #!/bin/bash
 

@@ -29,7 +29,7 @@
 !> The domain deliberately stays away from the axis; the axis itself is covered
 !> by tests/mhd/cylindrical_pole.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

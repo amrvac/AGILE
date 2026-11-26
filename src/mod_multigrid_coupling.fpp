@@ -1,5 +1,4 @@
-!> Module to couple the octree-mg library to AMRVAC. This file uses the VACPP
-!> preprocessor, but its use is kept to a minimum.
+!> Module to couple the octree-mg library to AGILE.
 module mod_multigrid_coupling
   
   
@@ -46,7 +45,7 @@ contains
 
     call mg_comm_init(mg)
     call mg_set_methods(mg)
-    call mg_tree_from_amrvac(mg)
+    call mg_tree_from_agile(mg)
   end subroutine mg_setup_multigrid
 
   !> Set multigrid boundary conditions for the solution according to variable iw
@@ -86,10 +85,10 @@ contains
     if (.not. time_advance) return
 
     if (.not. mg%is_allocated) then
-       call mg_tree_from_amrvac(mg)
+       call mg_tree_from_agile(mg)
     else if (n_coarsen + n_refine > 0) then
        call mg_deallocate_storage(mg)
-       call mg_tree_from_amrvac(mg)
+       call mg_tree_from_agile(mg)
     end if
   end subroutine mg_update_refinement
 
@@ -212,10 +211,10 @@ contains
     end do
   end subroutine mg_copy_from_tree_gc
 
-  !> Generate a multigrid tree that includes the amrvac tree, but also contains
+  !> Generate a multigrid tree that includes the AGILE tree, but also contains
   !> coarser grid levels. A number of checks has already been performed in
   !> mg_setup_multigrid, so we don't repeat these checks here.
-  subroutine mg_tree_from_amrvac(mg)
+  subroutine mg_tree_from_agile(mg)
     use mod_forest
     use mod_global_parameters
     type(mg_t), intent(inout)        :: mg
@@ -295,7 +294,7 @@ contains
        call mg_after_new_tree()
     end if
 
-  end subroutine mg_tree_from_amrvac
+  end subroutine mg_tree_from_agile
 
 end module mod_multigrid_coupling
 

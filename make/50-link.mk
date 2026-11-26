@@ -6,5 +6,5 @@ agile: $(build_dir)/obj/agile
 
 $(build_dir)/obj/agile:
 	@echo -e "Linking $(_green)$(notdir $@)$(_reset)"
-	@$(link) $(link_flags) $^ -o $@
+	@$(link) $(link_flags) $^ $(link_libs) -o $@
 

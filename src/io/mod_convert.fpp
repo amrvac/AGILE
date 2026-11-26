@@ -130,7 +130,7 @@ contains
     end do
   end subroutine convert_all
 
-  ! Copied from subroutine write_snapshot in amrvacio/mod_input_output
+  ! Copied from subroutine write_datfile in io/mod_input_output
   ! the staggered values are not saved in this subroutine!
   subroutine convert_dat_generic(nwc, dataset_names, file_suffix,&
       convert_vars)
@@ -138,7 +138,7 @@ contains
     use mod_forest
     use mod_global_parameters
     use mod_input_output_helper, only: count_ix, create_output_file,&
-        snapshot_write_header1, block_shape_io
+        datfile_write_header1, block_shape_io
     use mod_functions_forest, only: write_forest
 
     integer                       :: file_handle, igrid, Morton_no, iwrite
@@ -199,12 +199,12 @@ contains
 
     ! master processor
     if (mype==0) then
-      call create_output_file(file_handle, snapshotnext, ".dat", file_suffix)
+      call create_output_file(file_handle, datfilenext, ".dat", file_suffix)
 
       ! Don't know offsets yet, we will write header again later
       offset_tree_info = -1
       offset_block_data = -1
-      call snapshot_write_header1(file_handle, offset_tree_info,&
+      call datfile_write_header1(file_handle, offset_tree_info,&
           offset_block_data, dataset_names, nwc)
 
       call MPI_File_get_position(file_handle, offset_tree_info, ierrmpi)
@@ -254,7 +254,7 @@ contains
       itag   = Morton_no
       block=>ps(igrid)
       ! this might be used in convert function,
-      ! it was not used when the output is already computed vars  (write_snapshot)
+      ! it was not used when the output is already computed vars  (write_datfile)
       dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
       dxlevel(3)=rnode(rpdx3_,igrid);
 
@@ -352,7 +352,7 @@ contains
       ! Write header again, now with correct offsets
       call MPI_FILE_SEEK(file_handle, 0_MPI_OFFSET_KIND, MPI_SEEK_SET,&
           ierrmpi)
-      call snapshot_write_header1(file_handle, offset_tree_info,&
+      call datfile_write_header1(file_handle, offset_tree_info,&
           offset_block_data, dataset_names, nwc)
 
       call MPI_FILE_CLOSE(file_handle, ierrmpi)

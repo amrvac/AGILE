@@ -57,7 +57,7 @@
 !> the radial domain bounds as ln(r), so comparing them against a physical
 !> radius needs an exp.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

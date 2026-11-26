@@ -32,7 +32,7 @@
 !> The domain deliberately stays away from r = 0; the axis itself is covered by
 !> tests/hd/cylindrical_pole.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

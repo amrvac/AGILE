@@ -49,7 +49,7 @@
 !> the Lohner estimator refines the shocks and the contact, capped at
 !> level lmax_far.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

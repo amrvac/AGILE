@@ -134,8 +134,8 @@ contains
     ! so every select case (coordinate) in the code keeps matching. What
     ! differs is only that the mesh is uniform in ln(r) rather than in r, which
     ! the LOG_RADIUS define carries. The names are kept distinct here because
-    ! geometry_name goes into the snapshot header, and a log snapshot must not
-    ! restart into a uniformly spaced build.
+    ! geometry_name goes into the .dat header, and a log-radius restart file
+    ! must not restart into a uniformly spaced build.
     case ("logSpherical","logSpherical_3D")
       ndir = ndim
       r_   = 1
@@ -477,8 +477,9 @@ contains
   !>
   !> This is the output-time counterpart of sync_positions_host: saveamrfile
   !> calls it in the same place it pulls back bg%w, which covers the log, the
-  !> snapshot, the slices, the collapsed views and autoconvert, and the
-  !> standalone convert path does the same before generate_plotfile.
+  !> restart file, the snapshot, the slices, the collapsed views and
+  !> autoconvert, and the standalone convert path does the same before
+  !> generate_plotfile.
   !>
   !> The fetch is unconditional and covers the whole grid in one pass, on
   !> purpose. Remembering "the host is already up to date" in a flag cannot be

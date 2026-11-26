@@ -11,12 +11,12 @@ v_x. The inputs are normally the z = 0 slices both par files write
     python plot_cwb.py output/cwb_quick_d3_x+0.00D+00_n0007.dat --outdir frames
     python plot_cwb.py --movie output/cwb_quick_orbit_d3_*.dat   # one mp4
 
-A full 3D snapshot (output/cwb_quick0002.dat) works too; its plane just above
+A full 3D restart file (output/cwb_quick0002.dat) works too; its plane just above
 z = 0 is cut out. That reads the whole domain upsampled to the finest level,
 2**(3*(levmax-1)) * domain cells * nw doubles, so it only suits small runs.
 
 What the files hold:
-  - 3D snapshots are always *conserved* variables.
+  - 3D restart files are always *conserved* variables.
   - Slices follow saveprim, which both par files set: *primitive* variables
     under the conserved names (m1..m3 the velocity, e the pressure). Pass
     --conserved for a run with saveprim = F.
@@ -210,7 +210,7 @@ def movie(files, output, conserved, dpi, blocks, fps):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("files", nargs="*",
-                        help="z = 0 slices or 3D snapshots (default: output/*_d3_*.dat)")
+                        help="z = 0 slices or 3D restart files (default: output/*_d3_*.dat)")
     parser.add_argument("--outdir", help="directory for the PNGs (default: next to each input)")
     parser.add_argument("--conserved", action="store_true",
                         help="slices hold conserved variables (run with saveprim = F)")

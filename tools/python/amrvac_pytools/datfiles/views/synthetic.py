@@ -170,7 +170,7 @@ class h_alpha(_syntheticmain):
 
     def _calculate_halpha_view(self):
         for ileaf, offset in enumerate(self.dataset.block_offsets):
-            block = datfile_utilities.get_single_block_data(self.dataset.file, offset, self.dataset.block_shape)
+            block = datfile_utilities.read_block(self.dataset, ileaf)
             # this adds the temperature and pressure to the block
             block = process_data.create_data_dict(block, self.dataset.header)
             # interpolate ionisation and f parameter for each block
@@ -236,7 +236,7 @@ class faraday(_syntheticmain):
 
     def _calculate_faraday_view(self):
         for ileaf, offset in enumerate(self.dataset.block_offsets):
-            block = datfile_utilities.get_single_block_data(self.dataset.file, offset, self.dataset.block_shape)
+            block = datfile_utilities.read_block(self.dataset, ileaf)
             # add pressure and temperature to block
             block = process_data.create_data_dict(block, self.dataset.header)
             block_ion, block_fpar = ionisation.block_interpolate_ionisation_f(block, self.dataset)
