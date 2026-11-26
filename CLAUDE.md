@@ -280,6 +280,25 @@ closed form cell by cell; `tests/hd/log_cylindrical_pole` (`log_r0 = 0.2`)
 adds `check_pole_mesh`. **A new log-geometry test needs that check, not just a
 reference log** — a subtly wrong mesh barely moves the volume averages.
 
+## Data-driven boundaries (`bc_data`, `bc_icarus`)
+
+`src/mod_bc_data.fpp` reads one legacy VTK file (axes: the face's two
+tangential coordinates, then time) into a single table, `bc_values`, with
+one column per (variable, face), numbered by `bc_data_ix`. It is copied to
+the device once, and `bc_data_set` is one per-cell `GPU_ROUTINE_VECTOR`
+routine called from `bc_phys` on host and device alike, reading the table
+through `bc_locate`/`bc_interp` (`GPU_ROUTINE_SEQ`). Keep it one code path:
+there used to be a device-only copy of the data and interpolation. The table
+is plain module arrays on purpose: an `LT3_t` (derived type with an
+allocatable component, put on the device like `bgeo` and passed whole into a
+`routine seq`) worked with nvhpc 26.9 but faulted with
+`CUDA_ERROR_ILLEGAL_ADDRESS` under the CI's 25.11, while compute-sanitizer
+was clean locally. `bc_icarus` is `bc_data`
+followed by `specialbound_usr`. Options are in `doc/par.md`
+(`#par_bc_data`); tests are `tests/rho/vtk_boundary` (basic) and
+`tests/hd/vtk_boundary` (extended, mixed faces and primitive data), both
+asserting the ghost cells against the table.
+
 ## Time integration
 
 Set `time_stepper` and `time_integrator` in `&methodlist`. `advect` in
@@ -597,6 +616,22 @@ fypp define consumed by `src/physics/mod_physics.fpp` and the per-physics
   team, and Cray CCE documents the same `bind(parallel)` -> `do` mapping
   with no `loop`-specific optimisation. MFC's `omp_macros.fpp` likewise uses
   `loop` for NVHPC only.
+
+- **A declared derived type with an allocatable component, read inside an
+  `acc routine`, crashed the CI's nvfortran 25.11 (OpenACC); keep such data
+  in plain module arrays.** `bc_data` once kept its table in an `LT3_t`
+  (`GPU_DECLARE_CREATE`, `rows_cols` attached with enter data) and read it
+  in `bc_data_set`, an `acc routine` below the `getbc` kernel. nvfortran
+  26.9 ran it correctly and compute-sanitizer was clean, but 25.11 died with
+  `CUDA_ERROR_ILLEGAL_ADDRESS` in the first `getbc` in four variants: the
+  struct updated whole, updated member by member, only its components
+  (`t%rows_cols`, `t%x_min`, ...) passed on to array-level `routine seq`
+  lookups, and that last one with the table declared `target`. The same
+  code with plain module arrays passed (CI run 45819295535). Why `bgeo`
+  works there (declared `target`, components attached, and
+  `bgeo%x(:,:,:,:,igrid)` read in the routine `fill_boundary_before_gc`) is
+  not established; it is a different module's variable, and its routine is
+  in that other module too.
 
 - **Only five slope limiters exist in the kernel.** `muscl_reconstruct_prim`
   in `src/mod_finite_volume.fpp` implements minmod, vanleer, mcbeta, koren and

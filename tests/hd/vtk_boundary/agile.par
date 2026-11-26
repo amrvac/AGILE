@@ -1,0 +1,65 @@
+! agile.par is the build reference and the 'mixed' run; primitive.par is the
+! second run from the same build (see test.make and mod_usr.fpp).
+
+ &usr_list
+   setup = 'mixed'
+ /
+
+ &filelist
+   base_filename    = 'mixed'
+   typefilelog      = 'regression_test'
+   autoconvert      = F
+ /
+
+ &savelist
+   itsave(1,1)      = 0
+   dtsave_log       = 0.05d0
+   dtsave_dat       = 1.0d10
+ /
+
+ &stoplist
+   time_max         = 0.3d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'hll'
+   limiter         = 20*'vanleer'
+   phys            = 'hd'
+ /
+
+ &boundlist
+   ! density from the data (default interp_phy_first_row = T), the rest 'cont'
+   typeboundary_min1 = 'bc_data', 4*'cont'
+   typeboundary_max1 = 5*'cont'
+   typeboundary_min2 = 5*'periodic'
+   typeboundary_max2 = 5*'periodic'
+   typeboundary_min3 = 5*'periodic'
+   typeboundary_max3 = 5*'periodic'
+ /
+
+ &bd_list
+   boundary_data_file_name = 'mixed.vtk'
+ /
+
+ &meshlist
+   max_blocks         =  64
+   refine_max_level   =  1
+   block_nx1          =  8
+   block_nx2          =  8
+   block_nx3          =  8
+   domain_nx1         =  16
+   domain_nx2         =  16
+   domain_nx3         =  16
+   xprobmin1          =  0.0d0
+   xprobmax1          =  1.0d0
+   xprobmin2          =  0.0d0
+   xprobmax2          =  1.0d0
+   xprobmin3          =  0.0d0
+   xprobmax3          =  1.0d0
+ /
+
+ &paramlist
+   slowsteps        = 0
+   courantpar       = 0.6d0
+ /

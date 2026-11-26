@@ -1374,7 +1374,7 @@ contains
       case("bc_data")
         typeboundary(iw,2*1)=bc_data
       case("bc_icarus")
-        typeboundary(iw,2*1-1)=bc_icarus
+        typeboundary(iw,2*1)=bc_icarus
       case("bc_character")
         typeboundary(iw,2*1)=bc_character
       case default
@@ -1433,7 +1433,7 @@ contains
       case("bc_data")
         typeboundary(iw,2*2)=bc_data
       case("bc_icarus")
-        typeboundary(iw,2*2-1)=bc_icarus
+        typeboundary(iw,2*2)=bc_icarus
       case("bc_character")
         typeboundary(iw,2*2)=bc_character
       case default
@@ -1492,7 +1492,7 @@ contains
       case("bc_data")
         typeboundary(iw,2*3)=bc_data
       case("bc_icarus")
-        typeboundary(iw,2*3-1)=bc_icarus
+        typeboundary(iw,2*3)=bc_icarus
       case("bc_character")
         typeboundary(iw,2*3)=bc_character
       case default
@@ -1632,8 +1632,9 @@ contains
       end do
     end do
 
-   if (any(typeboundary(:,:)==bc_special) .and. .not. specialboundary) then
-      call mpistop('special boundary requested, set specialboundary=.true.')
+   if (any(typeboundary(:,:)==bc_special .or. typeboundary(:,:)==bc_icarus) &
+       .and. .not. specialboundary) then
+      call mpistop('special or bc_icarus boundary requested, set specialboundary=.true.')
    end if
 
 

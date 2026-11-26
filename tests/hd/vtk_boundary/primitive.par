@@ -1,0 +1,66 @@
+! Second run from the agile.par build: all five primitive variables from
+! static data on the z-min face, written into the ghost cells directly.
+
+ &usr_list
+   setup = 'primitive'
+ /
+
+ &filelist
+   base_filename    = 'primitive'
+   typefilelog      = 'regression_test'
+   autoconvert      = F
+ /
+
+ &savelist
+   itsave(1,1)      = 0
+   dtsave_log       = 0.05d0
+   dtsave_dat       = 1.0d10
+ /
+
+ &stoplist
+   time_max         = 0.3d0
+ /
+
+ &methodlist
+   time_stepper    = 'threestep'
+   flux_scheme     = 20*'hll'
+   limiter         = 20*'vanleer'
+   phys            = 'hd'
+ /
+
+ &boundlist
+   typeboundary_min1 = 5*'periodic'
+   typeboundary_max1 = 5*'periodic'
+   typeboundary_min2 = 5*'periodic'
+   typeboundary_max2 = 5*'periodic'
+   typeboundary_min3 = 5*'bc_data'
+   typeboundary_max3 = 5*'cont'
+ /
+
+ &bd_list
+   boundary_data_file_name = 'primitive.vtk'
+   boundary_data_primitive = T
+   interp_phy_first_row    = F
+ /
+
+ &meshlist
+   max_blocks         =  64
+   refine_max_level   =  1
+   block_nx1          =  8
+   block_nx2          =  8
+   block_nx3          =  8
+   domain_nx1         =  16
+   domain_nx2         =  16
+   domain_nx3         =  16
+   xprobmin1          =  0.0d0
+   xprobmax1          =  1.0d0
+   xprobmin2          =  0.0d0
+   xprobmax2          =  1.0d0
+   xprobmin3          =  0.0d0
+   xprobmax3          =  1.0d0
+ /
+
+ &paramlist
+   slowsteps        = 0
+   courantpar       = 0.6d0
+ /

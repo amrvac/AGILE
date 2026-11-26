@@ -19,6 +19,7 @@ contains
 #:if defined('SPECIALBOUNDARY')    
     use mod_usr, only: specialbound_usr
 #:endif
+    use mod_bc_data, only: bc_data_set
     use mod_global_parameters
     ${GPU_ROUTINE_VECTOR()}$
 
@@ -378,10 +379,17 @@ contains
        end if 
     end select
 
+    ! Fill external data after the ordinary boundary conditions.
+    if (any(typeboundary(1:nwflux+nwaux,iB)==bc_data .or. &
+            typeboundary(1:nwflux+nwaux,iB)==bc_icarus)) then
+       call bc_data_set(time,ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2, &
+            ixGmax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,iB,w,x)
+    end if
+
 #:if defined('SPECIALBOUNDARY')    
     ! do user defined special boundary conditions
-    if (any(typeboundary(1:nwflux+nwaux,iB)==bc_special)) then
-
+    if (any(typeboundary(1:nwflux+nwaux,iB)==bc_special .or. &
+            typeboundary(1:nwflux+nwaux,iB)==bc_icarus)) then
        call specialbound_usr(time,ixGmin1,ixGmin2,ixGmin3,ixGmax1,ixGmax2,&
             ixGmax3,ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,iB,w,x)
 

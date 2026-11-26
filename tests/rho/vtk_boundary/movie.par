@@ -1,0 +1,54 @@
+! Override for movie.py, given after icarus.par. No base_filename: it would
+! be appended to icarus.par's. Run from an output directory, see movie.py.
+! Slice 1 is the side view y = 0.72; slices 2-17 are y-z planes spaced 1/16
+! in x (offset half a finest cell, off the block faces), which movie.py
+! blends to follow the pulse face on.
+ &filelist
+   slice_type = 'dat'
+ /
+ &savelist
+   dtsave_log   = 0.05d0
+   dtsave_slice = 0.01d0
+   nslices      = 17
+   slicedir(1)  = 2
+   slicecoord(1) = 0.72d0
+   slicedir(2) = 1
+   slicecoord(2) = 0.03320312d0
+   slicedir(3) = 1
+   slicecoord(3) = 0.09570312d0
+   slicedir(4) = 1
+   slicecoord(4) = 0.15820312d0
+   slicedir(5) = 1
+   slicecoord(5) = 0.22070312d0
+   slicedir(6) = 1
+   slicecoord(6) = 0.28320312d0
+   slicedir(7) = 1
+   slicecoord(7) = 0.34570312d0
+   slicedir(8) = 1
+   slicecoord(8) = 0.40820312d0
+   slicedir(9) = 1
+   slicecoord(9) = 0.47070312d0
+   slicedir(10) = 1
+   slicecoord(10) = 0.53320312d0
+   slicedir(11) = 1
+   slicecoord(11) = 0.59570312d0
+   slicedir(12) = 1
+   slicecoord(12) = 0.65820312d0
+   slicedir(13) = 1
+   slicecoord(13) = 0.72070312d0
+   slicedir(14) = 1
+   slicecoord(14) = 0.78320312d0
+   slicedir(15) = 1
+   slicecoord(15) = 0.84570312d0
+   slicedir(16) = 1
+   slicecoord(16) = 0.90820312d0
+   slicedir(17) = 1
+   slicecoord(17) = 0.97070312d0
+ /
+ &stoplist
+   time_max = 1.3d0
+ /
+ &meshlist
+   refine_max_level = 4
+   max_blocks       = 20000
+ /
