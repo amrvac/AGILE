@@ -283,14 +283,17 @@ reference log** — a subtly wrong mesh barely moves the volume averages.
 ## Data-driven boundaries (`bc_data`, `bc_icarus`)
 
 `src/mod_bc_data.fpp` reads one legacy VTK file (axes: the face's two
-tangential coordinates, then time) into a single `LT3_t` lookup table with
-one column per (variable, face), numbered by `bc_data_ix`. The table is put
-on the device once, like `bgeo` (shallow `GPU_UPDATE_DEVICE`, then
-`GPU_ENTER_DATA_COPYIN` of its allocatable component), and `bc_data_set` is
-one per-cell `GPU_ROUTINE_VECTOR` routine called from `bc_phys` on host and
-device alike; the `LT3_*` lookups in `src/mod_lookup_table.fpp` are
-`GPU_ROUTINE_SEQ` for that. Keep it one code path: there used to be a
-device-only copy of the data and interpolation. `bc_icarus` is `bc_data`
+tangential coordinates, then time) into a single table, `bc_values`, with
+one column per (variable, face), numbered by `bc_data_ix`. It is copied to
+the device once, and `bc_data_set` is one per-cell `GPU_ROUTINE_VECTOR`
+routine called from `bc_phys` on host and device alike, reading the table
+through `bc_locate`/`bc_interp` (`GPU_ROUTINE_SEQ`). Keep it one code path:
+there used to be a device-only copy of the data and interpolation. The table
+is plain module arrays on purpose: an `LT3_t` (derived type with an
+allocatable component, put on the device like `bgeo` and passed whole into a
+`routine seq`) worked with nvhpc 26.9 but faulted with
+`CUDA_ERROR_ILLEGAL_ADDRESS` under the CI's 25.11, while compute-sanitizer
+was clean locally. `bc_icarus` is `bc_data`
 followed by `specialbound_usr`. Options are in `doc/par.md`
 (`#par_bc_data`); tests are `tests/rho/vtk_boundary` (basic) and
 `tests/hd/vtk_boundary` (extended, mixed faces and primitive data), both

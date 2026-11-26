@@ -4,13 +4,14 @@
 
 !> Boundary conditions from user data ('bc_data' and 'bc_icarus').
 !>
-!> The VTK file is read once into a single 3D lookup table whose axes are the
-!> face's two tangential coordinates and time, with one column per
-!> data-driven (variable, face) pair, numbered by bc_data_ix. The table is
-!> copied to the device once, after which it never changes, and bc_data_set
-!> reads it through the same lookup routines on host and device.
+!> The VTK file is read once into a single table, bc_values, whose axes are
+!> the face's two tangential coordinates and time, with one column per
+!> data-driven (variable, face) pair, numbered by bc_data_ix. It is copied to
+!> the device once, after which it never changes, and host and device read it
+!> through the same routines (bc_locate, bc_interp). It is kept in plain
+!> module arrays rather than a derived type with an allocatable component:
+!> nvhpc 25.11 faulted reading the latter on the device, where 26.9 did not.
 module mod_bc_data
-  use mod_lookup_table
   use mod_global_parameters, only: std_len
 
   implicit none
@@ -29,10 +30,13 @@ module mod_bc_data
 
   !> All boundary data: axes (tangent1, tangent2, time), one column per
   !> data-driven variable and face
-  type(LT3_t) :: bc_table
-  ${GPU_DECLARE_CREATE('bc_table')}$
+  real(dp), allocatable :: bc_values(:, :, :, :)
+  !> Table origin, inverse spacing and size along (tangent1, tangent2, time)
+  real(dp) :: bc_xmin(3), bc_inv_dx(3)
+  integer  :: bc_npts(3)
+  ${GPU_DECLARE_CREATE('bc_values, bc_xmin, bc_inv_dx, bc_npts')}$
 
-  !> Column of bc_table for each variable and face, -1 where not data driven
+  !> Column of bc_values for each variable and face, -1 where not data driven
   integer, public, protected, allocatable :: bc_data_ix(:, :)
   ${GPU_DECLARE_CREATE('bc_data_ix')}$
 
@@ -60,7 +64,6 @@ contains
     use mod_physics, only: nw_phys
 
     integer                :: iw, ib, n_bc
-    double precision       :: xmin(3), xmax(3)
     type(bc_data_t)        :: bc
 
     call bc_read_params(par_files)
@@ -98,21 +101,21 @@ contains
             call mpistop("bc_data: primitive data need every physical variable of a data face")
     end do
 
-    xmin = bc%origin
-    xmax = bc%origin + (bc%n_points-1) * bc%dx
+    bc_xmin   = bc%origin
+    bc_inv_dx = 1 / bc%dx
+    bc_npts   = bc%n_points
     if (bc%n_points(3) > 1) then
-       bc_table = LT3_create_from_data(xmin, xmax, bc%values)
+       allocate(bc_values, source=bc%values)
     else
        ! Static data: two identical time levels, so time is clamped away
-       xmax(3) = xmin(3) + 1.d0
-       bc_table = LT3_create_from_data(xmin, xmax, &
-            reshape([bc%values, bc%values], [bc%n_points(1), bc%n_points(2), &
-            2, bc%n_variables], order=[1, 2, 4, 3]))
+       bc_npts(3)   = 2
+       bc_inv_dx(3) = 1
+       allocate(bc_values(bc_npts(1), bc_npts(2), 2, bc%n_variables))
+       bc_values(:, :, 1, :) = bc%values(:, :, 1, :)
+       bc_values(:, :, 2, :) = bc%values(:, :, 1, :)
     end if
 
-    ! Shallow copy first, then attach the table itself (as for bgeo)
-    ${GPU_UPDATE_DEVICE('bc_table')}$
-    ${GPU_ENTER_DATA_COPYIN('bc_table%rows_cols')}$
+    ${GPU_UPDATE_DEVICE('bc_values, bc_xmin, bc_inv_dx, bc_npts')}$
     ${GPU_UPDATE_DEVICE('bc_data_ix, interp_phy_first_row, bc_phy_first_row, boundary_data_primitive')}$
   end subroutine bc_data_init
 
@@ -141,8 +144,64 @@ contains
     real(dp), intent(in) :: x1, x2, qt
     real(dp)             :: val
 
-    val = LT3_get_col(bc_table, n_bc, x1, x2, qt)
+    integer  :: ix(3)
+    real(dp) :: frac(3)
+
+    call bc_locate(x1, x2, qt, ix, frac)
+    val = bc_interp(n_bc, ix, frac)
   end function bc_data_get_3d
+
+  !> Cell of the table containing (x1, x2, qt): the lower corner ix and the
+  !> weight frac of that corner along each axis. Coordinates outside the
+  !> table are clamped to its edge.
+  pure subroutine bc_locate(x1, x2, qt, ix, frac)
+    ${GPU_ROUTINE_SEQ()}$
+    real(dp), intent(in)  :: x1, x2, qt
+    integer, intent(out)  :: ix(3)
+    real(dp), intent(out) :: frac(3)
+    real(dp) :: s
+    integer  :: i
+
+    do i = 1, 3
+       select case (i)
+       case (1)
+          s = (x1 - bc_xmin(1)) * bc_inv_dx(1)
+       case (2)
+          s = (x2 - bc_xmin(2)) * bc_inv_dx(2)
+       case default
+          s = (qt - bc_xmin(3)) * bc_inv_dx(3)
+       end select
+       ! table point j sits at s = j - 1
+       if (s <= 0) then
+          ix(i) = 1; frac(i) = 1
+       else if (s >= bc_npts(i) - 1) then
+          ix(i) = bc_npts(i) - 1; frac(i) = 0
+       else
+          ix(i) = int(s) + 1; frac(i) = ix(i) - s
+       end if
+    end do
+  end subroutine bc_locate
+
+  !> Trilinear interpolation of column col at a location from bc_locate
+  pure function bc_interp(col, ix, frac) result(val)
+    ${GPU_ROUTINE_SEQ()}$
+    integer, intent(in)  :: col, ix(3)
+    real(dp), intent(in) :: frac(3)
+    real(dp) :: val, w1, w2, w3
+    integer  :: i, j, k
+
+    val = 0.0_dp
+    do k = 0, 1
+       w3 = merge(frac(3), 1 - frac(3), k == 0)
+       do j = 0, 1
+          w2 = merge(frac(2), 1 - frac(2), j == 0)
+          do i = 0, 1
+             w1 = merge(frac(1), 1 - frac(1), i == 0)
+             val = val + w1 * w2 * w3 * bc_values(ix(1)+i, ix(2)+j, ix(3)+k, col)
+          end do
+       end do
+    end do
+  end function bc_interp
 
   !> Fill the ghost cells ixO of face iB from the boundary data, after the
   !> ordinary boundary types. Runs per cell, on the host or inside bc_phys on
@@ -166,7 +225,8 @@ contains
        ixImin3:ixImax3,1:nw)
 
     real(dp)        :: u(nw_phys), u_in(nw_phys), val
-    type(LT3_loc_t) :: loc
+    real(dp)        :: frac(3)
+    integer         :: loc(3)
     integer         :: idim, tangent1, tangent2, pos_row, inner_row, iw, n_bc
     integer         :: lo1, lo2, lo3, hi1, hi2, hi3, ix1, ix2, ix3
     integer         :: jx1, jx2, jx3, kx1, kx2, kx3
@@ -205,7 +265,7 @@ contains
        if (bc_phy_first_row) lo3 = lo3 - 1
     end select
 
-    ${GPU_LOOP_VECTOR('collapse(3) private(u, u_in, val, loc, iw, n_bc, jx1, jx2, jx3, kx1, kx2, kx3)')}$
+    ${GPU_LOOP_VECTOR('collapse(3) private(u, u_in, val, loc, frac, iw, n_bc, jx1, jx2, jx3, kx1, kx2, kx3)')}$
     do ix3 = lo3, hi3
        do ix2 = lo2, hi2
           do ix1 = lo1, hi1
@@ -220,8 +280,8 @@ contains
              case default
                 jx3 = pos_row; kx3 = inner_row
              end select
-             loc = LT3_get_loc(bc_table, x(jx1,jx2,jx3,tangent1), &
-                  x(jx1,jx2,jx3,tangent2), qt)
+             call bc_locate(x(jx1,jx2,jx3,tangent1), x(jx1,jx2,jx3,tangent2), &
+                  qt, loc, frac)
 
              if (boundary_data_primitive) then
                 ! bc_data_init made sure every physical variable has data here
@@ -230,7 +290,7 @@ contains
                    call to_primitive(u_in)
                 end if
                 do iw = 1, nw_phys
-                   u(iw) = LT3_get_col_at_loc(bc_table, bc_data_ix(iw,iB), loc)
+                   u(iw) = bc_interp(bc_data_ix(iw,iB), loc, frac)
                    if (interp_phy_first_row) u(iw) = 2 * u(iw) - u_in(iw)
                 end do
                 call to_conservative(u)
@@ -240,7 +300,7 @@ contains
              do iw = merge(nw_phys + 1, 1, boundary_data_primitive), nwfluxbc
                 n_bc = bc_data_ix(iw,iB)
                 if (n_bc < 1) cycle
-                val = LT3_get_col_at_loc(bc_table, n_bc, loc)
+                val = bc_interp(n_bc, loc, frac)
                 if (interp_phy_first_row) val = 2 * val - w(kx1,kx2,kx3,iw)
                 w(ix1,ix2,ix3,iw) = val
              end do
