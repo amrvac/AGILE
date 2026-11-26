@@ -145,7 +145,8 @@ With `snap_compress_zfp`, individually compress each field q as Q in each
 block, satisfying
 |Q-q| ≤ `snap_zfp_rel_tol`·(|q|+`snap_zfp_rel_eps`·max|q|) in each cell,
 max|q| taken over the block. Enabling this requires environment variable
-`ZFP_DIR` to point to a LLNL ZFP install location.
+`ZFP_DIR` to point to a LLNL ZFP source tree, built with GNU make and
+`BUILD_ZFORP=1` for the Fortran bindings.
 
 Since regular resume snapshots are currently v5 and don't have a `snapnext`
 field, set `snapnext` in `&filelist` when resuming a run, so as not to
