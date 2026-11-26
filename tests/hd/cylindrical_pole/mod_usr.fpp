@@ -40,7 +40,7 @@
 !> cylindrical axis, where upstream MPI-AMRVAC and this fork disagree - see
 !> "The polar axis" in CLAUDE.md.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

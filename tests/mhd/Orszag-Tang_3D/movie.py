@@ -2,7 +2,7 @@
 """Multi-panel movie of the Orszag-Tang vortex, one panel per Riemann solver.
 
 Reads the constant-z slices that movie.par writes (slice_type = 'dat', i.e.
-2D AMRVAC snapshots of the conserved variables, no ghost cells) with
+2D AGILE .dat files of the conserved variables, no ghost cells) with
 tools/python's datfile_utilities, and animates them side by side on one
 colour scale.
 

@@ -81,7 +81,7 @@ class load_datfile():
 
     def get_info(self):
         """
-        Prints the current snapshot info (obtained from the header) to the console.
+        Prints the current data file's info (obtained from the header) to the console.
         """
         if self.isothermal:
             info_isothermal = ' (isothermal) '
@@ -161,7 +161,7 @@ class load_datfile():
 
     def get_time(self):
         """
-        Gets the current snapshot time.
+        Gets the current data file's time.
         :return: Current time in the simulation (in AMRVAC units).
         """
         return self.header["time"]

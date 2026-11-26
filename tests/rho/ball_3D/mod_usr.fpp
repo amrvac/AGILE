@@ -11,7 +11,7 @@
 !>   agile.par        - build reference and a visualisable run to t=1, when
 !>                      the ball is back at the centre
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

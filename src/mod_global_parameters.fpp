@@ -2,7 +2,7 @@
 #:include "mod_gpu_directives.fpp"
 #:endmute
 !> This module contains definitions of global parameters and variables and some
-!> generic functions/subroutines used in AMRVAC.
+!> generic functions/subroutines used in AGILE.
 !>
 module mod_global_parameters
   use mod_physicaldata
@@ -256,7 +256,7 @@ module mod_global_parameters
   !> accumulated wall-clock time spent on boundary conditions
   double precision :: time_bc
 
-  !> IO: snapshot and collapsed views output numbers/labels
+  !> IO: restart-file and collapsed-view output numbers/labels
   integer :: datfilenext, collapsenext
 
   !> IO: slice output numbers/labels
@@ -339,19 +339,19 @@ module mod_global_parameters
   !> Base file name for simulation output, which will be followed by a number
   character(len=std_len) :: base_filename
 
-  !> If not 'unavailable', resume from snapshot with this base file name
+  !> If not 'unavailable', resume from the restart file with this base file name
   character(len=std_len) :: restart_from_file
 
   !> Which type of log to write: 'normal', 'special', 'regression_test'
   character(len=std_len) :: typefilelog
 
-  !> Resume from the snapshot with this index
+  !> Resume from the restart file with this index
   integer :: datfileini
 
-  !> If true, restart a previous run from the latest snapshot
+  !> If true, restart a previous run from the latest restart file
   logical :: resume_previous_run
 
-  !> If true and restart_from_file is given, convert snapshots to
+  !> If true and restart_from_file is given, convert restart files to
   !> other file formats
   logical                :: convert
 
@@ -381,7 +381,7 @@ module mod_global_parameters
   !> Stores the memory and load imbalance, used in printlog
   double precision       :: Xload, Xmemory
 
-  !> Save a snapshot before crash a run met unphysical values
+  !> Save a restart file before crash a run met unphysical values
   logical :: crash=.false.
   ${GPU_DECLARE_COPYIN('crash')}$
   
@@ -601,7 +601,7 @@ module mod_global_parameters
   logical :: final_dt_exit
 
   !> If true, reset iteration count and global_time to original values, and
-  !> start writing snapshots at index 0
+  !> start writing restart files at index 0
   logical :: reset_time
 
   !> If true, reset iteration count to 0

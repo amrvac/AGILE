@@ -1,4 +1,4 @@
-!> Module with basic data types used in amrvac
+!> Module with basic data types used in AGILE
 module mod_basic_types
   implicit none
   public

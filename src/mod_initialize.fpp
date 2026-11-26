@@ -1,7 +1,7 @@
 #:mute
 #:include "mod_gpu_directives.fpp"
 #:endmute
-!> This module handles the initialization of various components of amrvac
+!> This module handles the initialization of various components of AGILE
 module mod_initialize
   use mod_comm_lib, only: mpistop
 
@@ -11,12 +11,12 @@ module mod_initialize
   logical :: initialized_already = .false.
 
   ! Public methods
-  public :: initialize_amrvac
+  public :: initialize_agile
 
 contains
 
-  !> Initialize amrvac: read par files and initialize variables
-  subroutine initialize_amrvac()
+  !> Initialize AGILE: read par files and initialize variables
+  subroutine initialize_agile()
     use mod_global_parameters
     use mod_input_output
     use mod_physics, only: phys_check, phys_check_params
@@ -46,7 +46,7 @@ contains
     call phys_check_params()
 
     initialized_already = .true.
-  end subroutine initialize_amrvac
+  end subroutine initialize_agile
 
   !> Initialize (and allocate) simulation and grid variables
   subroutine initialize_vars

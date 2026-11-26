@@ -1976,7 +1976,7 @@ contains
 
     use mod_usr_methods, only: usr_print_log, usr_write_analysis
     use mod_global_parameters
-    use mod_particles, only: write_particles_snapshot
+    use mod_particles, only: write_particles_restart
     use mod_slice, only: write_slice
     use mod_collapse, only: write_collapsed
     use mod_convert_files, only: generate_plotfile
@@ -2004,7 +2004,7 @@ contains
        ! Generate formatted output (e.g., VTK)
        if(autoconvert) call generate_plotfile
 
-       if(use_particles) call write_particles_snapshot()
+       if(use_particles) call write_particles_restart()
        datfilenext = datfilenext + 1
     case (filesnap_)
        ! Write snap (v6), if one was requested. write_datfile has no no-op like
@@ -3036,7 +3036,7 @@ contains
          nxini2+2*nghostcells.or.ixGhi3/=nxini3+2*nghostcells) then
         write(*,*) "Error: reset resolution to ",nxini1+2*nghostcells,&
            nxini2+2*nghostcells,nxini3+2*nghostcells
-        call mpistop("change with setamrvac")
+        call mpistop("set block_nx1..3 to the block size in the restart file")
       end if
 
       call mpi_file_read_wrapper(fh,eqpar_dummy,neqparini, MPI_DOUBLE_PRECISION,&

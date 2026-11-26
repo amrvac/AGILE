@@ -865,7 +865,7 @@ handles this differently from upstream MPI-AMRVAC, and more narrowly:
   when the next time step is computed, which yields NaN.
 - **A run that goes unphysical is not stopped.** `setdt` raises a `crash`
   flag when the time step falls below `dtmin`, but the check in
-  `timeintegration` that would save a snapshot and abort on it is currently
+  `timeintegration` that would save a restart file and abort on it is currently
   commented out. Watch the log for NaN.
 
 What there is: a hook on the reconstructed face states, which every module

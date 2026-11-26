@@ -2,7 +2,7 @@ title: Slice output
 
 # Introduction
 
-To alleviate the disk space requirements and overhead of full snapshot output,
+To alleviate the disk space requirements and overhead of full restart-file output,
 it is possible to write hypersurfaces at their own (short) intervals.
 Currently, these slices are aligned with the grid, with the benefit that only
 a sub-space of the forest has to be traversed to obtain a Morton ordered AMR-
@@ -56,7 +56,7 @@ _filenameout-d1-x.600-nXXXX.vtu_ and analoge for the other two slices.
 Note, that the order of the (reduced) dimensions in the resulting output files
 is preserved, e.g. the third slice in the example above will hold the
 x-direction as first coordinate and the z-direction as second coordinate. 
-If you restart from a snapshot and continue the run with slicing, please
+If you restart from a restart file and continue the run with slicing, please
 choose the next file number _x_ by  _slicenext=x_ in _filelist_ to get continuous 
 the file number of slices, otherwise it will start from 0 again overwriting old
 files.

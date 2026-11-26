@@ -4,7 +4,7 @@
 
 module mod_usr
   use mod_physics
-  use mod_amrvac
+  use mod_agile
 
   implicit none
   

@@ -37,7 +37,7 @@
 !> axis leaves the state genuinely different on either side, and its log *is*
 !> sensitive to the pole copy.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

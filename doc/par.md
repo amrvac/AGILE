@@ -75,7 +75,7 @@ or extra words in strings.
 ```fortran
 &filelist
  base_filename= 'data' | CHARACTER                       ! prefix of every output file
- restart_from_file= undefined | CHARACTER                ! snapshot to restart from
+ restart_from_file= undefined | CHARACTER                ! restart file to restart from
  datfilenext= -1 | INTEGER                               ! -1: continue the numbering
  slicenext= -1 | INTEGER
  collapsenext= -1 | INTEGER
@@ -113,15 +113,15 @@ or extra words in strings.
 ### Output names, restarts and numbering {: #par_filelist_restart }
 Every output file starts with `base_filename`, which may contain a
 directory (`'output/kh3d'`); the run stops at startup if that directory is
-not writable. Snapshots are `base_filename0000.dat`, `0001.dat`, ..., and the
+not writable. Restart files are `base_filename0000.dat`, `0001.dat`, ..., and the
 log is `base_filename.log`. When several par files are given (`-i a.par
 b.par`), each one's `base_filename` is appended to the previous one's if it
 differs.
 
 `restart_from_file` (or `-if` on the command line, which takes precedence;
-see [Command line](commandline.html)) restarts from that snapshot; `-resume`
-picks the newest snapshot under `base_filename` instead. A restart continues
-the snapshot, slice and collapsed-view numbering where the run left off,
+see [Command line](commandline.html)) restarts from that restart file; `-resume`
+picks the newest restart file under `base_filename` instead. A restart continues
+the restart-file, slice and collapsed-view numbering where the run left off,
 unless `datfilenext`, `slicenext` or `collapsenext` give the next index
 explicitly. A new run starts all three at 0. On a restart:
 
@@ -129,7 +129,7 @@ explicitly. A new run starts all three at 0. On a restart:
   again, to modify the restarted state, and then its
   `usr_improve_initial_condition` if that is registered. It needs a restart.
 - `reset_grid = T` rebuilds the AMR tree from the restarted data instead of
-  keeping the snapshot's mesh.
+  keeping the restart file's mesh.
 
 `usr_filename` names a VTK structured-points file that is read at startup;
 a case's `mod_usr` can then sample it, for example for an initial condition,
@@ -144,11 +144,39 @@ Stores `snap_nghost` ghost layers per block face (at most `nghostcells`).
 With `snap_compress_zfp`, individually compress each field q as Q in each
 block, satisfying
 |Q-q| ≤ `snap_zfp_rel_tol`·(|q|+`snap_zfp_rel_eps`·max|q|) in each cell,
-max|q| taken over the block. Enabling this requires environment variable
-`ZFP_DIR` to point to a LLNL ZFP source tree, built with GNU make and
-`BUILD_ZFORP=1` for the Fortran bindings.
+max|q| taken over the block.
 
-Since regular resume snapshots are currently v5 and don't have a `snapnext`
+`snap_compress_zfp` is a compile-time switch, and enabling it requires
+`ZFP_DIR` (environment or `make` variable) to point to a LLNL ZFP source tree
+built with GNU make, including its Fortran bindings. The build reads
+`$ZFP_DIR/modules/zfp.mod` and links `$ZFP_DIR/lib/libzFORp.a` and
+`$ZFP_DIR/lib/libzfp.a` statically. Fortran module files are
+compiler-specific, so the bindings must be built with the same compiler as
+AGILE: keep one ZFP tree per compiler. For gfortran (`arch=gnu`), ZFP's
+default:
+
+```bash
+git clone --branch 1.0.1 https://github.com/LLNL/zfp.git zfp-gfortran
+cd zfp-gfortran && make BUILD_ZFORP=1
+make arch=gnu ZFP_DIR=/path/to/zfp-gfortran    # in the case directory
+```
+
+For nvfortran (`arch=nvidia`), build the C library as usual and then only the
+bindings with nvfortran, overriding ZFP's gfortran-only flags (`-pedantic`,
+`-std=f2018`, ...), which nvfortran rejects:
+
+```bash
+git clone --branch 1.0.1 https://github.com/LLNL/zfp.git zfp-nvhpc
+cd zfp-nvhpc && make
+cd fortran && make FC=nvfortran FFLAGS="-O3 -fPIC" static
+make arch=nvidia OPENACC=1 ZFP_DIR=/path/to/zfp-nvhpc    # in the case directory
+```
+
+Compression runs on the host in every build, so GPU builds need nothing
+further. Reading compressed snapshots with `amrvac_pytools` requires the
+`zfpy` Python package, installed by `uv sync --extra zfp`.
+
+Since restart files are currently v5 and don't have a `snapnext`
 field, set `snapnext` in `&filelist` when resuming a run, so as not to
 overwrite your analysis snapshots. Set it to the last index plus one.
 
@@ -165,15 +193,15 @@ finish. A new run replaces an existing log; a restart appends to it.
 is what the test suite compares (see `tests/test_rules.make`); `'special'`
 calls the case's `usr_print_log` instead.
 
-### Converting snapshots {: #par_convert }
-The `.dat` snapshots are the only files a run can restart from. They can be
+### Converting restart files {: #par_convert }
+The `.dat` restart files are the only files a run can restart from. They can be
 converted to other formats, either afterwards or during the run:
 
 - `convert = T` (or `-convert` on the command line) together with
-  `restart_from_file` converts that snapshot and exits without running; a
+  `restart_from_file` converts that restart file and exits without running; a
   new run with `convert = T` is refused. The types whose name contains `mpi`
   convert in parallel, the others need a single rank.
-- `autoconvert = T` converts every snapshot as it is written.
+- `autoconvert = T` converts every restart file as it is written.
 
 `convert_type` selects the format. The `vtu*` types are unstructured VTK for
 ParaView or VisIt: `CC` stores the cell-centre values (without it the values
@@ -253,7 +281,7 @@ AGILE writes six types of output, numbered by FILEINDEX:
 index | output | named keys
 ---|---|---
 1 | log file (`base_filename.log`), see `typefilelog` in [filelist](#par_filelist) | `*_log`
-2 | snapshot (`.dat`), and its conversion if `autoconvert` is on | `*_dat`
+2 | restart file (`.dat`), and its conversion if `autoconvert` is on | `*_dat`
 3 | slices, see [Slice output](slices.html) | `*_slice`
 4 | collapsed (line-of-sight integrated) views, see [Looking at line-integrated quantities](collapsed.html) | `*_collapsed`
 5 | the case's `usr_write_analysis`, see [Writing a custom analysis subroutine](analysis.html) | `*_custom`
@@ -279,18 +307,18 @@ overrides the indexed form.
 
 ```fortran
 &savelist
- itsave(1,1)= 0          ! log and snapshot of the initial state
+ itsave(1,1)= 0          ! log and restart file of the initial state
  itsave(1,2)= 0
  dtsave_log= 0.01d0
  tsave_dat= 0.1d0, 0.25d0
- dtsave_dat= 0.5d0       ! snapshots at 0, 0.1, 0.25, 0.5, 1, 1.5, ...
+ dtsave_dat= 0.5d0       ! restart files at 0, 0.1, 0.25, 0.5, 1, 1.5, ...
  dtsave_slice= 0.05d0
 /
 ```
 
 Whatever ends the run, every type not already written at the last step is
 written then (see [stoplist](#par_stoplist)), so a type with no trigger at
-all still gets one output, at the end. A snapshot can also be forced at any
+all still gets one output, at the end. A restart file can also be forced at any
 time by creating a file called `savenow` in the run directory; it is written
 (together with the log) at the next step and the file deleted.
 
@@ -324,7 +352,7 @@ The run ends at the start of the first step at which the time has reached
 about to pass `wall_time_max` (given in hours). If neither `time_max` nor
 `it_max` is set, a warning is printed and the run continues until another
 limit stops it. Whatever ends it, every output type that was not already
-written at the final step (snapshot, log, slices, ...) is written then, so the
+written at the final step (restart file, log, slices, ...) is written then, so the
 run can be restarted from its last state.
 
 The wall-time test keeps a margin: the run stops once the elapsed time plus
@@ -342,16 +370,16 @@ more than `dtmin`, the run ends without taking that step.
 ### dtmin {: #par_dtmin }
 If a step comes out smaller than `dtmin` (default 1e-10), each MPI rank on
 which it does prints "Error: Time step too small!". **The run does not stop**:
-the check that would save a snapshot and abort is commented out in the time
+the check that would save a restart file and abort is commented out in the time
 loop (`src/agile.fpp`), so a collapsing time step only shows up in the output.
 `dtmin` also sets the remainder below which `final_dt_reduction` skips the
 last step.
 
 ### time_init, it_init, reset_time, reset_it {: #par_stop_init }
 A new run starts at time `time_init` and step `it_init`, both 0 by default. A
-restart continues from the time and step stored in the snapshot instead,
+restart continues from the time and step stored in the restart file instead,
 unless `reset_time = T`, which sets both back to `time_init` and `it_init` and
-restarts the snapshot numbering from 0, or `reset_it = T`, which resets only
+restarts the restart-file numbering from 0, or `reset_it = T`, which resets only
 the step counter.
 
 ## methodlist {: #par_methodlist }
@@ -721,7 +749,7 @@ procedure pointer, which ran on the host. See `tests/hd/internal_bc`.
 
 ### save_physical_boundary {: #par_save_physical_boundary }
 `save_physical_boundary = T` includes the ghost cells at the physical
-boundaries in the `.dat` snapshots and their converted output.
+boundaries in the `.dat` restart files and their converted output.
 
 ## meshlist {: #par_meshlist }
 ```fortran

@@ -21,7 +21,7 @@
 !> the device, a GPU build wrote the host copy only and this check failed at
 !> the first step.
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none

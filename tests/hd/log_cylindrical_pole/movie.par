@@ -31,7 +31,7 @@
 !  * it runs to t = 0.3, about seven times blast_amr.par's t = 0.04 - long
 !    enough for the shell to cross the axis and expand out into the domain.
 !
-!  * it dumps .vtu snapshots and slices for ParaView/VisIt instead of the
+!  * it dumps .vtu files and slices for ParaView/VisIt instead of the
 !    regression log. Both carry Cartesian cell corners and Cartesian vector
 !    components (nocartesian is .false. by default), which is what ParaView
 !    and VisIt want across the axis. The corner grid comes from calc_x, which
@@ -64,7 +64,7 @@
    itsave(1,2)      = 0        ! ... the initial condition
    itsave(1,3)      = 0        ! ... and the initial slices
    ditsave_log      = 100      ! the conservation trace, every 100th step
-   dtsave_dat       = 0.0075d0 ! 40 snapshots
+   dtsave_dat       = 0.0075d0 ! 40 restart files
    dtsave_slice     = 0.003d0  ! 100 movie frames
 
    ! Four slices. The two meridional half-planes at phi_c and phi_c + pi

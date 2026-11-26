@@ -239,8 +239,8 @@ module mod_input_output_helper
 
     ! The output counters, useful for restarting.
     ! datfilenext is the next file index in the series, which can either be the
-    ! series of resume snapshots or analysis snapshots.
-    ! Counters for snapshots are advanced *after* this procedure, hence the +1.
+    ! series of restart files or analysis snapshots.
+    ! Counters for both are advanced *after* this procedure, hence the +1.
     if (snap_mode) then
       call MPI_FILE_WRITE(fh, snapnext+1, 1, MPI_INTEGER, st, er)
     else if (pass_wall_time.or.save_now) then
@@ -250,7 +250,7 @@ module mod_input_output_helper
     end if
     call MPI_FILE_WRITE(fh, slicenext, 1, MPI_INTEGER, st, er)
     call MPI_FILE_WRITE(fh, collapsenext, 1, MPI_INTEGER, st, er)
-    ! The analysis snapshot counter, to point a resume snapshot to the next
+    ! The analysis snapshot counter, to point a restart file to the next
     ! analysis snapshot. Has no meaning for analysis snapshots themselves.
     if (file_version > 5) then
       call MPI_FILE_WRITE(fh, merge(-1, snapnext, snap_mode), 1, MPI_INTEGER,&

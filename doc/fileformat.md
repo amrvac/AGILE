@@ -4,7 +4,7 @@ title: AGILE data file format
 
 AGILE writes two kinds of `.dat` file, whose layouts are described below:
 
-* **datfiles** (`<base_filename>NNNN.dat`, file type 2, `dtsave_dat`) are
+* **restart files**, or datfiles (`<base_filename>NNNN.dat`, file type 2, `dtsave_dat`) are
   always written in double precision, version 5. They are the full-fidelity
   output and the files to restart from.
 * **snapshots** (`<base_filename>_snapNNNN.dat`, file type 6, `dtsave_snap`)
@@ -90,10 +90,10 @@ integer           :: n_params
 double precision  :: parameters(n_params)
 character(len=16) :: parameter_names(n_params)
 ! Indexes for file output (for restarting)
-integer           :: datfilenext ! next index in the datfile or snapshot series
+integer           :: datfilenext ! next index in the restart-file or snapshot series
 integer           :: slicenext
 integer           :: collapsenext
-integer           :: snapnext ! in a datfile, the next snapshot
+integer           :: snapnext ! in a restart file, the next snapshot
 ```
 
 # Tree information (v5)
@@ -193,7 +193,7 @@ staggered grid for constrained transport MHD.
 
 Version 6 is written by the snapshot output stream only currently
 (file type 6, `<base_filename>_snapNNNN.dat`) and is intended for analysis;
-use datfiles (always v5, and always double precision) for restarts.
+use restart files (always v5, and always double precision) for restarts.
 
 Version 6's header adds to version 5's (see both above): `origin`,
 `size_real`, the compression scheme and its parameters, and `snapnext`.

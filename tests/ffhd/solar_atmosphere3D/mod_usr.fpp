@@ -3,7 +3,7 @@
 #:endmute
 
 module mod_usr
-    use mod_amrvac
+    use mod_agile
     use mod_physics
 
     implicit none

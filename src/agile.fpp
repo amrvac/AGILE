@@ -118,7 +118,7 @@ contains
     ! the user_init routine should load a physics module
     call usr_init()
 
-    call initialize_amrvac()
+    call initialize_agile()
 
     if (restart_from_file /= undefined) then
     !AGILE: not yet implemented, data movement needs to happen here
@@ -126,7 +126,7 @@ contains
 !        call mpistop("restart or convert on GPU not yet implemented")
 ! #endif
        ! restart from previous file or dat file conversion
-       ! get input data from previous AMRVAC run
+       ! get input data from previous AGILE run
 
        ! read in dat file
        call read_datfile()
@@ -179,7 +179,7 @@ contains
        if (use_multigrid) call mg_setup_multigrid()
 
        if(use_particles) then
-         call read_particles_snapshot(part_file_exists)
+         call read_particles_restart(part_file_exists)
          call init_gridvars()
          if (.not. part_file_exists) call particles_create()
          if(convert) then
@@ -265,7 +265,7 @@ contains
 
     if (mype==0) then
        print*,'-------------------------------------------------------------------------------'
-       write(*,'(a,f17.3,a)')' Finished AMRVAC in : ',MPI_WTIME()-time0,' sec'
+       write(*,'(a,f17.3,a)')' Finished AGILE in : ',MPI_WTIME()-time0,' sec'
        print*,'-------------------------------------------------------------------------------'
     end if
 
@@ -393,7 +393,7 @@ contains
 
 
        ! output a datfile when user write a file named 'savenow' in the same
-       ! folder as the executable amrvac
+       ! folder as the executable agile
        if (mype==0) inquire(file='savenow',exist=save_now)
        if (npe>1) call MPI_BCAST(save_now,1,MPI_LOGICAL,0,icomm,ierrmpi)
 

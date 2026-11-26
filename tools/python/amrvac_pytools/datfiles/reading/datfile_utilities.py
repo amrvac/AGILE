@@ -22,7 +22,7 @@ ALIGN = '='
 
 
 def get_header(istream):
-    """Read header from an MPI-AMRVAC 2.1 snapshot. This is compatible with versions down to 2.0.
+    """Read header from an MPI-AMRVAC 2.1 datfile. This is compatible with versions down to 2.0.
     :param: istream     open datfile buffer with 'rb' mode
     :return: h          header information contained in a dictionary
     """
@@ -280,7 +280,7 @@ def read_block(dataset, ileaf, keep_ghost=False):
 
 def get_blocks(dataset, keep_ghost=False):
     """
-    Reads all block data from an MPI-AMRVAC 2.0 snapshot.
+    Reads all block data from an MPI-AMRVAC 2.0 datfile.
     :param dataset      instance of 'amrvac_reader.load_file' class
     :param keep_ghost   if True, return each block with its ghost halo (for
                         per-block gradients / periodic-edge stencils); if False

@@ -254,7 +254,7 @@ end subroutine estimate_speeds_minmax
 #:enddef
 
 #:def write_info()
-  !> Write this module's parameters to a snapshot
+  !> Write this module's parameters to a .dat file header
   subroutine rho_write_info(fh)
     integer, intent(in)                 :: fh
 

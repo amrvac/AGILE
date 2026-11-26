@@ -920,7 +920,7 @@ end subroutine addsource_geometry
 #:endif
 
 #:def write_info()
-  !> Write this module's parameters to a snapshot
+  !> Write this module's parameters to a .dat file header
   subroutine srmhd_write_info(fh)
     use mod_global_parameters
     integer, intent(in)                 :: fh

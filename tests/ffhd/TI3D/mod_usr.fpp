@@ -2,9 +2,9 @@
 #:include "mod_gpu_directives.fpp"
 #:endmute
 
-!> thermal instability test problem copied from amrvac/tests/demo/thermal_instability_HD/
+!> thermal instability test problem copied from MPI-AMRVAC's tests/demo/thermal_instability_HD/
 module mod_usr
-  use mod_amrvac
+  use mod_agile
   use mod_physics
 
   implicit none
