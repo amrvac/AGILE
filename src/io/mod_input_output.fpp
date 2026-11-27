@@ -1980,6 +1980,35 @@ contains
 
   end subroutine get_fields_string
 
+  !> Bring everything the output writers read back to the host: the ghost
+  !> cells (diagonal ones too, unless the physics already exchanges them),
+  !> the solution bg(1)%w and the cell geometry.
+  !>
+  !> Call this once per output event, before the first saveamrfile and before
+  !> usr_modify_output, so that the hook edits current host data and its edits
+  !> reach the files. saveamrfile itself fetches nothing: called without this
+  !> first, it writes whatever happens to be on the host.
+  subroutine output_to_host()
+    use mod_global_parameters
+    use mod_physics, only: phys_req_diagonal
+    use mod_ghostcells_update, only: getbc
+    use mod_geometry, only: sync_geometry_host
+
+    ! update (diagonal) ghostcells before moving to host:
+    if (.not. phys_req_diagonal) then
+      call getbc(global_time,0.d0,ps,iwstart,nwgc)
+    end if
+
+    ${GPU_UPDATE_HOST('bg(1)%w')}$
+
+    ! Same idea for the cell metrics: everything the writers do that weights
+    ! by dvolume, or builds corner positions from dx, reads them on the host.
+    call sync_geometry_host()
+
+  end subroutine output_to_host
+
+  !> Write output file type ifile. The host data must be current: call
+  !> output_to_host first (once per output event, not once per file).
   subroutine saveamrfile(ifile)
 
     use mod_usr_methods, only: usr_print_log, usr_write_analysis
@@ -1989,21 +2018,7 @@ contains
     use mod_collapse, only: write_collapsed
     use mod_convert_files, only: generate_plotfile
     use mod_datfile_parallel, only: write_datfile_parallel
-    use mod_physics, only: phys_req_diagonal
-    use mod_ghostcells_update
-    use mod_geometry, only: sync_geometry_host
-    integer:: ifile, iigrid, igrid
-
-    ! update (diagonal) ghostcells before moving to host:
-    if(.not. phys_req_diagonal) then
-      call getbc(global_time,0.d0,ps,iwstart,nwgc)
-    end if
-
-    ${GPU_UPDATE_HOST('bg(1)%w')}$
-
-    ! Same idea for the cell metrics: everything below here that weights by
-    ! dvolume, or builds corner positions from dx, reads them on the host.
-    call sync_geometry_host()
+    integer, intent(in) :: ifile
 
     select case (ifile)
     case (fileout_)
