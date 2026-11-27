@@ -1,0 +1,6 @@
+ ! Overlay on test.par restart.par: resume from the t = 0.05 file with the
+ ! parallel reader (and writer) using collective MPI-IO, run to t = 0.1.
+ &filelist
+   base_filename = '_collective'
+   datfile_io_collective = .true.
+ /

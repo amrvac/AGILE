@@ -1,6 +1,6 @@
  ! Overlay on blast_amr.par for the pario test in test.make: the same as
- ! pario_serial.par, but written with the parallel path. The 1 MiB buffer
- ! makes every rank write in several collective rounds.
+ ! pario_serial.par, but written with the parallel path (independent MPI-IO,
+ ! the default). The 1 MiB buffer makes every rank write in several rounds.
  &filelist
    base_filename = '_pario_parallel'
    datfile_parallel_io = .true.

@@ -5,18 +5,27 @@
 !>
 !> The default path in mod_input_output funnels every block through rank 0,
 !> which writes (or reads) it with separate small calls. Here every rank
-!> writes and reads its own blocks with collective MPI-IO instead, producing
-!> the same file byte for byte. Selected by datfile_parallel_io in &filelist.
+!> writes and reads its own blocks with MPI-IO instead, producing the same
+!> file byte for byte. Selected by datfile_parallel_io in &filelist.
 !>
 !> A rank's leaves are consecutive in Morton order and the file stores the
 !> block records in Morton order, so each rank's records form one contiguous
 !> byte range. Every record is a 2*ndim integer ghost-cell header followed by
 !> the block's values in double precision. The header is 8*ndim/2 = 24 bytes,
 !> exactly 3 doubles, so a rank packs its records into one double precision
-!> buffer and moves it with MPI_FILE_WRITE_AT_ALL / MPI_FILE_READ_AT_ALL. The
-!> buffer is capped at datfile_io_buffer_mb, so a rank with more data than
-!> that needs several collective rounds; every rank joins every round, with a
-!> count of 0 once it has nothing left.
+!> buffer and moves it in one call. The buffer is capped at
+!> datfile_io_buffer_mb, so a rank with more data than that needs several
+!> rounds.
+!>
+!> By default (datfile_io_collective = F) each rank moves its own rounds with
+!> independent MPI_FILE_WRITE_AT / MPI_FILE_READ_AT. With
+!> datfile_io_collective = T it uses MPI_FILE_WRITE_AT_ALL /
+!> MPI_FILE_READ_AT_ALL, and every rank joins every round, with a count of 0
+!> once it has nothing left. The data of a rank is one contiguous range, so
+!> collective buffering has nothing to merge: with Open MPI's OMPIO it only
+!> adds an exchange through aggregator ranks and a synchronisation per round,
+!> which made reads several times slower than the serial path (KH3D 512^3 on
+!> 4 A100s: 43 s collective vs 7 s independent at 16 MiB, serial 10 s).
 !>
 !> The metadata (header, tree, block levels, indices and offsets) is small
 !> and stays with rank 0, as in the default path.
@@ -48,7 +57,7 @@ contains
     integer                       :: n_ghost(2*ndim), n_values, n_rec
     integer                       :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
        ixOmax3
-    integer                       :: nloc, nrounds, iround, nfill, m_next
+    integer                       :: nrounds, iround, nfill, m_next
     integer                       :: offset_size, amode
     integer                       :: istatus(MPI_STATUS_SIZE)
     integer                       :: counts(0:npe-1), displs(0:npe-1)
@@ -149,10 +158,8 @@ contains
     end do
 
     cap_dbl = io_buffer_doubles()
-    nloc = count_rounds(rec_dbl(Morton_start(mype):Morton_stop(mype)),&
+    nrounds = io_rounds(rec_dbl(Morton_start(mype):Morton_stop(mype)),&
        cap_dbl)
-    call MPI_ALLREDUCE(nloc, nrounds, 1, MPI_INTEGER, MPI_MAX, icomm,&
-       ierrmpi)
     allocate(buf(buffer_length(rec_dbl(Morton_start(mype):&
        Morton_stop(mype)), cap_dbl)))
 
@@ -172,8 +179,15 @@ contains
       end do
       nfill = ib
 
-      call MPI_FILE_WRITE_AT_ALL(fh, offset, buf, nfill,&
-         MPI_DOUBLE_PRECISION, istatus, ierrmpi)
+      if (datfile_io_collective) then
+        call MPI_FILE_WRITE_AT_ALL(fh, offset, buf, nfill,&
+           MPI_DOUBLE_PRECISION, istatus, ierrmpi)
+      else
+        call MPI_FILE_WRITE_AT(fh, offset, buf, nfill, MPI_DOUBLE_PRECISION,&
+           istatus, ierrmpi)
+      end if
+      if (ierrmpi /= MPI_SUCCESS) call mpistop(&
+         "write_datfile_parallel: writing the block data failed")
       offset = offset + int(nfill, MPI_OFFSET_KIND)*size_double
     end do
 
@@ -206,7 +220,7 @@ contains
     integer                       :: n_ghost(2*ndim), n_values
     integer                       :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
        ixOmax3
-    integer                       :: nloc, nrounds, iround, nfill, m_first,&
+    integer                       :: nrounds, iround, nfill, m_first,&
        m_next, offset_size
     integer                       :: istatus(MPI_STATUS_SIZE)
     integer(kind=8)               :: cap_dbl
@@ -246,10 +260,8 @@ contains
        "read_datfile_blocks_parallel: cannot open "//trim(restart_from_file))
 
     cap_dbl = io_buffer_doubles()
-    nloc = count_rounds(rec_dbl(Morton_start(mype):Morton_stop(mype)),&
+    nrounds = io_rounds(rec_dbl(Morton_start(mype):Morton_stop(mype)),&
        cap_dbl)
-    call MPI_ALLREDUCE(nloc, nrounds, 1, MPI_INTEGER, MPI_MAX, icomm,&
-       ierrmpi)
     allocate(buf(buffer_length(rec_dbl(Morton_start(mype):&
        Morton_stop(mype)), cap_dbl)))
 
@@ -265,13 +277,19 @@ contains
         m_next = m_next + 1
       end do
 
-      if (m_first <= Morton_stop(mype)) then
+      if (.not. datfile_io_collective) then
+        ! Independent IO: a rank only has rounds with data
+        call MPI_FILE_READ_AT(fh, block_offset(m_first), buf, nfill,&
+           MPI_DOUBLE_PRECISION, istatus, ierrmpi)
+      else if (m_first <= Morton_stop(mype)) then
         call MPI_FILE_READ_AT_ALL(fh, block_offset(m_first), buf, nfill,&
            MPI_DOUBLE_PRECISION, istatus, ierrmpi)
       else
         call MPI_FILE_READ_AT_ALL(fh, 0_MPI_OFFSET_KIND, buf, 0,&
            MPI_DOUBLE_PRECISION, istatus, ierrmpi)
       end if
+      if (ierrmpi /= MPI_SUCCESS) call mpistop(&
+         "read_datfile_blocks_parallel: reading the block data failed")
 
       ib = 0
       do Morton_no = m_first, m_next-1
@@ -423,7 +441,26 @@ contains
        size_double
   end function io_buffer_doubles
 
-  !> Number of collective rounds needed for these records: consecutive whole
+  !> Rounds this rank runs: its own with independent IO; with collective IO
+  !> every rank runs as many as the rank that needs the most
+  integer function io_rounds(rec_dbl, cap)
+    use mod_global_parameters
+
+    integer(kind=8), intent(in) :: rec_dbl(:)
+    integer(kind=8), intent(in) :: cap
+
+    integer :: nloc
+
+    nloc = count_rounds(rec_dbl, cap)
+    if (datfile_io_collective) then
+      call MPI_ALLREDUCE(nloc, io_rounds, 1, MPI_INTEGER, MPI_MAX, icomm,&
+         ierrmpi)
+    else
+      io_rounds = nloc
+    end if
+  end function io_rounds
+
+  !> Number of rounds needed for these records: consecutive whole
   !> records are grouped up to cap doubles, and a record bigger than cap gets a
   !> round of its own
   integer function count_rounds(rec_dbl, cap)

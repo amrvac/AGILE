@@ -1,7 +1,7 @@
  ! Overlay on test.par for the restart test in test.make: write restart
- ! files at t = 0.05 and t = 0.1 with the parallel path. (hd/spherical's
- ! pario test covers several collective rounds and records of different
- ! sizes.)
+ ! files at t = 0.05 and t = 0.1 with the parallel path, independent MPI-IO
+ ! (the default). (hd/spherical's pario test covers several rounds, collective
+ ! MPI-IO and records of different sizes.)
  &filelist
    base_filename = '_restart'
    datfile_parallel_io = .true.

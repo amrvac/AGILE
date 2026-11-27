@@ -1,0 +1,20 @@
+ ! Overlay on blast_amr.par for the pario test in test.make: the same as
+ ! pario_parallel.par (independent MPI-IO), but with collective MPI-IO.
+ &filelist
+   base_filename = '_pario_collective'
+   datfile_parallel_io = .true.
+   datfile_io_collective = .true.
+   datfile_io_buffer_mb = 1
+ /
+
+ &savelist
+   itsave(1,2) = 0
+ /
+
+ &stoplist
+   it_max = 1
+ /
+
+ &boundlist
+   save_physical_boundary = .true.
+ /

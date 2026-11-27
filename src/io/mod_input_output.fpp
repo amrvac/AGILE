@@ -260,7 +260,7 @@ contains
        level_io_min, level_io_max, autoconvert,slice_type,slicenext,&
        collapsenext,collapse_type, type_endian, snapnext, snap_nghost,&
        snap_size_real, snap_compress_zfp, snap_zfp_rel_tol, snap_zfp_rel_eps,&
-       datfile_parallel_io, datfile_io_buffer_mb
+       datfile_parallel_io, datfile_io_buffer_mb, datfile_io_collective
 
     namelist /savelist/ tsave,itsave,dtsave,ditsave,nslices,slicedir,&
         slicecoord,collapse,collapseLevel, time_between_print,tsave_log,&
@@ -373,6 +373,7 @@ contains
     snap_nghost              = 0
     datfile_parallel_io      = .false.
     datfile_io_buffer_mb     = 512
+    datfile_io_collective    = .false.
     snap_size_real           = 8
     snap_compress_zfp        = .false.
     snap_zfp_rel_tol         = -1.0d0 ! unset
