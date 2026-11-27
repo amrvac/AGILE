@@ -1,0 +1,5 @@
+ ! Snapshot test overlay (see test.make): the default (rank 0) writer.
+ &filelist
+   base_filename = '_serial'
+   datfile_parallel_io = .false.
+ /

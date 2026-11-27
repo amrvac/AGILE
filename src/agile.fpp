@@ -280,14 +280,13 @@ contains
     use mod_amr_grid, only: resettree, settree, resettree_convert
     use mod_forest, only: nleafs_active
     use mod_global_parameters
-    use mod_input_output, only: saveamrfile
+    use mod_input_output, only: saveamrfile, output_to_host
     use mod_input_output_helper, only: save_now
     use mod_ghostcells_update
     use mod_multigrid_coupling
     use mod_dt, only: setdt
     use mod_particles
     use mod_usr_methods
-    use mod_geometry, only: sync_positions_host
 
     double precision, intent(in) :: time0
 
@@ -368,10 +367,15 @@ contains
 
        ! output data
        if (any(save_file)) then
+         ! Fetch once for all files due, and before usr_modify_output so that
+         ! the hook edits current host data (and the fetch cannot overwrite
+         ! its edits). time_write includes the fetch: it feeds the wall-time
+         ! estimate below.
+         time_write0=MPI_WTIME()
+         call output_to_host()
+         time_write=MPI_WTIME()-time_write0
          if(associated(usr_modify_output)) then
            ! Users can modify or set variables before output is written
-           ! (usr_modify_output reads ps(igrid)%x on the host)
-           call sync_positions_host()
            do iigrid=1,igridstail; igrid=igrids(iigrid);
              dxlevel(1)=rnode(rpdx1_,igrid);dxlevel(2)=rnode(rpdx2_,igrid)
              dxlevel(3)=rnode(rpdx3_,igrid);
@@ -381,7 +385,6 @@ contains
                 ps(igrid)%w,ps(igrid)%x)
            end do
          end if
-         time_write=0.d0
          do ifile=nfile,1,-1
            if (save_file(ifile)) then
              time_write0=MPI_WTIME()
@@ -400,6 +403,7 @@ contains
        if (save_now) then
           if(mype==0) write(*,'(a,i7,a,i7,a,es12.4)') ' save a datfile No.',&
              datfilenext,' at it=',it,' global_time=',global_time
+          call output_to_host()
           call saveamrfile(1)
           call saveamrfile(2)
           call MPI_FILE_DELETE('savenow',MPI_INFO_NULL,ierrmpi)
@@ -495,6 +499,7 @@ contains
 
     ! output end state
     timeio0=MPI_WTIME()
+    if (any(itsavelast(1:nfile)<it)) call output_to_host()
     do ifile=nfile,1,-1
        if(itsavelast(ifile)<it) call saveamrfile(ifile)
     end do

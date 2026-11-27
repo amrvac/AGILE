@@ -18,6 +18,13 @@ arch ?= gnu
 # Tool to compare test output numerically
 LOG_CMP := $(AGILE_DIR)/tools/fortran/compare_logs
 
+# Byte-for-byte comparison of two files, for tests that check outputs against
+# each other (FILE_CMP a b; exits 1 and names them if they differ). Not cmp:
+# the GPU CI runner does not have it. Python is always there, since the build
+# needs it for fypp.
+FILE_CMP := python3 -c 'import filecmp, sys; a, b = sys.argv[1:3]; \
+	filecmp.cmp(a, b, shallow=False) or sys.exit(a + " and " + b + " differ")'
+
 # Number of MPI processes to use
 NUM_PROCS ?= 4
 

@@ -1,0 +1,7 @@
+ ! Snapshot test overlay (see test.make): the parallel writer with
+ ! independent MPI-IO (the default), a 1 MiB buffer for several rounds.
+ &filelist
+   base_filename = '_parallel'
+   datfile_parallel_io = .true.
+   datfile_io_buffer_mb = 1
+ /

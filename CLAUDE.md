@@ -142,6 +142,13 @@ Add a new test case by copying an existing case directory (`mod_usr.fpp`,
 `tests/Makefile` under the appropriate `*_BASIC` or `*_EXTENDED` variable (extended unless
 it covers something no basic case does).
 
+`tests/hd/snapshot_zfp` (ZFP-compressed snapshots through the parallel and the
+default writer, byte for byte) is in no suite: ZFP is a compile-time switch
+that needs a ZFP build, which CI lacks. Run it by hand with
+`make -f test.make arch=... ZFP_DIR=/path/to/zfp` (see
+`doc/par.md#par_snapshots` for the ZFP build); without `ZFP_DIR` it prints
+SKIPPED.
+
 ## Coordinate systems
 
 The coordinate system is a **compile-time** choice (the finite-volume kernels

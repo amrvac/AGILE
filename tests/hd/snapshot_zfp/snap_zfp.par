@@ -1,0 +1,7 @@
+ ! Overlay for the ZFP snapshot test (see test.make): compress snapshots,
+ ! each field to a relative tolerance of 1e-3 by the adaptive precision
+ ! search.
+ &filelist
+   snap_compress_zfp = .true.
+   snap_zfp_rel_tol = 1.0d-3
+ /

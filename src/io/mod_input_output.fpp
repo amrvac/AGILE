@@ -259,7 +259,8 @@ contains
        length_convert_factor, w_convert_factor, time_convert_factor,level_io,&
        level_io_min, level_io_max, autoconvert,slice_type,slicenext,&
        collapsenext,collapse_type, type_endian, snapnext, snap_nghost,&
-       snap_size_real, snap_compress_zfp, snap_zfp_rel_tol, snap_zfp_rel_eps
+       snap_size_real, snap_compress_zfp, snap_zfp_rel_tol, snap_zfp_rel_eps,&
+       datfile_parallel_io, datfile_io_buffer_mb, datfile_io_collective
 
     namelist /savelist/ tsave,itsave,dtsave,ditsave,nslices,slicedir,&
         slicecoord,collapse,collapseLevel, time_between_print,tsave_log,&
@@ -370,6 +371,9 @@ contains
     nocartesian              = .false.
     saveprim                 = .false.
     snap_nghost              = 0
+    datfile_parallel_io      = .false.
+    datfile_io_buffer_mb     = 512
+    datfile_io_collective    = .false.
     snap_size_real           = 8
     snap_compress_zfp        = .false.
     snap_zfp_rel_tol         = -1.0d0 ! unset
@@ -713,6 +717,10 @@ contains
         snapnext = 0
       end if
     end if
+
+    ! The buffer is counted in doubles with a default integer: < 2**31 of them
+    if (datfile_io_buffer_mb < 1 .or. datfile_io_buffer_mb > 16383) call&
+       mpistop("datfile_io_buffer_mb should be between 1 and 16383.")
 
     if (snap_size_real /= 4 .and. snap_size_real /= 8) call mpistop(&
        "snap_size_real should be 4 (single precision) or 8 (double precision).")
@@ -1973,6 +1981,35 @@ contains
 
   end subroutine get_fields_string
 
+  !> Bring everything the output writers read back to the host: the ghost
+  !> cells (diagonal ones too, unless the physics already exchanges them),
+  !> the solution bg(1)%w and the cell geometry.
+  !>
+  !> Call this once per output event, before the first saveamrfile and before
+  !> usr_modify_output, so that the hook edits current host data and its edits
+  !> reach the files. saveamrfile itself fetches nothing: called without this
+  !> first, it writes whatever happens to be on the host.
+  subroutine output_to_host()
+    use mod_global_parameters
+    use mod_physics, only: phys_req_diagonal
+    use mod_ghostcells_update, only: getbc
+    use mod_geometry, only: sync_geometry_host
+
+    ! update (diagonal) ghostcells before moving to host:
+    if (.not. phys_req_diagonal) then
+      call getbc(global_time,0.d0,ps,iwstart,nwgc)
+    end if
+
+    ${GPU_UPDATE_HOST('bg(1)%w')}$
+
+    ! Same idea for the cell metrics: everything the writers do that weights
+    ! by dvolume, or builds corner positions from dx, reads them on the host.
+    call sync_geometry_host()
+
+  end subroutine output_to_host
+
+  !> Write output file type ifile. The host data must be current: call
+  !> output_to_host first (once per output event, not once per file).
   subroutine saveamrfile(ifile)
 
     use mod_usr_methods, only: usr_print_log, usr_write_analysis
@@ -1981,26 +2018,18 @@ contains
     use mod_slice, only: write_slice
     use mod_collapse, only: write_collapsed
     use mod_convert_files, only: generate_plotfile
-    use mod_physics, only: phys_req_diagonal
-    use mod_ghostcells_update
-    use mod_geometry, only: sync_geometry_host
-    integer:: ifile, iigrid, igrid
-
-    ! update (diagonal) ghostcells before moving to host:
-    if(.not. phys_req_diagonal) then
-      call getbc(global_time,0.d0,ps,iwstart,nwgc)
-    end if
-
-    ${GPU_UPDATE_HOST('bg(1)%w')}$
-
-    ! Same idea for the cell metrics: everything below here that weights by
-    ! dvolume, or builds corner positions from dx, reads them on the host.
-    call sync_geometry_host()
+    use mod_datfile_parallel, only: write_datfile_parallel,&
+       write_snapshot_parallel
+    integer, intent(in) :: ifile
 
     select case (ifile)
     case (fileout_)
        ! Write datfile (double precision, v5)
-       call write_datfile()
+       if (datfile_parallel_io) then
+          call write_datfile_parallel()
+       else
+          call write_datfile()
+       end if
 
        ! Generate formatted output (e.g., VTK)
        if(autoconvert) call generate_plotfile
@@ -2014,7 +2043,11 @@ contains
            any(itsave(:, filesnap_) < biginteger) .or.&
            dtsave(filesnap_) < bigdouble .or.&
            ditsave(filesnap_) < biginteger) then
-          call write_datfile(is_snap=.true.)
+          if (datfile_parallel_io) then
+             call write_snapshot_parallel()
+          else
+             call write_datfile(is_snap=.true.)
+          end if
           snapnext = snapnext + 1
        end if
     case (fileslice_)
@@ -2700,29 +2733,25 @@ contains
   !> Routine to read in datfiles. When it cannot recognize the
   !> file version, it will automatically try the 'old' reader.
   subroutine read_datfile
-    use mod_usr_methods, only: usr_transform_w
     use mod_input_output_helper, only: count_ix
     use mod_forest
     use mod_global_parameters
     use mod_amr_solution_node, only: alloc_node
     use mod_functions_forest, only: read_forest
+    use mod_datfile_parallel, only: read_datfile_blocks_parallel,&
+       store_datfile_block
 
-    integer                       :: ix_buffer(2*ndim+1), n_values,&
-        n_values_stagger
+    integer                       :: ix_buffer(2*ndim+1), n_values
     integer                       :: ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-       ixOmax3, ixOsmin1,ixOsmin2,ixOsmin3,ixOsmax1,ixOsmax2,ixOsmax3
-    integer                       :: file_handle, amode, igrid, Morton_no,&
-        iread
+       ixOmax3
+    integer                       :: file_handle, igrid, Morton_no
     integer                       :: istatus(MPI_STATUS_SIZE)
     integer                       :: iorecvstatus(MPI_STATUS_SIZE)
-    integer                       :: ipe,inrecv,nrecv, file_version
+    integer                       :: ipe, file_version
     logical                       :: fexist
     integer(MPI_OFFSET_KIND)      :: offset_tree_info
     integer(MPI_OFFSET_KIND)      :: offset_block_data
     double precision, allocatable :: w_buffer(:)
-    double precision, dimension(:,:,:,:), allocatable :: w
-    double precision :: ws(ixGslo1:ixGshi1,ixGslo2:ixGshi2,ixGslo3:ixGshi3,&
-       1:ndim)
 
     if (mype==0) then
       inquire(file=trim(restart_from_file), exist=fexist)
@@ -2778,7 +2807,6 @@ contains
          ixGshi3) * nws
     end if
     allocate(w_buffer(n_values))
-    allocate(w(ixGlo1:ixGhi1,ixGlo2:ixGhi2,ixGlo3:ixGhi3,1:nw_found))
 
     nleafs_active = nleafs
 
@@ -2793,14 +2821,17 @@ contains
       call alloc_node(igrid)
     end do
 
-    if (mype==0) then
+    if (datfile_parallel_io) then
+      ! Every rank reads its own blocks; closes rank 0's file_handle
+      call read_datfile_blocks_parallel(file_handle, offset_block_data,&
+         nw_found, stagger_mark_dat)
+
+    else if (mype==0) then
       call MPI_FILE_SEEK(file_handle, offset_block_data, MPI_SEEK_SET,&
           ierrmpi)
 
-      iread = 0
       do ipe = 0, npe-1
         do Morton_no=Morton_start(ipe),Morton_stop(ipe)
-          iread=iread+1
           itag=Morton_no
 
           call mpi_file_read_wrapper(file_handle,ix_buffer(1:2*ndim), 2*ndim,&
@@ -2816,68 +2847,17 @@ contains
           n_values = count_ix(ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
              ixOmax3) * nw_found
           if(stagger_mark_dat) then
-            ixOsmin1 = ixOmin1 - 1
-            ixOsmin2 = ixOmin2 - 1
-            ixOsmin3 = ixOmin3 - 1
-            ixOsmax1 = ixOmax1
-            ixOsmax2 = ixOmax2
-            ixOsmax3 = ixOmax3
-            n_values_stagger = n_values
-            n_values = n_values + count_ix(ixOsmin1,ixOsmin2,ixOsmin3,ixOsmax1,&
-               ixOsmax2,ixOsmax3) * nws
+            n_values = n_values + count_ix(ixOmin1-1,ixOmin2-1,ixOmin3-1,&
+               ixOmax1,ixOmax2,ixOmax3) * nws
           end if
 
           call mpi_file_read_wrapper(file_handle, w_buffer, n_values,&
               MPI_DOUBLE_PRECISION, istatus, ierrmpi)
 
           if (mype == ipe) then ! Root task
-            igrid=sfc_to_igrid(Morton_no)
-            block=>ps(igrid)
-            if(stagger_mark_dat) then
-              w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-                  1:nw_found) = reshape(w_buffer(1:n_values_stagger),&
-                  shape(w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-                  1:nw_found)))
-              if(stagger_grid) ps(igrid)%ws(ixOsmin1:ixOsmax1,&
-                 ixOsmin2:ixOsmax2,ixOsmin3:ixOsmax3,&
-                 1:nws)=reshape(w_buffer(n_values_stagger+1:n_values),&
-                  shape(ws(ixOsmin1:ixOsmax1,ixOsmin2:ixOsmax2,&
-                 ixOsmin3:ixOsmax3, 1:nws)))
-            else
-              w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-                  1:nw_found) = reshape(w_buffer(1:n_values),&
-                  shape(w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-                  1:nw_found)))
-            end if
-            if (nw_found<nw) then
-              if (associated(usr_transform_w)) then
-                call usr_transform_w(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,&
-                   ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,nw_found,w,&
-                   ps(igrid)%x,ps(igrid)%w)
-              else
-                ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-                   1:nw_found)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,&
-                   ixOmin3:ixOmax3,1:nw_found)
-              end if
-            else if (nw_found>nw) then
-              if (associated(usr_transform_w)) then
-                call usr_transform_w(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,&
-                   ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,nw_found,w,&
-                   ps(igrid)%x,ps(igrid)%w)
-              else
-                ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-                   1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-                   1:nw)
-              end if
-            else
-              ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-                 1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
-            end if
-#:if defined('FILL_NWEXTRA_ANALYTIC')
-            ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
-#:else
-            ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
-#:endif
+            call store_datfile_block(sfc_to_igrid(Morton_no), ixOmin1,&
+               ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3, w_buffer(1:n_values),&
+               nw_found, stagger_mark_dat)
           else
             call mpi_send_wrapper([ ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,ixOmax3,&
                 n_values ], 2*ndim+1, MPI_INTEGER, ipe, itag, icomm, ierrmpi)
@@ -2892,8 +2872,6 @@ contains
     else ! mype > 0
 
       do Morton_no=Morton_start(mype),Morton_stop(mype)
-        igrid=sfc_to_igrid(Morton_no)
-        block=>ps(igrid)
         itag=Morton_no
 
         call mpi_recv_wrapper(ix_buffer, 2*ndim+1, MPI_INTEGER, 0, itag, icomm,&
@@ -2909,57 +2887,9 @@ contains
         call mpi_recv_wrapper(w_buffer, n_values, MPI_DOUBLE_PRECISION,0, itag, icomm,&
             iorecvstatus, ierrmpi)
 
-        if(stagger_mark_dat) then
-          n_values_stagger = count_ix(ixOmin1,ixOmin2,ixOmin3,ixOmax1,ixOmax2,&
-             ixOmax3) * nw_found
-          ixOsmin1 = ixOmin1 - 1
-          ixOsmin2 = ixOmin2 - 1
-          ixOsmin3 = ixOmin3 - 1
-          ixOsmax1 = ixOmax1
-          ixOsmax2 = ixOmax2
-          ixOsmax3 = ixOmax3
-          w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-              1:nw_found) = reshape(w_buffer(1:n_values_stagger),&
-              shape(w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-              1:nw_found)))
-          if(stagger_grid) ps(igrid)%ws(ixOsmin1:ixOsmax1,ixOsmin2:ixOsmax2,&
-             ixOsmin3:ixOsmax3,1:nws)=reshape(w_buffer(n_values_stagger+&
-             1:n_values), shape(ws(ixOsmin1:ixOsmax1,ixOsmin2:ixOsmax2,&
-             ixOsmin3:ixOsmax3, 1:nws)))
-        else
-          w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-              1:nw_found) = reshape(w_buffer(1:n_values),&
-              shape(w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-              1:nw_found)))
-        end if
-        if (nw_found<nw) then
-          if (associated(usr_transform_w)) then
-            call usr_transform_w(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,&
-               ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,nw_found,w,&
-               ps(igrid)%x,ps(igrid)%w)
-          else
-            ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-               1:nw_found)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-               1:nw_found)
-          end if
-        else if (nw_found>nw) then
-          if (associated(usr_transform_w)) then
-            call usr_transform_w(ixGlo1,ixGlo2,ixGlo3,ixGhi1,ixGhi2,ixGhi3,&
-               ixMlo1,ixMlo2,ixMlo3,ixMhi1,ixMhi2,ixMhi3,nw_found,w,&
-               ps(igrid)%x,ps(igrid)%w)
-          else
-            ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-               1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
-          end if
-        else
-          ps(igrid)%w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,&
-             1:nw)=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3:ixOmax3,1:nw)
-        end if
-#:if defined('FILL_NWEXTRA_ANALYTIC')
-        ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,1:nwgc,igrid)')}$
-#:else
-        ${GPU_UPDATE_DEVICE('bg(1)%w(:,:,:,:,igrid)')}$
-#:endif
+        call store_datfile_block(sfc_to_igrid(Morton_no), ixOmin1,ixOmin2,&
+           ixOmin3,ixOmax1,ixOmax2,ixOmax3, w_buffer(1:n_values), nw_found,&
+           stagger_mark_dat)
       end do
     end if
 
