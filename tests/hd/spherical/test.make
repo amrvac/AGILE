@@ -19,7 +19,7 @@ pario.log: agile blast_amr.par pario_serial.par pario_parallel.par force
 	@$(RM) $@ blast_amr_pario_*.dat blast_amr_pario_*.log
 	@$(LAUNCHER) ./agile -i blast_amr.par pario_serial.par > run.log
 	@$(LAUNCHER) ./agile -i blast_amr.par pario_parallel.par > run.log
-	@if $(foreach i,$(PARIO_DATS),cmp blast_amr_pario_serial$(i).dat \
+	@if $(foreach i,$(PARIO_DATS),$(FILE_CMP) blast_amr_pario_serial$(i).dat \
 		blast_amr_pario_parallel$(i).dat &&) true ; \
 	then echo -e "$(_green)PASSED$(_reset) $@" ; touch $@ ; \
 	else echo -e "$(_red)** FAILED **$(_reset) $@" ; \

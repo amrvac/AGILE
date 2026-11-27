@@ -21,8 +21,8 @@ restart.log: $(LOG_CMP) agile test.par restart.par resume_parallel.par resume_se
 	@$(LAUNCHER) ./agile -i test.par restart.par resume_serial.par \
 		-if test_restart0000.dat > run.log
 	@if $(LOG_CMP) 1.0e-5 1.0e-8 test_restart.log correct_output/test.log && \
-		cmp test_restart_parallel0001.dat test_restart0001.dat && \
-		cmp test_restart_serial0001.dat test_restart0001.dat ; \
+		$(FILE_CMP) test_restart_parallel0001.dat test_restart0001.dat && \
+		$(FILE_CMP) test_restart_serial0001.dat test_restart0001.dat ; \
 	then echo -e "$(_green)PASSED$(_reset) $@" ; cp test_restart.log $@ ; \
 	else echo -e "$(_red)** FAILED **$(_reset) $@" ; \
 	fi
