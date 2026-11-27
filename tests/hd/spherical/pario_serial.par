@@ -1,0 +1,19 @@
+ ! Overlay on blast_amr.par for the pario test in test.make: write restart
+ ! files at it = 0 and it = 1 with the default (rank 0) path. Saving the
+ ! physical-boundary ghost cells gives the blocks at the radial boundaries
+ ! larger records than the others.
+ &filelist
+   base_filename = '_pario_serial'
+ /
+
+ &savelist
+   itsave(1,2) = 0
+ /
+
+ &stoplist
+   it_max = 1
+ /
+
+ &boundlist
+   save_physical_boundary = .true.
+ /
