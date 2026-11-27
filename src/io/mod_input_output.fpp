@@ -2018,7 +2018,8 @@ contains
     use mod_slice, only: write_slice
     use mod_collapse, only: write_collapsed
     use mod_convert_files, only: generate_plotfile
-    use mod_datfile_parallel, only: write_datfile_parallel
+    use mod_datfile_parallel, only: write_datfile_parallel,&
+       write_snapshot_parallel
     integer, intent(in) :: ifile
 
     select case (ifile)
@@ -2042,7 +2043,11 @@ contains
            any(itsave(:, filesnap_) < biginteger) .or.&
            dtsave(filesnap_) < bigdouble .or.&
            ditsave(filesnap_) < biginteger) then
-          call write_datfile(is_snap=.true.)
+          if (datfile_parallel_io) then
+             call write_snapshot_parallel()
+          else
+             call write_datfile(is_snap=.true.)
+          end if
           snapnext = snapnext + 1
        end if
     case (fileslice_)

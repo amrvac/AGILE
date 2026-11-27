@@ -1,0 +1,21 @@
+ ! Overlay on blast_amr.par for the snap test in test.make, variant b:
+ ! double-precision snapshots without a uniform halo, so the blocks at the
+ ! radial boundaries carry their physical-boundary ghost cells
+ ! (save_physical_boundary) and records differ in size; at it = 0 and it = 1.
+ &filelist
+   base_filename = '_snapb'
+   snap_size_real = 8
+   snap_nghost = 0
+ /
+
+ &savelist
+   itsave(1,6) = 0
+ /
+
+ &stoplist
+   it_max = 1
+ /
+
+ &boundlist
+   save_physical_boundary = .true.
+ /

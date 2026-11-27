@@ -262,8 +262,9 @@ module mod_global_parameters
   !> IO: slice output numbers/labels
   integer :: slicenext
 
-  !> IO: write and read restart datfiles with every rank doing its own blocks
-  !>     (MPI-IO, mod_datfile_parallel) instead of through rank 0
+  !> IO: write and read restart datfiles, and write analysis snapshots, with
+  !>     every rank doing its own blocks (MPI-IO, mod_datfile_parallel)
+  !>     instead of through rank 0
   logical :: datfile_parallel_io
 
   !> IO: the parallel datfile path uses collective MPI-IO (_AT_ALL) instead of

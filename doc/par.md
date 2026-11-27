@@ -77,7 +77,7 @@ or extra words in strings.
  datfilenext= -1 | INTEGER                               ! -1: continue the numbering
  slicenext= -1 | INTEGER
  collapsenext= -1 | INTEGER
- datfile_parallel_io= F | T                              ! restart files: every rank does its own blocks
+ datfile_parallel_io= F | T                              ! restart files, snapshots: every rank does its own blocks
  datfile_io_buffer_mb= 512 | INTEGER in [1,16383]        ! per-rank buffer of that path, MiB
  datfile_io_collective= F | T                            ! that path with collective MPI-IO
  snapnext= -1 | INTEGER                                  ! see below
@@ -140,10 +140,11 @@ through `read_data_get_3d` in `mod_init_datafromfile`.
 By default rank 0 writes and reads every block of a restart file, and the
 other ranks send their blocks to it or receive them from it. With
 `datfile_parallel_io = T` every rank writes and reads its own blocks with
-MPI-IO; rank 0 still handles the small header and tree. The file is the same byte for byte,
-so either path reads a file written by either path, and so do the Python
-tools. The switch applies to writing restart files and to reading the one a
-run restarts from; analysis snapshots are not affected.
+MPI-IO; rank 0 still handles the small header and tree. The file is the same
+byte for byte, so either path reads a file written by either path, and so do
+the Python tools. The switch applies to writing restart files, to reading the
+one a run restarts from, and to writing [analysis snapshots](#par_snapshots),
+uncompressed or ZFP-compressed (AGILE does not read snapshots).
 
 Each rank packs its blocks into a host buffer of at most
 `datfile_io_buffer_mb` MiB (always at least one block) and moves the data in
@@ -160,6 +161,13 @@ times slower than the serial path on GPFS (KH3D 512³ on 4 A100s, 16 MiB
 buffer: 43 s collective, 7 s independent, 10 s serial). It may still pay off
 at very large rank counts, where it limits how many ranks access the file
 system at once.
+
+For ZFP-compressed snapshots a rank must know the size of its compressed
+blocks before it can write them, so it first compresses all its blocks, with
+the same adaptive precision search as the default path, and keeps the
+streams in host memory until they are written. That buffer holds the rank's
+whole compressed snapshot, at most about its share of the uncompressed data;
+`datfile_io_buffer_mb` does not limit it.
 
 ### Analysis snapshots {: #par_snapshots }
 Besides the `.dat` files to restart from, AGILE can write analysis snapshots,

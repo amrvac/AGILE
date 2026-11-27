@@ -17,6 +17,10 @@
 # A directory is one build, and builds dominate the cost, so the split is per
 # directory. The basic suite keeps one Cartesian case per physics plus the
 # curvilinear cases whose checks nothing else provides.
+#
+# hd/snapshot_zfp is in no suite: it needs a ZFP build (ZFP_DIR), which CI
+# does not have. Run it by hand: make -f test.make ZFP_DIR=... in that
+# directory.
 
 SUITE ?= basic
 

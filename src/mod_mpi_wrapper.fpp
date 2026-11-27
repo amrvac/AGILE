@@ -10,6 +10,8 @@ module mod_mpi_wrapper
   public :: mpi_file_read_wrapper
   public :: mpi_file_read_at_wrapper
   public :: mpi_file_write_wrapper
+  public :: mpi_file_write_at_wrapper
+  public :: mpi_file_write_at_all_wrapper
   public :: mpi_irecv_wrapper
   public :: mpi_isend_wrapper
   public :: mpi_recv_wrapper
@@ -33,7 +35,7 @@ contains
     integer, dimension(MPI_STATUS_SIZE), intent(out) :: status
     integer, optional, intent(out)                   :: ierror
 
-    call MPI_FILE_READ(fh, buf, count, datatype, status, ierror)
+    call MPI_FILE_READ_AT(fh, offset, buf, count, datatype, status, ierror)
   end subroutine mpi_file_read_at_wrapper
 
   subroutine mpi_file_write_wrapper(fh, buf, count, datatype, status, ierror)
@@ -44,6 +46,26 @@ contains
 
     call MPI_FILE_WRITE(fh, buf, count, datatype, status, ierror)
   end subroutine mpi_file_write_wrapper
+
+  subroutine mpi_file_write_at_wrapper(fh, offset, buf, count, datatype, status, ierror)
+    integer, intent(in)                              :: fh, count, datatype
+    integer(MPI_OFFSET_KIND), intent(in)             :: offset
+    type(*), intent(in)                              :: buf(..)
+    integer, dimension(MPI_STATUS_SIZE), intent(out) :: status
+    integer, optional, intent(out)                   :: ierror
+
+    call MPI_FILE_WRITE_AT(fh, offset, buf, count, datatype, status, ierror)
+  end subroutine mpi_file_write_at_wrapper
+
+  subroutine mpi_file_write_at_all_wrapper(fh, offset, buf, count, datatype, status, ierror)
+    integer, intent(in)                              :: fh, count, datatype
+    integer(MPI_OFFSET_KIND), intent(in)             :: offset
+    type(*), intent(in)                              :: buf(..)
+    integer, dimension(MPI_STATUS_SIZE), intent(out) :: status
+    integer, optional, intent(out)                   :: ierror
+
+    call MPI_FILE_WRITE_AT_ALL(fh, offset, buf, count, datatype, status, ierror)
+  end subroutine mpi_file_write_at_all_wrapper
 
   subroutine mpi_irecv_wrapper(buf, count, datatype, source, tag, comm, request, ierror)
     integer, intent(in)            :: count, source, tag, datatype, comm

@@ -1,0 +1,16 @@
+ ! Overlay on blast_amr.par for the snap test in test.make, variant a:
+ ! single-precision snapshots with a uniform halo of 2 ghost layers, at it = 0
+ ! and it = 1. Combined with one of snap_serial/parallel/collective.par.
+ &filelist
+   base_filename = '_snapa'
+   snap_size_real = 4
+   snap_nghost = 2
+ /
+
+ &savelist
+   itsave(1,6) = 0
+ /
+
+ &stoplist
+   it_max = 1
+ /
