@@ -16,7 +16,7 @@ blast_amr_fixgrid.log: blast_amr_fixgrid.par
 # size. There is no reference log: the two runs' files are compared directly.
 PARIO_DATS := 0000 0001
 pario.log: agile blast_amr.par pario_serial.par pario_parallel.par force
-	@$(RM) $@ blast_amr_pario_*.dat
+	@$(RM) $@ blast_amr_pario_*.dat blast_amr_pario_*.log
 	@$(LAUNCHER) ./agile -i blast_amr.par pario_serial.par > run.log
 	@$(LAUNCHER) ./agile -i blast_amr.par pario_parallel.par > run.log
 	@if $(foreach i,$(PARIO_DATS),cmp blast_amr_pario_serial$(i).dat \

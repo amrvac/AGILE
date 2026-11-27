@@ -14,7 +14,7 @@ hll.log: hll.par
 # file byte for byte, which also checks that the default path reads a file
 # the parallel one wrote and writes the same bytes.
 restart.log: $(LOG_CMP) agile test.par restart.par resume_parallel.par resume_serial.par force
-	@$(RM) $@ test_restart*.dat
+	@$(RM) $@ test_restart*.dat test_restart*.log
 	@$(LAUNCHER) ./agile -i test.par restart.par > run.log
 	@$(LAUNCHER) ./agile -i test.par restart.par resume_parallel.par \
 		-if test_restart0000.dat > run.log
